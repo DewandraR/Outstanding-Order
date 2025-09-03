@@ -50,6 +50,7 @@
             font-weight: 600;
         }
 
+        /* [STRUKTUR UTAMA SIDEBAR] */
         .sidebar {
             width: var(--sidebar-width);
             height: 100vh;
@@ -58,12 +59,13 @@
             left: 0;
             background: linear-gradient(180deg, #388e3c 0%, #2e7d32 100%);
             color: #fff;
-            padding: 1rem;
             display: flex;
             flex-direction: column;
             transition: transform 0.3s ease-in-out;
             z-index: 1030;
             box-shadow: 0 4px 25px rgba(0, 0, 0, 0.1);
+            padding: 0;
+            /* Padding diatur di child element */
         }
 
         .sidebar-overlay {
@@ -123,78 +125,82 @@
             }
         }
 
-        /* ... Sisa CSS ... */
+        /* [BARU] HEADER & BRANDING */
         .sidebar-header {
-            text-align: center;
-            margin-bottom: 1rem;
-            padding-bottom: 1rem
+            display: flex;
+            align-items: center;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            text-decoration: none;
+            color: #fff;
+            flex-shrink: 0;
+            transition: background-color 0.2s ease-in-out;
         }
 
-        .sidebar-header .app-logo {
-            max-width: 70px;
-            margin-bottom: .5rem;
-            transition: transform .4s cubic-bezier(.175, .885, .32, 1.275)
+        .sidebar-header:hover {
+            background-color: rgba(0, 0, 0, 0.15);
         }
 
-        .sidebar-header .app-logo:hover {
-            transform: scale(1.1) rotate(5deg)
-        }
-
-        .sidebar-header .app-name {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #fff
-        }
-
-        .sidebar-user {
-            text-align: center;
-            padding-bottom: 1.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, .2)
-        }
-
-        .sidebar-user .user-avatar {
-            width: 80px;
-            height: 80px;
+        .sidebar-logo {
+            height: 60px;
+            width: 60px;
             border-radius: 50%;
-            border: 3px solid rgba(255, 255, 255, .3);
             object-fit: cover;
-            margin-bottom: .75rem
+            margin-right: 1rem;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 2px solid rgba(255, 255, 255, 0.3);
         }
 
-        .sidebar-user .user-name {
+        .sidebar-header:hover .sidebar-logo {
+            transform: rotate(10deg) scale(1.1);
+        }
+
+        .sidebar-title-wrapper {
+            line-height: 1.2;
+        }
+
+        .sidebar-app-name {
+            font-size: 1.20rem;
             font-weight: 600;
-            color: #fff
+            margin: 0;
+            color: #fff;
         }
 
-        .sidebar-user .user-role {
-            font-size: .8rem;
-            color: rgba(255, 255, 255, .7)
+        .sidebar-app-subtitle {
+            font-size: 0.75rem;
+            font-weight: 400;
+            color: rgba(255, 255, 255, 0.7);
         }
 
+        /* Sembunyikan class .sidebar-user lama jika masih ada */
+        .sidebar-user {
+            display: none;
+        }
+
+        /* [MODIFIKASI] NAVIGASI UTAMA */
         .sidebar-nav {
             list-style: none;
-            padding-left: 0;
+            padding: 1rem;
             flex-grow: 1;
-            overflow-y: auto
+            overflow-y: auto;
         }
 
         .sidebar-nav::-webkit-scrollbar {
-            width: 6px
+            width: 6px;
         }
 
         .sidebar-nav::-webkit-scrollbar-track {
             background: rgba(0, 0, 0, .1);
-            border-radius: 10px
+            border-radius: 10px;
         }
 
         .sidebar-nav::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, .3);
-            border-radius: 10px
+            border-radius: 10px;
         }
 
         .sidebar-nav::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, .5)
+            background: rgba(255, 255, 255, .5);
         }
 
         .sidebar-nav .nav-item .nav-link {
@@ -207,31 +213,31 @@
             margin-bottom: .25rem;
             font-weight: 500;
             transition: all .2s ease-in-out;
-            transform: translateX(0)
+            transform: translateX(0);
         }
 
         .sidebar-nav .nav-item .nav-link .nav-icon {
             width: 20px;
             margin-right: .75rem;
             text-align: center;
-            transition: transform .2s ease-in-out
+            transition: transform .2s ease-in-out;
         }
 
         .sidebar-nav .nav-item .nav-link:hover {
             background-color: var(--sidebar-link-hover-bg);
             color: #fff;
             transform: translateX(5px);
-            box-shadow: 0 4px 10px rgba(0, 0, 0, .2)
+            box-shadow: 0 4px 10px rgba(0, 0, 0, .2);
         }
 
         .sidebar-nav .nav-item .nav-link:hover .nav-icon {
-            transform: scale(1.1)
+            transform: scale(1.1);
         }
 
         .sidebar-nav .nav-item .nav-link.active {
             background-color: var(--sidebar-link-active-bg);
             color: #fff;
-            font-weight: 600
+            font-weight: 600;
         }
 
         .sidebar-nav .nav-item .nav-link[data-bs-toggle=collapse]::after {
@@ -239,48 +245,48 @@
             font-family: 'Font Awesome 6 Free';
             font-weight: 900;
             margin-left: auto;
-            transition: transform .2s
+            transition: transform .2s;
         }
 
         .sidebar-nav .nav-item .nav-link[aria-expanded=true]::after {
-            transform: rotate(180deg)
+            transform: rotate(180deg);
         }
 
         .collapse .nav-link {
             padding-left: 2.5rem !important;
             font-size: .9rem;
-            background-color: rgba(0, 0, 0, .15)
+            background-color: rgba(0, 0, 0, .15);
         }
 
         .collapse .nav-link:hover {
             background-color: rgba(0, 0, 0, .3);
             transform: translateX(0);
-            box-shadow: none
+            box-shadow: none;
         }
 
         .collapse .collapse .nav-link {
             padding-left: 4rem !important;
             font-size: .85rem;
-            background-color: rgba(0, 0, 0, .25)
+            background-color: rgba(0, 0, 0, .25);
         }
 
         .collapse .collapse .nav-link:hover {
-            background-color: rgba(0, 0, 0, .4)
+            background-color: rgba(0, 0, 0, .4);
         }
 
         .nav-link-text {
-            line-height: 1.2
+            line-height: 1.2;
         }
 
         .nav-link-main {
             display: block;
-            font-weight: 500
+            font-weight: 500;
         }
 
         .nav-link-sub {
             display: block;
             font-size: .75rem;
-            color: rgba(255, 255, 255, .6)
+            color: rgba(255, 255, 255, .6);
         }
 
         .nav-heading {
@@ -289,51 +295,79 @@
             font-weight: 700;
             color: rgba(255, 255, 255, .4);
             text-transform: uppercase;
-            letter-spacing: .08em
+            letter-spacing: .08em;
         }
 
+        /* [BARU & DIUBAH] PROFIL PENGGUNA DI BAWAH */
         .user-profile {
             margin-top: auto;
-            padding-top: 1rem;
-            border-top: 1px solid rgba(255, 255, 255, .2)
+            padding: 0.75rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
         }
 
         .user-profile .dropdown-toggle {
             display: flex;
             align-items: center;
-            width: 100%;
             text-align: left;
             background: none;
             border: none;
             color: #fff;
-            padding: .75rem 1rem;
-            border-radius: .5rem
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            width: 100%;
         }
 
         .user-profile .dropdown-toggle:hover {
-            background-color: var(--sidebar-link-hover-bg)
+            background-color: var(--sidebar-link-hover-bg);
+        }
+
+        .user-profile .user-info {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.3;
+            text-align: left;
+        }
+
+        .user-profile .user-name {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .user-profile .user-status {
+            font-size: 0.75rem;
+            color: #a5d6a7;
+        }
+
+        .user-profile .user-status::before {
+            content: '●';
+            color: #4caf50;
+            font-size: 0.7rem;
+            margin-right: 5px;
+            vertical-align: middle;
         }
 
         .user-profile .dropdown-menu {
             background-color: #fff !important;
             border: 1px solid #c8e6c9;
-            width: calc(var(--sidebar-width) - 2rem);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, .15)
+            width: calc(var(--sidebar-width) - 1.5rem);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
         }
 
         .user-profile .dropdown-item {
-            color: #2e7d32 !important
+            color: #2e7d32 !important;
         }
 
         .user-profile .dropdown-item:hover {
-            background-color: #e8f5e9 !important
+            background-color: #e8f5e9 !important;
         }
 
         .user-profile .dropdown-item i {
             margin-right: .75rem;
-            width: 16px
+            width: 16px;
         }
 
+        /* FOOTER & SEARCH */
         footer {
             background: #fff;
             padding: 1.5rem;
@@ -341,26 +375,25 @@
             color: #6c757d;
             margin-top: 2rem;
             border-radius: .75rem;
-            box-shadow: 0 -4px 15px rgba(0, 0, 0, .05)
+            box-shadow: 0 -4px 15px rgba(0, 0, 0, .05);
         }
 
         .alert {
-            animation: fadeIn .5s ease-out
+            animation: fadeIn .5s ease-out;
         }
 
         @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(-10px)
+                transform: translateY(-10px);
             }
 
             to {
                 opacity: 1;
-                transform: translateY(0)
+                transform: translateY(0);
             }
         }
 
-        /* [MODIFIKASI] CSS untuk Search Bar dengan Tombol */
         .sidebar-search-form .input-group {
             border-radius: 0.5rem;
             background-color: rgba(0, 0, 0, 0.2);
@@ -409,27 +442,28 @@
 
 <body>
     <div class="sidebar">
-        <div class="sidebar-header">
-            <img src="{{ asset('image/KMI.png') }}" alt="Logo Aplikasi" class="app-logo" onerror="this.onerror=null;this.style.display='none'">
-            <div class="app-name">{{ config('app.name', 'Laravel') }}</div>
-        </div>
-        <div class="sidebar-user">
-            <img src="https://placehold.co/100x100/e8f5e9/2e7d32?text={{ substr(Auth::user()->name ?? 'U', 0, 1) }}" alt="Foto Profil" class="user-avatar">
-            <div class="user-name">{{ Auth::user()->name ?? 'User' }}</div>
-            <div class="user-role">{{ Auth::user()->email ?? 'user@example.com' }}</div>
-        </div>
+        {{-- BAGIAN 1: HEADER BRANDING --}}
+        <a href="{{ route('dashboard') }}" class="sidebar-header">
+            <img src="{{ asset('images/KMI.png') }}" alt="Logo KMI" class="sidebar-logo">
+            <div class="sidebar-title-wrapper">
+                <h5 class="sidebar-app-name">{{ config('app.name', 'Laravel') }}</h5>
+                <span class="sidebar-app-subtitle">PT Kayu Mabel Indonesia</span>
+            </div>
+        </a>
+
+        {{-- BAGIAN 2: NAVIGASI UTAMA (BISA DI-SCROLL) --}}
         <ul class="sidebar-nav">
             <li class="nav-item">
                 <a class="nav-link {{ request()->routeIs('dashboard') && !request()->has('werks') ? 'active' : '' }}" href="{{ route('dashboard') }}">
-                    <i class="fas fa-home nav-icon"></i> Beranda
+                    <i class="fas fa-home nav-icon"></i> Dashboard
                 </a>
             </li>
 
-            {{-- [MODIFIKASI] Form pencarian dengan tombol --}}
+            {{-- Form pencarian menjadi lebih terintegrasi --}}
             <li class="nav-item px-2 mt-2 mb-2">
                 <form action="{{ route('dashboard.search') }}" method="GET" class="sidebar-search-form">
                     <div class="input-group">
-                        <input type="text" class="form-control" name="term" placeholder="Cari No. PO atau SO..." required value="{{ request('term') ?? request('search_term') ?? '' }}" aria-label="Cari Nomor SO atau PO">
+                        <input type="text" class="form-control" name="term" placeholder="Search PO / SO No..." required value="{{ request('term') ?? request('search_term') ?? '' }}" aria-label="Search SO or PO Number">
                         <button class="btn btn-search" type="submit">
                             <i class="fas fa-search"></i>
                         </button>
@@ -437,7 +471,7 @@
                 </form>
             </li>
 
-            <li class="nav-heading">Laporan</li>
+            <li class="nav-heading">Report</li>
             <li class="nav-item">
                 <a class="nav-link {{ request()->has('werks') ? '' : 'collapsed' }}" href="#submenu-outstanding" data-bs-toggle="collapse" role="button"
                     aria-expanded="{{ request()->has('werks') ? 'true' : 'false' }}" aria-controls="submenu-outstanding">
@@ -476,20 +510,26 @@
                 </div>
             </li>
         </ul>
+
+        {{-- BAGIAN 3: PROFIL PENGGUNA (SELALU DI BAWAH) --}}
         <div class="user-profile">
             <div class="dropdown dropup">
                 <button class="btn dropdown-toggle" type="button" id="userMenuButton" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fas fa-user-circle me-2"></i> {{ Auth::user()->name ?? 'User' }}
+                    <i class="fas fa-user-circle fa-lg me-2"></i>
+                    <div class="user-info">
+                        <span class="user-name">{{ Auth::user()->name ?? 'User' }}</span>
+                        <span class="user-status">Online</span>
+                    </div>
                 </button>
                 <ul class="dropdown-menu" aria-labelledby="userMenuButton">
-                    <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="fas fa-user-edit"></i> Profil</a></li>
+                    <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="fas fa-user-edit"></i> Profile</a></li>
                     <li>
                         <hr class="dropdown-divider">
                     </li>
                     <li>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
-                            <button type="submit" class="dropdown-item"><i class="fas fa-sign-out-alt"></i> Keluar</button>
+                            <button type="submit" class="dropdown-item"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
                         </form>
                     </li>
                 </ul>
@@ -527,7 +567,7 @@
             </div>
 
             <footer>
-                <strong>{{ config('app.name', 'Laravel') }}</strong> &copy; {{ date('Y') }}
+                <strong>PT Kayu Mabel Indonesia</strong> &copy; 2025
             </footer>
         </main>
     </div>

@@ -16,45 +16,49 @@
 </div>
 
 <div class="card yz-card shadow-sm">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <div>
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
+        <div class="py-1">
             @if($selected['werks'] && $selected['auart'])
             <i class="fas fa-chart-bar me-2"></i>
-            Hasil untuk: <strong>Plant {{ $selected['werks'] }}</strong> &mdash; <strong>SO Type {{ $selected['auart'] }}</strong>
-            <span class="text-muted small ms-2">({{ $selectedDescription }})</span>
+            <strong>Result for Plant : {{ $selected['werks'] }}</strong> - <strong>SO Type : {{ $selected['auart'] }}</strong>
+            <span class="text-muted small ms-2 d-none d-md-inline">({{ $selectedDescription }})</span>
             @else
-            <i class="fas fa-info-circle me-2"></i> Silakan pilih Plant dan SO Type dari menu sidebar.
+            <i class="fas fa-info-circle me-2"></i> Silakan pilih WERKS dan AUART dari menu sidebar.
             @endif
         </div>
     </div>
 
-    <div class="card-body p-0">
-        <div class="p-3 mx-3 mt-3 yz-main-title-wrapper">
+    <div class="card-body p-0 p-md-2">
+        <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
             <h5 class="yz-table-title mb-0">
                 <i class="fas fa-users me-2"></i>Overview Customer
             </h5>
         </div>
 
-        <div class="table-responsive yz-table px-3">
+        <div class="table-responsive yz-table px-md-3">
             @if($compact)
             <table class="table table-hover mb-0 align-middle yz-grid">
                 <thead class="yz-header-customer">
                     <tr>
-                        <th style="width:60px;"></th>
-                        <th style="min-width:450px;">Customer</th>
-                        <th style="min-width:180px; text-align:center;">Keterlambatan</th>
-                        <th style="min-width:150px;">Outs. Value</th>
+                        <th style="width:50px;"></th>
+                        <th class="text-start" style="min-width:250px;">Customer</th>
+                        <th style="min-width:120px; text-align:center;">Overdue SO</th>
+                        <th style="min-width:150px; text-align:center;">Overdue Rate</th>
+                        <th style="min-width:150px;">Value</th>
                     </tr>
                 </thead>
                 <tbody>
                     @forelse ($rows as $r)
                     @php $kid = 'krow_'.$r->KUNNR.'_'.$loop->index; @endphp
                     <tr class="yz-kunnr-row" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}" title="Klik untuk melihat detail pesanan">
-                        <td>
+                        <td class="sticky-col-mobile-disabled">
                             <span class="kunnr-caret"><i class="fas fa-chevron-right"></i></span>
                         </td>
-                        <td>
+                        <td class="sticky-col-mobile-disabled text-start">
                             <span class="fw-bold">{{ $r->NAME1 }}</span>
+                        </td>
+                        <td class="text-center">
+                            {{ $r->SO_LATE_COUNT }}
                         </td>
                         <td class="text-center">
                             @php
@@ -65,19 +69,15 @@
                         <td class="data-raw-totpr">
                             <span class="customer-totpr">
                                 @php
-                                if ($r->WAERK === 'IDR') {
-                                echo 'Rp ' . number_format($r->TOTPR, 2, ',', '.');
-                                } elseif ($r->WAERK === 'USD') {
-                                echo '$' . number_format($r->TOTPR, 2, '.', ',');
-                                } else {
-                                echo ($r->WAERK ?? '') . ' ' . number_format($r->TOTPR, 2, ',', '.');
-                                }
+                                if ($r->WAERK === 'IDR') { echo 'Rp ' . number_format($r->TOTPR, 2, ',', '.'); }
+                                elseif ($r->WAERK === 'USD') { echo '$' . number_format($r->TOTPR, 2, '.', ','); }
+                                else { echo ($r->WAERK ?? '') . ' ' . number_format($r->TOTPR, 2, ',', '.'); }
                                 @endphp
                             </span>
                         </td>
                     </tr>
                     <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                        <td colspan="4" class="p-0">
+                        <td colspan="5" class="p-0">
                             <div class="yz-nest-wrap">
                                 <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
                                     <div class="spinner-border spinner-border-sm me-2" role="status"><span class="visually-hidden">Loading...</span></div>
@@ -88,7 +88,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="4" class="text-center p-5">
+                        <td colspan="5" class="text-center p-5">
                             <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
                             <h5 class="text-muted">Data tidak ditemukan</h5>
                             <p>Tidak ada data yang cocok untuk filter yang Anda pilih.</p>
@@ -112,45 +112,25 @@
     style="display: none;">
 </div>
 
-{{-- Judul Dinamis dan Tombol Filter --}}
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-3">
+<div class="d-flex flex-column flex-lg-row justify-content-lg-between align-items-lg-center mb-3 gap-3">
     <div>
         <h2 class="mb-0 fw-bolder">Dashboard Overview</h2>
         <p class="text-muted mb-0">
-            Menampilkan data untuk: <strong>{{ $selectedLocationName }}</strong> &mdash; <strong>{{ $selectedTypeName }}</strong>
+            Displaying Outstanding Value Data
         </p>
     </div>
-
-    <div class="d-flex flex-wrap gap-3">
+    <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
         {{-- Filter Lokasi --}}
         <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-            <li class="nav-item">
-                <a class="nav-link {{ !$selectedLocation ? 'active' : '' }}"
-                    href="{{ route('dashboard', array_merge(request()->query(), ['location' => null])) }}">All Locations</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}"
-                    href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000'])) }}">Semarang</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}"
-                    href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000'])) }}">Surabaya</a>
-            </li>
+            <li class="nav-item"><a class="nav-link {{ !$selectedLocation ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => null])) }}">All Location</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000'])) }}">Semarang</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000'])) }}">Surabaya</a></li>
         </ul>
         {{-- Filter Tipe (Export/Lokal) --}}
         <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-            <li class="nav-item">
-                <a class="nav-link {{ !$selectedType ? 'active' : '' }}"
-                    href="{{ route('dashboard', array_merge(request()->query(), ['type' => null])) }}">All Types</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}"
-                    href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'export'])) }}">Export</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}"
-                    href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'lokal'])) }}">Lokal</a>
-            </li>
+            <li class="nav-item"><a class="nav-link {{ !$selectedType ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => null])) }}">All Type</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'export'])) }}">Export</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'lokal'])) }}">Lokal</a></li>
         </ul>
     </div>
 </div>
@@ -205,7 +185,7 @@
                     <i class="fas fa-business-time"></i>
                 </div>
                 <div class="ms-3">
-                    <p class="mb-1 text-muted">SO Terlambat</p>
+                    <p class="mb-1 text-muted">Overdue SO</p>
                     <h4 class="mb-0 fw-bolder"><span id="kpi-overdue-so">0</span> <small class="text-danger" id="kpi-overdue-rate">(0%)</small></h4>
                 </div>
             </div>
@@ -244,7 +224,7 @@
     <div class="col-lg-6">
         <div class="card shadow-sm h-100 yz-chart-card">
             <div class="card-body d-flex flex-column">
-                <h5 class="card-title text-primary-emphasis"><i class="fas fa-crown me-2"></i>Top 5 Customers by Outstanding Value (USD)</h5>
+                <h5 class="card-title text-primary-emphasis"><i class="fas fa-crown me-2"></i>Top 4 Customer with the most Outstanding value</h5>
                 <hr class="mt-2">
                 <div class="chart-container flex-grow-1">
                     <canvas id="chartTopCustomersValue"></canvas>
@@ -255,7 +235,7 @@
     <div class="col-lg-6">
         <div class="card shadow-sm h-100 yz-chart-card">
             <div class="card-body d-flex flex-column">
-                <h5 class="card-title text-danger-emphasis"><i class="fas fa-triangle-exclamation me-2"></i>Top 5 Customers with Most Overdue SO</h5>
+                <h5 class="card-title text-danger-emphasis"><i class="fas fa-triangle-exclamation me-2"></i>Top 4 Customers with Most Overdue SO</h5>
                 <hr class="mt-2">
                 <div class="chart-container flex-grow-1">
                     <canvas id="chartTopOverdueCustomers"></canvas>
@@ -270,17 +250,12 @@
     <div class="col-12">
         <div class="card shadow-sm yz-chart-card">
             <div class="card-body">
-                {{-- Wrapper untuk Judul dan Legenda --}}
                 <div class="d-flex justify-content-between align-items-start mb-2">
-                    {{-- Bagian Kiri: Judul dan Deskripsi --}}
                     <div>
                         <h5 class="card-title mb-0">
-                            <i class="fas fa-tasks me-2"></i>Analisis Kinerja Tipe Sales Order
+                            <i class="fas fa-tasks me-2"></i>Outstanding SO & Performance Details by Type
                         </h5>
-                        <p class="text-muted small mt-1">Ringkasan performa outstanding untuk setiap jenis Sales Order.</p>
                     </div>
-
-                    {{-- Bagian Kanan: Legenda Warna Gaya Badge --}}
                     <div class="d-flex flex-wrap justify-content-end align-items-center" style="gap: 8px; flex-shrink: 0; margin-left: 1rem;">
                         <span class="legend-badge" style="background-color: #ffc107;">1-30</span>
                         <span class="legend-badge" style="background-color: #fd7e14;">31-60</span>
@@ -293,12 +268,12 @@
                     <table class="table table-hover align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th scope="col">Tipe SO</th>
+                                <th scope="col">SO Type</th>
                                 <th scope="col" class="text-center">Total SO</th>
                                 <th scope="col" class="text-end">Outs. Value (IDR)</th>
                                 <th scope="col" class="text-end">Outs. Value (USD)</th>
-                                <th scope="col" class="text-center">SO Terlambat</th>
-                                <th scope="col" style="min-width: 300px;" class="text-center">Distribusi Keterlambatan (Hari)</th>
+                                <th scope="col" class="text-center">SO Overdue</th>
+                                <th scope="col" style="min-width: 300px;" class="text-center">Overdue Distribution (Days)</th>
                             </tr>
                         </thead>
                         <tbody id="so-performance-tbody">
@@ -313,21 +288,18 @@
 {{-- BARIS 5: DISTRIBUSI ITEM OUTSTANDING KUANTITAS KECIL --}}
 <div class="row g-4">
     <div class="col-12">
-        {{-- Card Khusus untuk Chart --}}
         <div class="card shadow-sm yz-chart-card">
             <div class="card-body">
                 <h5 class="card-title text-info-emphasis">
-                    <i class="fas fa-chart-line me-2"></i>Distribusi Item Outstanding Kuantitas Kecil (≤5) per Pelanggan
+                    <i class="fas fa-chart-line me-2"></i>Small Quantity (≤5) Outstanding Items by Customer
                 </h5>
                 <hr class="mt-2">
-                {{-- Container chart dengan tinggi tetap --}}
                 <div class="chart-container" style="height: 600px;">
                     <canvas id="chartSmallQtyByCustomer"></canvas>
                 </div>
             </div>
         </div>
 
-        {{-- Container untuk Tabel Detail, sekarang berada di luar card chart --}}
         <div id="smallQtyDetailsContainer" class="card shadow-sm yz-chart-card mt-4" style="display: none;">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -339,7 +311,6 @@
                 </div>
                 <hr class="mt-2">
                 <div id="smallQtyDetailsTable" class="mt-3">
-                    {{-- Hasil tabel dari JavaScript akan ditampilkan di sini --}}
                 </div>
             </div>
         </div>
@@ -515,9 +486,16 @@
     }
 
     .yz-nest-wrap {
-        padding: 1rem;
+        padding: .5rem;
         background: #f8f9fa;
-        margin-left: 60px
+        margin-left: 0
+    }
+
+    @media (min-width: 768px) {
+        .yz-nest-wrap {
+            padding: 1rem;
+            margin-left: 60px
+        }
     }
 
     .yz-nest[style=""] .yz-nest-wrap {
@@ -667,7 +645,6 @@
         font-size: 1.5rem
     }
 
-    /* CSS untuk Embedded Chart di Tabel */
     .bar-chart-container {
         display: flex;
         height: 20px;
@@ -685,10 +662,10 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.2s ease-in-out;
+        transition: all .2s ease-in-out;
         white-space: nowrap;
         overflow: hidden;
-        text-overflow: ellipsis;
+        text-overflow: ellipsis
     }
 
     .bar-segment:hover {
@@ -697,12 +674,9 @@
         box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
     }
 
-    /* [BARU] CSS untuk highlight hasil pencarian */
     .row-highlighted td {
         background-color: #dbeafe !important;
-        /* Warna biru terang (Tailwind blue-200) */
         animation: pulse-highlight 1.5s ease-in-out 2;
-        /* Animasi berdenyut 2 kali */
         border-top: 1px solid #93c5fd !important;
         border-bottom: 1px solid #93c5fd !important;
     }
@@ -716,7 +690,6 @@
             background-color: #93c5fd;
         }
 
-        /* Warna biru lebih gelap (blue-300) */
         100% {
             background-color: #dbeafe;
         }
@@ -730,9 +703,16 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
 <script>
-    // ===================================================================
-    // BAGIAN UTILITY (Fungsi Bantuan)
-    // ===================================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        const customerRows = document.querySelectorAll('.yz-kunnr-row');
+        customerRows.forEach(row => {
+            row.querySelector('td:nth-child(2)').setAttribute('data-label', 'Customer');
+            row.querySelector('td:nth-child(3)').setAttribute('data-label', 'Overdue SO');
+            row.querySelector('td:nth-child(4)').setAttribute('data-label', 'Overdue Rate');
+            row.querySelector('td:nth-child(5)').setAttribute('data-label', 'Value');
+        });
+    });
+
     const formatFullCurrency = (value, currency) => {
         const n = parseFloat(value);
         if (isNaN(n)) return '';
@@ -810,7 +790,7 @@
 
             function renderT2(rows, kunnr) {
                 if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data SO untuk KUNNR <b>${kunnr}</b>.</div>`;
-                let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview SO</h5><table class="table table-sm mb-0 yz-mini"><thead class="yz-header-so"><tr><th style="width:40px;text-align:center;"></th><th style="min-width:100px;text-align:left;">SO</th><th style="min-width:150px;text-align:center;">PO</th><th style="min-width:100px;text-align:right;">Outs. Value</th><th style="min-width:100px;text-align:center;">Req. Delv Date</th><th style="min-width:100px;text-align:center;">Overdue (Days)</th><th style="min-width:120px;text-align:center;">Persentase Kekurangan</th></tr></thead><tbody>`;
+                let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview SO</h5><table class="table table-sm mb-0 yz-mini"><thead class="yz-header-so"><tr><th style="width:40px;text-align:center;"></th><th style="min-width:100px;text-align:left;">SO</th><th style="min-width:150px;text-align:center;">PO</th><th style="min-width:100px;text-align:right;">Outs. Value</th><th style="min-width:100px;text-align:center;">Req. Delv Date</th><th style="min-width:100px;text-align:center;">Overdue (Days)</th><th style="min-width:120px;text-align:center;">Shortage %</th></tr></thead><tbody>`;
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const overdueDays = r.Overdue;
@@ -825,9 +805,9 @@
 
             function renderT3(rows) {
                 if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
-                let out = `<div class="table-responsive"><table class="table table-sm mb-0 yz-mini"><thead class="yz-header-item"><tr><th style="min-width:80px">Item</th><th style="min-width:150px">Material FG</th><th style="min-width:300px">Desc FG</th><th style="min-width:80px">Qty PO</th><th style="min-width:60px">Shiped</th><th style="min-width:60px">Outstanding</th><th style="min-width:80px">Net Price</th><th style="min-width:80px">Outs. Value</th><th style="min-width:80px">PO. Value</th></tr></thead><tbody>`;
+                let out = `<div class="table-responsive"><table class="table table-sm mb-0 yz-mini"><thead class="yz-header-item"><tr><th style="min-width:80px">Item</th><th style="min-width:150px">Material FG</th><th style="min-width:300px">Desc FG</th><th style="min-width:80px">Qty PO</th><th style="min-width:60px">Shipped</th><th style="min-width:60px">Outstanding</th><th style="min-width:80px">Outs. Value</th></tr></thead><tbody>`;
                 rows.forEach(r => {
-                    out += `<tr><td>${r.POSNR ?? ''}</td><td>${r.MATNR ?? ''}</td><td>${r.MAKTX ?? ''}</td><td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td><td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td><td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td><td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td><td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td><td>${formatCurrencyForTable(r.NETWR, r.WAERK)}</td></tr>`;
+                    out += `<tr><td>${r.POSNR ?? ''}</td><td>${r.MATNR ?? ''}</td><td>${r.MAKTX ?? ''}</td><td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td><td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td><td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td><td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td></tr>`;
                 });
                 out += `</tbody></table></div>`;
                 return out;
@@ -1049,12 +1029,32 @@
                             },
                             tooltip: {
                                 callbacks: {
+                                    title: function(tooltipItems) {
+                                        return tooltipItems[0].label.split(',')[0];
+                                    },
                                     label: function(context) {
                                         const dataPoint = chartData[context.dataIndex];
                                         if (currency && dataPoint) {
                                             const value = formatFullCurrency(context.raw, currency);
                                             const count = dataPoint.so_count;
                                             return `${value} (${count} SO)`;
+                                        }
+                                        if (canvasId === 'chartTopOverdueCustomers' && dataPoint) {
+                                            const total = dataPoint.overdue_count;
+                                            const smg = dataPoint.smg_count;
+                                            const sby = dataPoint.sby_count;
+
+                                            let details = [];
+                                            if (smg > 0) {
+                                                details.push(`SMG: ${smg}`);
+                                            }
+                                            if (sby > 0) {
+                                                details.push(`SBY: ${sby}`);
+                                            }
+                                            if (details.length > 0) {
+                                                return `${total} SO (${details.join(', ')})`;
+                                            }
+                                            return `${total} SO`;
                                         }
                                         return `${context.raw} SO`;
                                     }
@@ -1088,7 +1088,7 @@
                     border: 'rgba(25, 135, 84, 1)'
                 }, 'IDR');
             } else {
-                if (topValueTitle) topValueTitle.innerHTML = `<i class="fas fa-crown me-2"></i>Top 5 Customers by Outstanding Value (USD)`;
+                if (topValueTitle) topValueTitle.innerHTML = `<i class="fas fa-crown me-2"></i>Top 4 Customers by Outstanding Value (USD)`;
                 createHorizontalBarChart('chartTopCustomersValue', chartData.top_customers_value_usd, 'total_value', 'Total Outstanding', {
                     bg: 'rgba(13, 110, 253, 0.6)',
                     border: 'rgba(13, 110, 253, 1)'
@@ -1104,7 +1104,7 @@
             const performanceTbody = document.getElementById('so-performance-tbody');
             if (performanceTbody) {
                 if (!performanceData || performanceData.length === 0) {
-                    performanceTbody.innerHTML = `<tr><td colspan="6" class="text-center p-5 text-muted"><i class="fas fa-info-circle fa-2x mb-2"></i><br>Data kinerja tidak tersedia untuk filter ini.</td></tr>`;
+                    performanceTbody.innerHTML = `<tr><td colspan="6" class="text-center p-5 text-muted"><i class="fas fa-info-circle fa-2x mb-2"></i><br>Performance data is not available for this filter.</td></tr>`;
                 } else {
                     let tableHtml = '';
                     performanceData.forEach(item => {
@@ -1124,16 +1124,16 @@
                         const pctOver90 = totalOverdueForBar > 0 ? (item.overdue_over_90 / totalOverdueForBar * 100).toFixed(2) : 0;
                         let barChartHtml = '<div class="bar-chart-container">';
                         if (item.overdue_1_30 > 0) {
-                            barChartHtml += `<div class="bar-segment" style="width: ${pct1_30}%; background-color: #ffc107;" data-bs-toggle="tooltip" title="1-30 Hari: ${item.overdue_1_30} SO">${item.overdue_1_30}</div>`;
+                            barChartHtml += `<div class="bar-segment" style="width: ${pct1_30}%; background-color: #ffc107;" data-bs-toggle="tooltip" title="1-30 Days: ${item.overdue_1_30} SO">${item.overdue_1_30}</div>`;
                         }
                         if (item.overdue_31_60 > 0) {
-                            barChartHtml += `<div class="bar-segment" style="width: ${pct31_60}%; background-color: #fd7e14;" data-bs-toggle="tooltip" title="31-60 Hari: ${item.overdue_31_60} SO">${item.overdue_31_60}</div>`;
+                            barChartHtml += `<div class="bar-segment" style="width: ${pct31_60}%; background-color: #fd7e14;" data-bs-toggle="tooltip" title="31-60 Days: ${item.overdue_31_60} SO">${item.overdue_31_60}</div>`;
                         }
                         if (item.overdue_61_90 > 0) {
-                            barChartHtml += `<div class="bar-segment" style="width: ${pct61_90}%; background-color: #dc3545;" data-bs-toggle="tooltip" title="61-90 Hari: ${item.overdue_61_90} SO">${item.overdue_61_90}</div>`;
+                            barChartHtml += `<div class="bar-segment" style="width: ${pct61_90}%; background-color: #dc3545;" data-bs-toggle="tooltip" title="61-90 Days: ${item.overdue_61_90} SO">${item.overdue_61_90}</div>`;
                         }
                         if (item.overdue_over_90 > 0) {
-                            barChartHtml += `<div class="bar-segment" style="width: ${pctOver90}%; background-color: #8b0000;" data-bs-toggle="tooltip" title=">90 Hari: ${item.overdue_over_90} SO">${item.overdue_over_90}</div>`;
+                            barChartHtml += `<div class="bar-segment" style="width: ${pctOver90}%; background-color: #8b0000;" data-bs-toggle="tooltip" title=">90 Days: ${item.overdue_over_90} SO">${item.overdue_over_90}</div>`;
                         }
                         barChartHtml += '</div>';
                         tableHtml += `<tr><td><div class="fw-bold">${item.Deskription}</div></td><td class="text-center">${totalSo}</td><td class="${classIdr}">${valueIdr}</td><td class="${classUsd}">${valueUsd}</td><td class="text-center"><span class="fw-bold ${overdueSo > 0 ? 'text-danger' : ''}">${overdueSo}</span><small class="text-muted d-block">(${overdueRate}%)</small></td><td>${totalOverdueForBar > 0 ? barChartHtml : '<span class="text-muted small">Tidak ada SO terlambat</span>'}</td></tr>`;
@@ -1173,6 +1173,7 @@
                     const detailsTable = document.getElementById('smallQtyDetailsTable');
                     const closeButton = document.getElementById('closeDetailsTable');
                     closeButton.addEventListener('click', () => detailsContainer.style.display = 'none');
+
                     new Chart(ctxSmallQty, {
                         type: 'bar',
                         data: {
@@ -1196,12 +1197,28 @@
                                     beginAtZero: true,
                                     title: {
                                         display: true,
-                                        text: 'Jumlah Item (dengan Qty Outstanding ≤ 5)'
+                                        text: 'Item (With Qty Outstanding ≤ 5)'
                                     }
                                 },
                                 y: {}
                             },
                             maintainAspectRatio: false,
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.x !== null) {
+                                                label += context.parsed.x + ' SO';
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
                             onClick: async (event, elements) => {
                                 if (elements.length === 0) return;
                                 const barElement = elements[0];
@@ -1226,28 +1243,28 @@
                                     if (result.ok && result.data.length > 0) {
                                         result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2) - parseFloat(b.QTY_BALANCE2));
                                         let tableHtml = `<div class="table-responsive"><table class="table table-striped table-hover table-sm align-middle">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th style="width: 5%;" class="text-center">No.</th>
-                                                    <th class="text-center">PO</th>
-                                                    <th class="text-center">SO</th>
-                                                    <th class="text-center">Item</th>
-                                                    <th>Desc FG</th>
-                                                    <th class="text-center">Qty PO</th>
-                                                    <th class="text-center">Outstanding</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>`;
+                                                            <thead class="table-light">
+                                                                <tr>
+                                                                    <th style="width: 5%;" class="text-center">No.</th>
+                                                                    <th class="text-center">PO</th>
+                                                                    <th class="text-center">SO</th>
+                                                                    <th class="text-center">Item</th>
+                                                                    <th>Desc FG</th>
+                                                                    <th class="text-center">Qty PO</th>
+                                                                    <th class="text-center">Outstanding</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>`;
                                         result.data.forEach((item, index) => {
                                             tableHtml += `<tr>
-                                                <td class="text-center">${index + 1}</td>
-                                                <td class="text-center">${item.BSTNK || '-'}</td>
-                                                <td class="text-center">${item.VBELN}</td>
-                                                <td class="text-center">${item.POSNR}</td>
-                                                <td>${item.MAKTX}</td>
-                                                <td class="text-center">${parseFloat(item.KWMENG)}</td>
-                                                <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
-                                            </tr>`;
+                                                            <td class="text-center">${index + 1}</td>
+                                                            <td class="text-center">${item.BSTNK || '-'}</td>
+                                                            <td class="text-center">${item.VBELN}</td>
+                                                            <td class="text-center">${item.POSNR}</td>
+                                                            <td>${item.MAKTX}</td>
+                                                            <td class="text-center">${parseFloat(item.KWMENG)}</td>
+                                                            <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
+                                                        </tr>`;
                                         });
                                         tableHtml += `</tbody></table></div>`;
                                         detailsTable.innerHTML = tableHtml;
@@ -1277,7 +1294,6 @@
                 searchInput.value = searchTerm;
             }
 
-            // 2. Logika untuk highlight baris
             if (highlightKunnr && highlightVbeln) {
                 const customerRow = document.querySelector(`.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
 
@@ -1302,8 +1318,7 @@
                                         this.classList.remove('row-highlighted');
                                     }, {
                                         once: true
-                                    }); // {once: true} agar listener hanya berjalan sekali
-
+                                    });
                                     observer.disconnect();
                                 }
                             }

@@ -129,15 +129,15 @@ class DashboardController extends Controller
                 // Subquery untuk mendapatkan daftar Tipe SO yang eksplisit 'Local'
                 $explicitlyLocalTypes = DB::table('maping')->select('IV_AUART', 'IV_WERKS')->where('Deskription', 'like', '%Local%');
 
+                // [MODIFIKASI] Logika diubah agar hanya mengambil yang mengandung kata "Export"
+                // dan secara eksplisit MENGECUALIKAN yang mengandung kata "Replace" atau "Local".
                 $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
-                    // Ambil semua Tipe SO yang punya transaksi USD
-                    $query->select('IV_AUART_PARAM', 'IV_WERKS_PARAM')
-                        ->from('so_yppr079_t2')
-                        ->groupBy('IV_AUART_PARAM', 'IV_WERKS_PARAM')
-                        ->havingRaw("SUM(CASE WHEN WAERK = 'USD' THEN 1 ELSE 0 END) > 0");
-                })
-                    // KECUALIKAN Tipe SO yang sudah diidentifikasi sebagai 'Local'
-                    ->whereNotIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), $explicitlyLocalTypes);
+                    $query->select('IV_AUART', 'IV_WERKS')
+                        ->from('maping')
+                        ->where('Deskription', 'like', '%Export%')
+                        ->where('Deskription', 'not like', '%Replace%')
+                        ->where('Deskription', 'not like', '%Local%');
+                });
             }
 
 
@@ -200,7 +200,7 @@ class DashboardController extends Controller
                 ->groupBy('t2.NAME1')
                 ->having('total_value', '>', 0)
                 ->orderByDesc('total_value')
-                ->limit(5)
+                ->limit(4) // [MODIFIKASI] Diubah dari 5 menjadi 4
                 ->get();
 
             $chartData['top_customers_value_idr'] = (clone $baseQuery)
@@ -210,18 +210,25 @@ class DashboardController extends Controller
                 ->groupBy('t2.NAME1')
                 ->having('total_value', '>', 0)
                 ->orderByDesc('total_value')
-                ->limit(5)
+                ->limit(4) // [MODIFIKASI] Diubah dari 5 menjadi 4
                 ->get();
 
             $chartData['top_customers_overdue'] = (clone $baseQuery)
-                ->select('t2.NAME1', DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'), DB::raw('GROUP_CONCAT(DISTINCT t2.IV_WERKS_PARAM ORDER BY t2.IV_WERKS_PARAM ASC SEPARATOR ", ") as locations'))
+                ->select(
+                    't2.NAME1',
+                    DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'),
+                    DB::raw('GROUP_CONCAT(DISTINCT t2.IV_WERKS_PARAM ORDER BY t2.IV_WERKS_PARAM ASC SEPARATOR ", ") as locations'),
+                    // [MODIFIKASI] Tambahkan hitungan terpisah untuk setiap lokasi
+                    DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t2.VBELN ELSE NULL END) as smg_count"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t2.VBELN ELSE NULL END) as sby_count")
+                )
                 ->whereRaw("{$safeEdatu} < CURDATE()")
                 ->groupBy('t2.NAME1')
                 ->orderByDesc('overdue_count')
-                ->limit(5)
+                ->limit(4)
                 ->get();
 
-
+                
             // --- Kalkulasi untuk Tabel Analisis Kinerja ---
             $performanceQueryBase = DB::table('maping as m')
                 ->join('so_yppr079_t2 as t2', function ($join) {
