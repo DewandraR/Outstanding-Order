@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('yppr:sync')
-    ->everyTwoHours() 
+    ->dailyAt('03:00') 
     ->timezone('Asia/Jakarta')
     ->before(function () {
         echo now()->format('Y-m-d H:i:s') . ' Running ["artisan" yppr:sync]' . PHP_EOL;
