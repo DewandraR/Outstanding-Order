@@ -88,15 +88,19 @@ python api.py --serve
 
 - Laravel Task Scheduling
 ```bash
+# Singkron manual
 php artisan yppr:sync
 
-# (so the output is not too verbose)
+# Singkron Auto
+php artisan schedule:work
+
+# Make the output is not too verbose
 php artisan schedule:work 2>&1 | Where-Object {$_ -and ($_ -notmatch "No scheduled commands are ready to run")}
 
 
 # Menjalankan scheduler & melihat daftar jadwal:
-php artisan schedule:work
 php artisan schedule:list
+php artisan schedule:run
 
 ```
 # HOW TO DEPLOY
