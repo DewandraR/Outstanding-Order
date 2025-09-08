@@ -1,6 +1,6 @@
 Monitoring Outstanding SO Dashboard
 <p align="center">
-<img src="https://www.google.com/search?q=https://raw.githubusercontent.com/mankyau/oso/main/public/images/KMI.png" width="150" alt="Logo PT Kayu Mabel Indonesia">
+<img src="https://www.google.com/search?q=https://raw.githubusercontent.com/mankyau/oso/main/public/Images/KMI.png" width="150" alt="Logo PT Kayu Mabel Indonesia">
 </p>
 
 <h3 align="center">PT Kayu Mabel Indonesia</h3>
