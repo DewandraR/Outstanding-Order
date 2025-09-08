@@ -1,61 +1,181 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
-
+Monitoring Outstanding SO Dashboard
 <p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+<img src="https://www.google.com/search?q=https://raw.githubusercontent.com/mankyau/oso/main/public/images/KMI.png" width="150" alt="Logo PT Kayu Mabel Indonesia">
 </p>
 
-## About Laravel
+<h3 align="center">PT Kayu Mabel Indonesia</h3>
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+<p align="center">
+A web-based dashboard application for monitoring outstanding Sales Orders (SO), with data synchronized directly from SAP.
+</p>
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+📋 Overview
+This application consists of two main components:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Laravel Web Application: A user-friendly dashboard built with Laravel, Tailwind CSS, and Chart.js. It provides visualizations and detailed reports of outstanding SO data.
 
-## Learning Laravel
+Python Sync Service: A standalone Python script (api.py) that connects to SAP via RFC (Z_FM_YPPR079_SO), fetches the latest SO data, and stores it in a MySQL database for the Laravel application to consume.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+The primary goal is to present complex SAP data in an interactive, easy-to-understand, and visually appealing format for internal company use.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+✨ Key Features
+📊 Interactive Dashboard: Main overview with key performance indicators (KPIs) like Total Outstanding Value, Overdue SO count, and performance rates.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+📈 Data Visualization: Charts displaying outstanding values by location, SO status overview, top customers by value, and top customers with overdue SOs.
 
-## Laravel Sponsors
+📄 Detailed Drill-Down Reports: An interactive table allowing users to drill down from a customer summary to individual SOs and their specific item details.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+🔍 Advanced Filtering & Search: Users can filter data by location (Semarang/Surabaya), SO type (Export/Local), and search for specific PO or SO numbers.
 
-### Premium Partners
+🔄 Automated SAP Sync: A scheduled task that runs the Python script periodically to ensure the data on the dashboard is always up-to-date.
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+🔐 Authentication: Secure login system for authorized users.
 
-## Contributing
+🛠️ Technology Stack
+Backend (Web): PHP 8.1+, Laravel 10
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Frontend: Tailwind CSS, Alpine.js, Chart.js
 
-## Code of Conduct
+Data Sync Service: Python 3.8+
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Database: MySQL / MariaDB
 
-## Security Vulnerabilities
+SAP Integration: pyrfc (Python RFC Connector)
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Web Server: Nginx / Apache
 
-## License
+🚀 Installation & Setup
+Follow these steps to set up the project locally.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Prerequisites
+PHP >= 8.1
+
+Composer
+
+Node.js & NPM
+
+Python >= 3.8
+
+MySQL Database
+
+SAP RFC SDK: The SAP NetWeaver RFC SDK libraries must be installed on the machine running the Python script.
+
+1. Clone the Repository
+git clone [https://github.com/your-username/your-repository.git](https://github.com/your-username/your-repository.git)
+cd your-repository
+
+2. Setup Laravel Application
+First, set up the web dashboard.
+
+# Install PHP dependencies
+composer install
+
+# Install NPM dependencies
+npm install
+npm run build
+
+# Create your environment file
+cp .env.example .env
+
+# Generate a new application key
+php artisan key:generate
+
+Next, open the .env file and configure your database credentials:
+
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=oso_yppr
+DB_USERNAME=root
+DB_PASSWORD=
+
+Finally, run the database migrations to create the necessary tables for users, etc. (The SO tables will be created by the Python script).
+
+php artisan migrate
+
+3. Setup Python Sync Service
+The Python script api.py is responsible for fetching data from SAP.
+
+First, install the required Python packages. It is highly recommended to use a virtual environment.
+
+# Create and activate a virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install pyrfc mysql-connector-python python-dotenv flask
+
+Next, configure the SAP and Database credentials in your .env file. The Python script will read these values.
+
+# --- SAP Credentials ---
+SAP_ASHOST=192.168.254.154
+SAP_SYSNR=01
+SAP_CLIENT=300
+SAP_LANG=EN
+SAP_USERNAME=auto_email
+SAP_PASSWORD=your_sap_password
+
+# --- DB Credentials (already configured above) ---
+DB_HOST=127.0.0.1
+DB_USER=root
+DB_PASS=
+DB_NAME=oso_yppr
+
+🔄 Data Synchronization
+To populate the dashboard with data, you must run the sync script.
+
+Manual Sync (via Command Line)
+You can trigger the sync process manually using the api.py script. This is useful for initial setup or testing.
+
+# Sync all data from the `maping` table
+python api.py --sync
+
+# Auto Sync all data from the `maping` tablel (so the output is not too verbose)
+php artisan schedule:work 2>&1 | Where-Object {$_ -and ($_ -notmatch "No scheduled commands are ready to run")}
+
+# Sync data for a specific plant (werks)
+python api.py --sync --werks 2000
+
+# Sync data for a specific plant and order type (auart)
+python api.py --sync --werks 3000 --auart ZOR2
+
+The script will:
+
+Connect to SAP.
+
+Fetch data for each WERKS/AUART pair.
+
+TRUNCATE the old so_yppr079_t* tables.
+
+Bulk insert the new data into the MySQL database.
+
+Automated Sync (via Laravel Scheduler)
+For production, the data sync is automated using Laravel's Task Scheduler.
+
+A custom Artisan command php artisan yppr:sync is available, which executes the Python script.
+
+To enable automated syncing, add the following Cron entry to your server. This will run the Laravel scheduler every minute, which in turn will execute the sync command based on the schedule defined in app/Console/Kernel.php.
+
+* * * * * cd /path-to-your-project && php artisan schedule:run >> /dev/null 2>&1
+
+You can view the schedule and run it manually with:
+
+# See the list of scheduled tasks
+php artisan schedule:list
+
+# Run the scheduler manually (useful for testing)
+php artisan schedule:work
+
+🖥️ Usage
+Start the development server:
+
+php artisan serve
+
+Navigate to http://127.0.0.1:8000.
+
+Register a new user or log in with existing credentials.
+
+Ensure you have run the data sync at least once to see data on the dashboard.
+
+📄 License
+This project is open-sourced software licensed under the MIT license.
