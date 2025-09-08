@@ -5,7 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profile</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    {{-- [DIUBAH] Memuat aset yang dikompilasi Vite, yang sudah berisi Tailwind CSS --}}
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+
+    {{-- Menambahkan font Poppins lokal agar konsisten --}}
+    <link rel="stylesheet" href="{{ asset('vendor/fonts/poppins/poppins.css') }}">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+    </style>
 </head>
 
 <body class="bg-gradient-to-br from-green-50 to-green-100 min-h-screen flex items-center justify-center">

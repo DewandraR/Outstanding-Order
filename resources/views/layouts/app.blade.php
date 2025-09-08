@@ -7,15 +7,14 @@
     <title>@yield('title', config('app.name', 'Laravel'))</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    {{-- Google Fonts: Poppins --}}
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    {{-- [DIUBAH] Google Fonts: Poppins (Lokal) --}}
+    <link rel="stylesheet" href="{{ asset('vendor/fonts/poppins/poppins.css') }}">
 
-    {{-- Bootstrap 5 CSS --}}
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    {{-- Font Awesome for Icons --}}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+    {{-- [DIUBAH] Bootstrap 5 CSS (Lokal) --}}
+    <link href="{{ asset('vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+
+    {{-- [DIUBAH] Font Awesome (Lokal) --}}
+    <link rel="stylesheet" href="{{ asset('vendor/fontawesome/css/all.min.css') }}" />
 
     {{-- Custom Styles for Sidebar Layout --}}
     <style>
@@ -572,7 +571,8 @@
         </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {{-- [DIUBAH] Bootstrap 5 JS (Lokal) --}}
+    <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {

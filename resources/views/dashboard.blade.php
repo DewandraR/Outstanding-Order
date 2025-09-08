@@ -698,9 +698,10 @@
 @endpush
 
 @push('scripts')
-{{-- Memuat pustaka Chart.js & adapter tanggal dari CDN --}}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+{{-- [DIUBAH] Memuat pustaka Chart.js & adapter tanggal dari direktori lokal --}}
+<script src="{{ asset('vendor/chartjs/chart.umd.js') }}"></script>
+<script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
+
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
