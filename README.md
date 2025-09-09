@@ -118,6 +118,13 @@ composer install --optimize-autoloader --no-dev
 ```
 
 
+## Login Account
+
+```bash
+guest@gmail.com
+Kmi12345
+```
+
 > ⚠️ **IMPORTANT:** Jangan lupa jalankan "php artisan schedule:work" atau "php artisan schedule:work 2>&1 | Where-Object {$_ -and ($_ -notmatch "No scheduled commands are ready to run")}"(agar output tidak Verbose) ketika menjalankan atau deploy ke server atau hosting agar data selalu terupdate.
 > python akan auto hit ke SAP pada jam 03.00 untuk menghindari kendala mati listrik ketika dini hari 
 > Jalankan `npm run dev` setelah mengedit file Tailwind agar style terkompilasi ulang.
