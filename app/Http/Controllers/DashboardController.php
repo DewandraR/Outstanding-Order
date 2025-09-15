@@ -8,45 +8,220 @@ use Illuminate\Support\Facades\DB;
 class DashboardController extends Controller
 {
     /**
-     * Customer yang harus diabaikan total (tidak tampil, tidak dihitung).
+     * [DISEMPURNAKAN] Fungsi untuk mengambil data khusus untuk dasbor Outstanding SO.
+     * Fokus pada item dengan PACKG != 0 (siap kirim).
      */
-    protected array $blacklistedCustomers = [
-        'OVADIA DESIGN GROUP',
-        'WOODBRIGHT ASIA',
-        'SAMPLE CUSTOMER',
-    ];
-
-    /**
-     * Terapkan filter blacklist ke Query Builder.
-     */
-    protected function applyBlacklist($query, string $alias = 't2')
+    private function getSoDashboardData(Request $request)
     {
-        if (empty($this->blacklistedCustomers)) {
-            return $query;
+        $location = $request->query('location'); // '2000' | '3000' | null
+        $type     = $request->query('type');     // 'lokal' | 'export' | null
+
+        $today     = now()->startOfDay();
+        $endOfWeek = now()->endOfWeek();
+
+        // Parser tanggal EDATU yang aman (t3)
+        $safeEdatu = "COALESCE(
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
+
+        // ==========================
+        // 1) Subquery VBELN relevan
+        // ==========================
+        $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3');
+
+        if ($type === 'lokal') {
+            $relevantVbelnsQuery->join('maping as m', function ($join) {
+                $join->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })->where('m.Deskription', 'like', '%Local%');
+        } elseif ($type === 'export') {
+            $relevantVbelnsQuery->join('maping as m', function ($join) {
+                $join->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })->where('m.Deskription', 'like', '%Export%');
         }
 
-        $quoted = array_map(
-            fn($n) => DB::getPdo()->quote(mb_strtoupper(trim($n))),
-            $this->blacklistedCustomers
-        );
+        $relevantVbelnsQuery->when($location, fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc));
 
-        $col = "UPPER(TRIM({$alias}.NAME1))";
-        return $query->whereRaw("{$col} NOT IN (" . implode(',', $quoted) . ")");
+        // Hanya SO yang punya item siap kirim (PACKG > 0)
+        $relevantVbelnsQuery->whereExists(function ($q) {
+            $q->select(DB::raw(1))
+                ->from('so_yppr079_t1 as t1_exists')
+                ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+                ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) > 0');
+        });
+
+        $relevantVbelnsQuery->select('t3.VBELN')->distinct();
+
+        // Base query item siap kirim **SELALU** dibatasi VBELN relevan
+        $baseQuery = DB::table('so_yppr079_t1 as t1')
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+            ->whereIn('t1.VBELN', $relevantVbelnsQuery);
+
+        $chartData = [];
+
+        // ==========================
+        // 2) KPI Cards (jumlah SO)
+        // ==========================
+        $totalOutstandingSoQuery = DB::table('so_yppr079_t3 as t3')
+            ->whereIn('t3.VBELN', (clone $relevantVbelnsQuery));
+
+        $totalOutstandingSo = (clone $totalOutstandingSoQuery)->distinct()->count('VBELN');
+        $totalOverdueSo     = (clone $totalOutstandingSoQuery)
+            ->whereRaw("{$safeEdatu} < ?", [$today])
+            ->distinct()->count('VBELN');
+
+        // =========================================================
+        // 3) KPI Value Ready to Ship (USD/IDR) – MATCH SQL kamu
+        //    SUM(TOTPR2) dari t1, group by t1.WAERK, PACKG>0
+        // =========================================================
+        $kpiTotalsQuery = DB::table('so_yppr079_t1 as t1')
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery));
+
+        $totalsByCurrency = (clone $kpiTotalsQuery)
+            ->selectRaw("
+            CAST(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS total_usd,
+            CAST(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS total_idr
+        ")->first();
+
+        // Value to ship this week (TOTPR2 + PACKG>0 + range EDATU)
+        $valueThisWeekUSD = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+            ->where('t1.WAERK', 'USD')
+            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery))
+            ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $endOfWeek])
+            ->sum('t1.TOTPR2');
+
+        $valueThisWeekIDR = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+            ->where('t1.WAERK', 'IDR')
+            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery))
+            ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $endOfWeek])
+            ->sum('t1.TOTPR2');
+
+        $chartData['kpi'] = [
+            'total_outstanding_value_usd' => (float) ($totalsByCurrency->total_usd ?? 0),
+            'total_outstanding_value_idr' => (float) ($totalsByCurrency->total_idr ?? 0),
+
+            'total_outstanding_so' => $totalOutstandingSo,
+            'total_overdue_so'     => $totalOverdueSo,
+            'overdue_rate'         => $totalOutstandingSo > 0 ? ($totalOverdueSo / $totalOutstandingSo) * 100 : 0,
+
+            'value_to_ship_this_week_usd' => (float) $valueThisWeekUSD,
+            'value_to_ship_this_week_idr' => (float) $valueThisWeekIDR,
+
+            // Bottleneck dihitung dari baseQuery yang SUDAH dibatasi VBELN relevan
+            'potential_bottlenecks' => (clone $baseQuery)
+                ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > CAST(t1.KALAB2 AS DECIMAL(15,3))')
+                ->count(),
+        ];
+
+        // ==================================================================
+        // 4) Value Ready to Ship vs Overdue by Location (tanpa currency)
+        //     Total per lokasi = on_time_value + overdue_value
+        // ==================================================================
+        $chartData['value_by_location_status'] = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
+            ->select(
+                DB::raw("CASE WHEN t3.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END as location"),
+                DB::raw("SUM(CASE WHEN {$safeEdatu} >= CURDATE() THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) as on_time_value"),
+                DB::raw("SUM(CASE WHEN {$safeEdatu} <  CURDATE() THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) as overdue_value")
+            )
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery))
+            ->groupBy('location')
+            ->get();
+
+        // ===========================================================
+        // 5) SO Fulfillment Urgency (Aging Analysis) — by SO
+        // ===========================================================
+        $agingQuery = DB::table('so_yppr079_t3 as t3')
+            ->whereIn('t3.VBELN', (clone $relevantVbelnsQuery));
+
+        $chartData['aging_analysis'] = [
+            'overdue_over_30' => (clone $agingQuery)->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) > 30")->distinct()->count('t3.VBELN'),
+            'overdue_1_30'    => (clone $agingQuery)->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 1 AND 30")->distinct()->count('t3.VBELN'),
+            'due_this_week'   => (clone $agingQuery)->whereRaw("{$safeEdatu} BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)")->distinct()->count('t3.VBELN'),
+            'on_time'         => (clone $agingQuery)->whereRaw("{$safeEdatu} > DATE_ADD(CURDATE(), INTERVAL 7 DAY)")->distinct()->count('t3.VBELN'),
+        ];
+
+        // ===========================================================
+        // 6) Top 5 Customers by Value Awaiting Shipment (TOTPR2)
+        // ===========================================================
+        $topCustomersQuery = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery));
+
+        $chartData['top_customers_value_usd'] = (clone $topCustomersQuery)
+            ->select('t3.NAME1', DB::raw('CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) as total_value'))
+            ->where('t1.WAERK', 'USD')
+            ->groupBy('t3.NAME1')
+            ->having('total_value', '>', 0)
+            ->orderByDesc('total_value')
+            ->limit(5)
+            ->get();
+
+        $chartData['top_customers_value_idr'] = (clone $topCustomersQuery)
+            ->select('t3.NAME1', DB::raw('CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) as total_value'))
+            ->where('t1.WAERK', 'IDR')
+            ->groupBy('t3.NAME1')
+            ->having('total_value', '>', 0)
+            ->orderByDesc('total_value')
+            ->limit(5)
+            ->get();
+
+        return $chartData;
     }
 
+
+
+    /**
+     * Metode utama untuk menampilkan dasbor atau laporan.
+     */
     public function index(Request $request)
     {
-        // 1. Mengambil parameter dari URL
+
+        if ($request->filled('werks') && !$request->filled('auart')) {
+            // Ambil mapping untuk menemukan tipe default (Export)
+            $mapping = DB::table('maping')
+                ->select('IV_WERKS', 'IV_AUART', 'Deskription')
+                ->where('IV_WERKS', $request->werks)
+                ->orderBy('IV_AUART')
+                ->get();
+
+            // Cari tipe 'Export' pertama yang tersedia
+            $defaultType = $mapping->first(function ($item) {
+                return str_contains(strtolower($item->Deskription), 'export');
+            });
+
+            // Jika tidak ada tipe Export, ambil saja tipe pertama yang ada sebagai fallback
+            if (!$defaultType) {
+                $defaultType = $mapping->first();
+            }
+
+            // Jika ada tipe yang bisa dipilih, redirect ke URL lengkap dengan tipe default
+            if ($defaultType) {
+                $params = array_merge($request->query(), ['auart' => $defaultType->IV_AUART]);
+                return redirect()->route('dashboard', $params);
+            }
+        }
+        // =======================================================================
+        // == AKHIR BLOK KODE TAMBAHAN ==
+        // =======================================================================
+
         $werks = $request->query('werks');
         $auart = $request->query('auart');
         $location = $request->query('location');
         $type = $request->query('type');
+        $view = $request->query('view', 'po');
 
-        // 2. Menentukan apakah akan menampilkan tabel laporan atau halaman utama
         $show = $request->filled('werks') && $request->filled('auart');
         $compact = $request->boolean('compact', $show);
-
-        // 3. Mengambil data untuk sidebar menu
         $mapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
@@ -54,31 +229,28 @@ class DashboardController extends Controller
             ->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
-        // 4. Inisialisasi variabel
         $rows = null;
         $selectedDescription = '';
         $chartData = [];
         $selectedLocationName = 'All Locations';
         $selectedTypeName = 'All Types';
 
-        $safeEdatu = "
-    COALESCE(
-        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'),
-        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d')
-    )";
-
-        // 5. Logika utama
         if ($show) {
+            // Logika untuk halaman laporan detail PO
+            $safeEdatu = "COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'))";
+            $safeEdatuInner = "COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'))";
+
             $query = DB::table('so_yppr079_t2 as t2')
                 ->leftJoin(DB::raw('(
-                    SELECT t2_inner.KUNNR, SUM(t1.TOTPR) AS TOTAL_TOTPR
-                    FROM so_yppr079_t2 AS t2_inner
-                    LEFT JOIN so_yppr079_t1 AS t1
-                    ON TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2_inner.VBELN AS CHAR))
-                    WHERE t2_inner.IV_WERKS_PARAM = ' . DB::getPdo()->quote($werks) . '
-                    AND t2_inner.IV_AUART_PARAM = ' . DB::getPdo()->quote($auart) . '
-                    GROUP BY t2_inner.KUNNR
-                ) AS totpr_sum'), 't2.KUNNR', '=', 'totpr_sum.KUNNR')
+                SELECT t2_inner.KUNNR, SUM(t1.TOTPR) AS TOTAL_TOTPR
+                FROM so_yppr079_t2 AS t2_inner
+                LEFT JOIN so_yppr079_t1 AS t1
+                ON TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2_inner.VBELN AS CHAR))
+                WHERE t2_inner.IV_WERKS_PARAM = ' . DB::getPdo()->quote($werks) . '
+                AND t2_inner.IV_AUART_PARAM = ' . DB::getPdo()->quote($auart) . '
+                AND ' . $safeEdatuInner . ' < CURDATE()
+                GROUP BY t2_inner.KUNNR
+            ) AS totpr_sum'), 't2.KUNNR', '=', 'totpr_sum.KUNNR')
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
@@ -92,7 +264,7 @@ class DashboardController extends Controller
                 ->where('t2.IV_AUART_PARAM', $auart)
                 ->groupBy('t2.KUNNR')
                 ->orderBy('NAME1');
-            $query = $this->applyBlacklist($query, 't2');
+
             $rows = $query->paginate(25)->withQueryString();
             $selectedMapping = DB::table('maping')
                 ->where('IV_WERKS', $werks)
@@ -100,356 +272,166 @@ class DashboardController extends Controller
                 ->first();
             $selectedDescription = $selectedMapping->Deskription ?? '';
         } else {
-            // =================================================================
-            // BLOK DASHBOARD UTAMA
-            // =================================================================
-            $today = now()->startOfDay();
-
-            if ($location === '2000') $selectedLocationName = 'Surabaya';
-            if ($location === '3000') $selectedLocationName = 'Semarang';
-
-            $baseQuery = DB::table('so_yppr079_t2 as t2');
-
-            // [MODIFIKASI FINAL v2] Logika filter disempurnakan sesuai aturan baru
-            if ($type === 'lokal') {
-                $selectedTypeName = 'Lokal';
-                $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
-                    // Kondisi 1: Ambil semua Tipe SO yang deskripsinya 'Local'
-                    $query->select('IV_AUART', 'IV_WERKS')->from('maping')->where('Deskription', 'like', '%Local%')
-                        // Kondisi 2: GABUNGKAN dengan Tipe SO yang murni IDR (tidak ada USD sama sekali)
-                        ->union(
-                            DB::table('so_yppr079_t2')
-                                ->select('IV_AUART_PARAM as IV_AUART', 'IV_WERKS_PARAM as IV_WERKS')
-                                ->groupBy('IV_AUART_PARAM', 'IV_WERKS_PARAM')
-                                ->havingRaw("SUM(CASE WHEN WAERK = 'IDR' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN WAERK = 'USD' THEN 1 ELSE 0 END) = 0")
-                        );
-                });
-            } elseif ($type === 'export') {
-                $selectedTypeName = 'Export';
-                // Subquery untuk mendapatkan daftar Tipe SO yang eksplisit 'Local'
-                $explicitlyLocalTypes = DB::table('maping')->select('IV_AUART', 'IV_WERKS')->where('Deskription', 'like', '%Local%');
-
-                // [MODIFIKASI] Logika diubah agar hanya mengambil yang mengandung kata "Export"
-                // dan secara eksplisit MENGECUALIKAN yang mengandung kata "Replace" atau "Local".
-                $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
-                    $query->select('IV_AUART', 'IV_WERKS')
-                        ->from('maping')
-                        ->where('Deskription', 'like', '%Export%')
-                        ->where('Deskription', 'not like', '%Replace%')
-                        ->where('Deskription', 'not like', '%Local%');
-                });
-            }
-
-
-            // Terapkan filter Lokasi (tidak berubah)
-            $baseQuery->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
-
-            // Terapkan blacklist pelanggan (tidak berubah)
-            $baseQuery = $this->applyBlacklist($baseQuery, 't2');
-
-
-            // --- Kalkulasi untuk KPI Cards ---
-            $kpiQuery = (clone $baseQuery)
-                ->leftJoin('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
-
-            $chartData['kpi'] = [
-                'total_outstanding_value_usd' => (clone $kpiQuery)->where('t2.WAERK', 'USD')->sum('t1.TOTPR'),
-                'total_outstanding_value_idr' => (clone $kpiQuery)->where('t2.WAERK', 'IDR')->sum('t1.TOTPR'),
-                'total_outstanding_so'        => (clone $kpiQuery)->distinct()->count('t2.VBELN'),
-                'total_overdue_so'            => (clone $kpiQuery)->whereRaw("{$safeEdatu} < ?", [$today])->distinct()->count('t2.VBELN'),
-            ];
-            if ($chartData['kpi']['total_outstanding_so'] > 0) {
-                $chartData['kpi']['overdue_rate'] = ($chartData['kpi']['total_overdue_so'] / $chartData['kpi']['total_outstanding_so']) * 100;
+            // Logika untuk memilih data dasbor mana yang akan dimuat
+            if ($view === 'so') {
+                $chartData = $this->getSoDashboardData($request);
             } else {
-                $chartData['kpi']['overdue_rate'] = 0;
-            }
+                // Logika untuk dasbor PO (kode lama Anda, dengan perbaikan)
+                $today = now()->startOfDay();
+                if ($location === '2000') $selectedLocationName = 'Surabaya';
+                if ($location === '3000') $selectedLocationName = 'Semarang';
+                $safeEdatu = "
+                COALESCE(
+                    STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'),
+                    STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d')
+                )";
+                $baseQuery = DB::table('so_yppr079_t2 as t2');
+                if ($type === 'lokal') {
+                    $selectedTypeName = 'Lokal';
+                    $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
+                        $query->select('IV_AUART', 'IV_WERKS')->from('maping')->where('Deskription', 'like', '%Local%')
+                            ->union(
+                                DB::table('so_yppr079_t2')
+                                    ->select('IV_AUART_PARAM as IV_AUART', 'IV_WERKS_PARAM as IV_WERKS')
+                                    ->groupBy('IV_AUART_PARAM', 'IV_WERKS_PARAM')
+                                    ->havingRaw("SUM(CASE WHEN WAERK = 'IDR' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN WAERK = 'USD' THEN 1 ELSE 0 END) = 0")
+                            );
+                    });
+                } elseif ($type === 'export') {
+                    $selectedTypeName = 'Export';
+                    $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
+                        $query->select('IV_AUART', 'IV_WERKS')
+                            ->from('maping')
+                            ->where('Deskription', 'like', '%Export%')
+                            ->where('Deskription', 'not like', '%Replace%')
+                            ->where('Deskription', 'not like', '%Local%');
+                    });
+                }
+                $baseQuery->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
 
+                // [FIX 1] Query untuk kalkulasi KPI value sekarang harus join dan filter PACKG
+                $kpiQuery = (clone $baseQuery)
+                    ->leftJoin('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+                    ->where('t1.PACKG', '!=', 0); // <-- Filter utama ditambahkan di sini
 
-            // --- Kalkulasi untuk SO Status Chart ---
-            $chartData['so_status'] = [
-                'overdue'       => $chartData['kpi']['total_overdue_so'],
-                'due_this_week' => (clone $baseQuery)
-                    ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $today->copy()->addDays(7)])
-                    ->distinct()->count('t2.VBELN'),
-                'on_time'       => (clone $baseQuery)
-                    ->whereRaw("{$safeEdatu} > ?", [$today->copy()->addDays(7)])
-                    ->distinct()->count('t2.VBELN'),
-            ];
+                $chartData['kpi'] = [
+                    'total_outstanding_value_usd' => (clone $kpiQuery)->where('t2.WAERK', 'USD')->sum('t1.TOTPR'),
+                    'total_outstanding_value_idr' => (clone $kpiQuery)->where('t2.WAERK', 'IDR')->sum('t1.TOTPR'),
+                    'total_outstanding_so'        => (clone $baseQuery)->distinct()->count('t2.VBELN'), // Total SO tidak perlu filter PACKG
+                    'total_overdue_so'            => (clone $baseQuery)->whereRaw("{$safeEdatu} < ?", [$today])->distinct()->count('t2.VBELN'), // Overdue juga tidak
+                ];
 
+                if ($chartData['kpi']['total_outstanding_so'] > 0) {
+                    $chartData['kpi']['overdue_rate'] = ($chartData['kpi']['total_overdue_so'] / $chartData['kpi']['total_outstanding_so']) * 100;
+                } else {
+                    $chartData['kpi']['overdue_rate'] = 0;
+                }
 
-            // --- Kalkulasi untuk Outstanding by Location (Tidak berubah) ---
-            $chartData['outstanding_by_location'] = DB::table('so_yppr079_t2 as t2')
-                ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-                ->select(
-                    DB::raw("CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END as location"),
-                    't2.WAERK as currency',
-                    DB::raw('SUM(t1.TOTPR) as total_value'),
-                    DB::raw('COUNT(DISTINCT t2.VBELN) as so_count')
-                )
-                ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-                ->when(true, fn($q) => $this->applyBlacklist($q, 't2'))
-                ->groupBy('location', 'currency')
-                ->get();
+                $chartData['so_status'] = [
+                    'overdue'       => $chartData['kpi']['total_overdue_so'],
+                    'due_this_week' => (clone $baseQuery)
+                        ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $today->copy()->addDays(7)])
+                        ->distinct()->count('t2.VBELN'),
+                    'on_time'       => (clone $baseQuery)
+                        ->whereRaw("{$safeEdatu} > ?", [$today->copy()->addDays(7)])
+                        ->distinct()->count('t2.VBELN'),
+                ];
 
+                // [FIX 1.A] Query untuk chart outstanding by location juga harus difilter PACKG agar konsisten
+                $chartData['outstanding_by_location'] = DB::table('so_yppr079_t2 as t2')
+                    ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+                    ->select(
+                        DB::raw("CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END as location"),
+                        't2.WAERK as currency',
+                        DB::raw('SUM(t1.TOTPR) as total_value'),
+                        DB::raw('COUNT(DISTINCT t2.VBELN) as so_count')
+                    )
+                    ->where('t1.PACKG', '!=', 0) // <-- Filter ditambahkan di sini
+                    ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+                    ->groupBy('location', 'currency')
+                    ->get();
 
-            // --- Kalkulasi untuk Top Customers (Tidak berubah) ---
-            $chartData['top_customers_value_usd'] = (clone $baseQuery)
-                ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-                ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
-                ->where('t2.WAERK', 'USD')
-                ->groupBy('t2.NAME1')
-                ->having('total_value', '>', 0)
-                ->orderByDesc('total_value')
-                ->limit(4) // [MODIFIKASI] Diubah dari 5 menjadi 4
-                ->get();
+                // [FIX 1.B] Perbaikan query untuk Top Customer by Value (PO Dashboard)
+                $chartData['top_customers_value_usd'] = (clone $baseQuery)
+                    ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+                    ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
+                    ->where('t1.PACKG', '!=', 0) // <-- Filter ditambahkan di sini
+                    ->where('t2.WAERK', 'USD')->groupBy('t2.NAME1')->having('total_value', '>', 0)
+                    ->orderByDesc('total_value')->limit(4)->get();
 
-            $chartData['top_customers_value_idr'] = (clone $baseQuery)
-                ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-                ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
-                ->where('t2.WAERK', 'IDR')
-                ->groupBy('t2.NAME1')
-                ->having('total_value', '>', 0)
-                ->orderByDesc('total_value')
-                ->limit(4) // [MODIFIKASI] Diubah dari 5 menjadi 4
-                ->get();
+                $chartData['top_customers_value_idr'] = (clone $baseQuery)
+                    ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+                    ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
+                    ->where('t1.PACKG', '!=', 0) // <-- Filter ditambahkan di sini
+                    ->where('t2.WAERK', 'IDR')->groupBy('t2.NAME1')->having('total_value', '>', 0)
+                    ->orderByDesc('total_value')->limit(4)->get();
 
-            $chartData['top_customers_overdue'] = (clone $baseQuery)
-                ->select(
-                    't2.NAME1',
-                    DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'),
-                    DB::raw('GROUP_CONCAT(DISTINCT t2.IV_WERKS_PARAM ORDER BY t2.IV_WERKS_PARAM ASC SEPARATOR ", ") as locations'),
-                    // [MODIFIKASI] Tambahkan hitungan terpisah untuk setiap lokasi
-                    DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t2.VBELN ELSE NULL END) as smg_count"),
-                    DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t2.VBELN ELSE NULL END) as sby_count")
-                )
-                ->whereRaw("{$safeEdatu} < CURDATE()")
-                ->groupBy('t2.NAME1')
-                ->orderByDesc('overdue_count')
-                ->limit(4)
-                ->get();
+                $chartData['top_customers_overdue'] = (clone $baseQuery)
+                    ->select(
+                        't2.NAME1',
+                        DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'),
+                        DB::raw('GROUP_CONCAT(DISTINCT t2.IV_WERKS_PARAM ORDER BY t2.IV_WERKS_PARAM ASC SEPARATOR ", ") as locations'),
+                        DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t2.VBELN ELSE NULL END) as smg_count"),
+                        DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t2.VBELN ELSE NULL END) as sby_count")
+                    )
+                    ->whereRaw("{$safeEdatu} < CURDATE()")->groupBy('t2.NAME1')
+                    ->orderByDesc('overdue_count')->limit(4)->get();
 
-                
-            // --- Kalkulasi untuk Tabel Analisis Kinerja ---
-            $performanceQueryBase = DB::table('maping as m')
-                ->join('so_yppr079_t2 as t2', function ($join) {
-                    $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
-                        ->on('m.IV_AUART', '=', 't2.IV_AUART_PARAM');
-                })
-                ->leftJoin('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
-
-            // [MODIFIKASI FINAL v2] Terapkan filter yang sama pada query tabel kinerja
-            $typesToFilter = null;
-            if ($type === 'lokal' || $type === 'export') {
-                $cloneForFilter = (clone $baseQuery)->select('t2.IV_AUART_PARAM', 't2.IV_WERKS_PARAM')->distinct();
-                $typesToFilter = $cloneForFilter->get()->map(function ($item) {
-                    return $item->IV_AUART_PARAM . '-' . $item->IV_WERKS_PARAM;
-                })->toArray();
-            }
-
-            if ($typesToFilter !== null) {
-                $performanceQueryBase->whereIn(DB::raw("CONCAT(m.IV_AUART, '-', m.IV_WERKS)"), $typesToFilter);
-            }
-
-            $performanceQuery = $performanceQueryBase->select(
-                'm.Deskription',
-                'm.IV_WERKS',
-                DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
-                DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' THEN t1.TOTPR ELSE 0 END) as total_value_idr"),
-                DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' THEN t1.TOTPR ELSE 0 END) as total_value_usd"),
-                DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
-                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
-                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
-                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
-                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
-            )
-                ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-                ->when(true, fn($q) => $this->applyBlacklist($q, 't2'))
-                ->groupBy('m.IV_WERKS', 'm.Deskription')
-                ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
-                ->get();
-            $chartData['so_performance_analysis'] = $performanceQuery;
-
-
-            // --- Kalkulasi untuk Chart Kuantitas Kecil ---
-            $smallQtyByCustomerQuery = (clone $baseQuery)
-                ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-                ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(t1.POSNR) as item_count'))
-                ->where('t1.QTY_BALANCE2', '>', 0)
-                ->where('t1.QTY_BALANCE2', '<=', 5)
-                ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-                ->orderBy('t2.NAME1')
-                ->get();
-            $chartData['small_qty_by_customer'] = $smallQtyByCustomerQuery;
-        }
-
-        // 6. Kirim ke view
-        return view('dashboard', [
-            'mapping'               => $mapping,
-            'selected'              => ['werks' => $werks, 'auart' => $auart],
-            'selectedDescription'   => $selectedDescription,
-            'rows'                  => $rows,
-            'compact'               => $compact,
-            'show'                  => $show,
-            'chartData'             => $chartData,
-            'selectedLocation'      => $location,
-            'selectedLocationName'  => $selectedLocationName,
-            'selectedType'          => $type,
-            'selectedTypeName'      => $selectedTypeName,
-        ]);
-    }
-
-    // Metode lain tidak diubah...
-    public function indexAlternative(Request $request)
-    {
-        $werks = $request->query('werks');
-        $auart = $request->query('auart');
-
-        $show = $request->filled('werks') && $request->filled('auart');
-        $compact = $request->boolean('compact', $show);
-
-        $mapping = DB::table('maping')
-            ->select('IV_WERKS', 'IV_AUART', 'Deskription')
-            ->orderBy('IV_WERKS')->orderBy('IV_AUART')
-            ->get()
-            ->groupBy('IV_WERKS')
-            ->map(fn($g) => $g->unique('IV_AUART')->values());
-
-        $rows = null;
-        $selectedDescription = '';
-
-        if ($show) {
-            $customers = DB::table('so_yppr079_t2')
-                ->select('KUNNR', 'NAME1', 'WAERK')
-                ->where('IV_WERKS_PARAM', $werks)
-                ->where('IV_AUART_PARAM', $auart);
-
-            $customers = $this->applyBlacklist($customers, 'so_yppr079_t2')
-                ->groupBy('KUNNR', 'NAME1', 'WAERK')
-                ->orderBy('NAME1')
-                ->paginate(25)->withQueryString();
-
-            foreach ($customers as $customer) {
-                $totpr = DB::table('so_yppr079_t2 as t2')
-                    ->join('so_yppr079_t1 as t1', function ($join) {
-                        $join->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
+                $performanceQueryBase = DB::table('maping as m')
+                    ->join('so_yppr079_t2 as t2', function ($join) {
+                        $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
+                            ->on('m.IV_AUART', '=', 't2.IV_AUART_PARAM');
                     })
-                    ->where('t2.KUNNR', $customer->KUNNR)
-                    ->where('t2.IV_WERKS_PARAM', $werks)
-                    ->where('t2.IV_AUART_PARAM', $auart)
-                    ->sum('t1.TOTPR');
+                    ->leftJoin('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
 
-                $customer->TOTPR = $totpr ?: 0;
+                $typesToFilter = null;
+                if ($type === 'lokal' || $type === 'export') {
+                    $cloneForFilter = (clone $baseQuery)->select('t2.IV_AUART_PARAM', 't2.IV_WERKS_PARAM')->distinct();
+                    $typesToFilter = $cloneForFilter->get()->map(fn($item) => $item->IV_AUART_PARAM . '-' . $item->IV_WERKS_PARAM)->toArray();
+                }
+                if ($typesToFilter !== null) {
+                    $performanceQueryBase->whereIn(DB::raw("CONCAT(m.IV_AUART, '-', m.IV_WERKS)"), $typesToFilter);
+                }
+                $performanceQuery = $performanceQueryBase->select(
+                    'm.Deskription',
+                    'm.IV_WERKS',
+                    DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
+                    DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatu} < CURDATE() THEN t1.TOTPR ELSE 0 END) as total_value_idr"),
+                    DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatu} < CURDATE() THEN t1.TOTPR ELSE 0 END) as total_value_usd"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatu}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
+                )
+                    ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+                    ->groupBy('m.IV_WERKS', 'm.Deskription')
+                    ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')->get();
+                $chartData['so_performance_analysis'] = $performanceQuery;
+
+                $smallQtyByCustomerQuery = (clone $baseQuery)
+                    ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+                    ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(t1.POSNR) as item_count'))
+                    ->where('t1.QTY_BALANCE2', '>', 0)->where('t1.QTY_BALANCE2', '<=', 5)
+                    ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')->orderBy('t2.NAME1')->get();
+                $chartData['small_qty_by_customer'] = $smallQtyByCustomerQuery;
             }
-
-            $rows = $customers;
-
-            $selectedMapping = DB::table('maping')
-                ->where('IV_WERKS', $werks)
-                ->where('IV_AUART', $auart)
-                ->first();
-            $selectedDescription = $selectedMapping->Deskription ?? '';
         }
 
         return view('dashboard', [
-            'mapping'               => $mapping,
-            'selected'              => ['werks' => $werks, 'auart' => $auart],
-            'selectedDescription'   => $selectedDescription,
-            'rows'                  => $rows,
-            'compact'               => $compact,
-            'show'                  => $show,
+            'mapping'              => $mapping,
+            'selected'             => ['werks' => $werks, 'auart' => $auart],
+            'selectedDescription'  => $selectedDescription,
+            'rows'                 => $rows,
+            'compact'              => $compact,
+            'show'                 => $show,
+            'chartData'            => $chartData,
+            'selectedLocation'     => $location,
+            'selectedLocationName' => $selectedLocationName,
+            'selectedType'         => $type,
+            'selectedTypeName'     => $selectedTypeName,
+            'view'                 => $view,
         ]);
-    }
-
-    public function apiSmallQtyDetails(Request $request)
-    {
-        // 1. Validasi input
-        $request->validate([
-            'customerName' => 'required|string',
-            'locationName' => 'required|string|in:Semarang,Surabaya'
-        ]);
-
-        $customerName = $request->query('customerName');
-        $locationName = $request->query('locationName');
-        $type = $request->query('type'); // Filter 'type' (lokal/export) yang sedang aktif
-
-        // Konversi nama lokasi ke kode 'werks'
-        $werks = ($locationName === 'Semarang') ? '3000' : '2000';
-
-        // 2. Buat query dasar untuk mengambil item
-        $query = DB::table('so_yppr079_t1 as t1')
-            ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-            ->join('maping as m', function ($join) {
-                $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                    ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
-            })
-            ->where('t2.NAME1', $customerName)       // Filter berdasarkan nama customer yang di-klik
-            ->where('t2.IV_WERKS_PARAM', $werks)     // Filter berdasarkan lokasi bar yang di-klik (Semarang/Surabaya)
-            ->where('t1.QTY_BALANCE2', '>', 0)       // Filter utama untuk kuantitas
-            ->where('t1.QTY_BALANCE2', '<=', 5);
-
-        // 3. Terapkan filter 'type' (lokal/export) yang sama dengan di halaman utama
-        // Ini untuk memastikan data yang ditampilkan konsisten
-        if ($type === 'lokal') {
-            $query->where(function ($q) {
-                $q->where('m.Deskription', 'like', '%Local%')
-                    ->orWhere('m.Deskription', 'like', '%Replace%'); // Sesuaikan jika 'Replace' masuk lokal
-            });
-        } elseif ($type === 'export') {
-            $query->where('m.Deskription', 'like', '%Export%');
-        }
-
-        // 4. Ambil data yang dibutuhkan dan urutkan
-        $items = $query->select(
-            't2.VBELN',         // No SO
-            't2.BSTNK',         // No PO Customer
-            't1.POSNR',         // No Item
-            't1.MAKTX',         // Deskripsi Material
-            't1.KWMENG',        // Kuantitas Order
-            't1.QTY_BALANCE2'   // Kuantitas Outstanding
-        )
-            ->orderBy('t2.VBELN', 'asc')
-            ->orderBy('t1.POSNR', 'asc')
-            ->get();
-
-        // 5. Kembalikan sebagai JSON
-        return response()->json(['ok' => true, 'data' => $items]);
-    }
-
-    public function search(Request $request)
-    {
-        $request->validate([
-            'term' => 'required|string|max:100'
-        ]);
-
-        $term_searched = $request->input('term');
-
-        // [MODIFIKASI] Menggunakan TRIM untuk membersihkan spasi dari kolom database
-        $so_info = DB::table('so_yppr079_t2')
-            ->where(function ($query) use ($term_searched) {
-                // Cari berdasarkan VBELN (SO) setelah di-TRIM
-                $query->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$term_searched])
-                    // ATAU cari berdasarkan BSTNK (PO) setelah di-TRIM
-                    ->orWhereRaw('TRIM(CAST(BSTNK AS CHAR)) = ?', [$term_searched]);
-            })
-            ->select('IV_WERKS_PARAM', 'IV_AUART_PARAM', 'KUNNR', 'VBELN')
-            ->first();
-
-        if ($so_info) {
-            // Jika ditemukan, siapkan parameter untuk redirect
-            $params = [
-                'werks'           => $so_info->IV_WERKS_PARAM,
-                'auart'           => $so_info->IV_AUART_PARAM,
-                'compact'         => 1,
-                'highlight_kunnr' => $so_info->KUNNR,
-                'highlight_vbeln' => $so_info->VBELN,
-                'search_term'     => $term_searched,
-            ];
-
-            return redirect()->route('dashboard', $params);
-        }
-
-        // Jika tidak ditemukan, kembali dengan pesan error
-        return back()->withErrors(['term' => 'Nomor PO atau SO "' . $term_searched . '" tidak ditemukan.'])->withInput();
     }
 
     public function apiT2(Request $req)
@@ -491,20 +473,17 @@ class DashboardController extends Controller
                         ->orWhereRaw('TRIM(t2.AUART) = TRIM(?)', [$auart])
                         ->orWhereRaw('TRIM(t2.IV_AUART_PARAM) = TRIM(?)', [$auart]);
                 });
-            });
-
-        $rows = $this->applyBlacklist($rows, 't2')->get();
+            })
+            ->get();
 
         $today = new \DateTime();
         $today->setTime(0, 0, 0);
-
         foreach ($rows as $row) {
             $overdue = 0;
             $row->FormattedEdatu = '';
-
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
-                    $edatuDate = \DateTime::createFromFormat('Y-m-d', $row->EDATU);
+                    $edatuDate = \DateTime::createFromFormat('Y-m-d', $row->EDATU) ?: \DateTime::createFromFormat('d-m-Y', $row->EDATU);
                     if ($edatuDate) {
                         $row->FormattedEdatu = $edatuDate->format('d-m-Y');
                         $edatuDate->setTime(0, 0, 0);
@@ -517,14 +496,12 @@ class DashboardController extends Controller
                 }
             }
             $row->Overdue = $overdue;
-
             $items = DB::table('so_yppr079_t1')
                 ->select('KWMENG', 'QTY_BALANCE2')
                 ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = TRIM(?)', [$row->VBELN])
                 ->when($werks, fn($q) => $q->where('IV_WERKS_PARAM', $werks))
                 ->when($auart, fn($q) => $q->where('IV_AUART_PARAM', $auart))
                 ->get();
-
             $itemPercentages = [];
             foreach ($items as $item) {
                 $qtyPo = (float) $item->KWMENG;
@@ -546,68 +523,107 @@ class DashboardController extends Controller
         if ($vbeln === '') {
             return response()->json(['ok' => false, 'error' => 'vbeln missing'], 400);
         }
-
         $werks = $req->query('werks');
         $auart = $req->query('auart');
-
         $matchVbeln = function ($q) use ($vbeln) {
             $q->where('t1.VBELN', $vbeln)
                 ->orWhereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
                 ->orWhereRaw('CAST(TRIM(t1.VBELN) AS UNSIGNED) = CAST(TRIM(?) AS UNSIGNED)', [$vbeln]);
         };
-
         $rows = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as tx', DB::raw('TRIM(CAST(tx.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'))
-            ->select('t1.POSNR', 't1.MATNR', 't1.MAKTX', 't1.KWMENG', 't1.QTY_GI', 't1.QTY_BALANCE2', 't1.NETPR', 't1.TOTPR', 't1.NETWR', 't1.WAERK')
+            ->select(
+                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
+                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
+                't1.MAKTX',
+                't1.KWMENG',
+                't1.QTY_GI',
+                't1.QTY_BALANCE2',
+                't1.NETPR',
+                't1.TOTPR',
+                't1.NETWR',
+                't1.WAERK',
+                't1.KALAB'
+            )
             ->where($matchVbeln)
             ->when(strlen((string)$werks) > 0, function ($q) use ($werks) {
                 $q->where(function ($qq) use ($werks) {
-                    $qq->where('t1.WERKS', $werks)
-                        ->orWhere('t1.IV_WERKS_PARAM', $werks)
+                    $qq->where('t1.WERKS', $werks)->orWhere('t1.IV_WERKS_PARAM', $werks)
                         ->orWhereRaw('TRIM(CAST(t1.WERKS AS CHAR)) = TRIM(?)', [$werks])
                         ->orWhereRaw('TRIM(CAST(t1.IV_WERKS_PARAM AS CHAR)) = TRIM(?)', [$werks]);
                 });
             })
             ->when(strlen((string)$auart) > 0, function ($q) use ($auart) {
                 $q->where(function ($qq) use ($auart) {
-                    $qq->where('t1.AUART', $auart)
-                        ->orWhere('t1.IV_AUART_PARAM', $auart)
+                    $qq->where('t1.AUART', $auart)->orWhere('t1.IV_AUART_PARAM', $auart)
                         ->orWhereRaw('TRIM(t1.AUART) = TRIM(?)', [$auart])
                         ->orWhereRaw('TRIM(t1.IV_AUART_PARAM) = TRIM(?)', [$auart]);
                 });
-            });
-
-        $rows = $this->applyBlacklist($rows, 'tx')
+            })
             ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
             ->get();
-
         return response()->json(['ok' => true, 'data' => $rows]);
     }
 
-    public function debugTotpr(Request $request)
+    public function search(Request $request)
     {
-        $kunnr = $request->query('kunnr');
-
-        $t2Data = DB::table('so_yppr079_t2')
-            ->select('VBELN', 'KUNNR', 'NAME1')
-            ->where('KUNNR', $kunnr);
-
-        $t2Data = $this->applyBlacklist($t2Data, 'so_yppr079_t2')->get();
-
-        $result = [];
-        foreach ($t2Data as $row) {
-            $t1Sum = DB::table('so_yppr079_t1')
-                ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = TRIM(?)', [$row->VBELN])
-                ->sum('TOTPR');
-
-            $result[] = [
-                'VBELN' => $row->VBELN,
-                'KUNNR' => $row->KUNNR,
-                'NAME1' => $row->NAME1,
-                'TOTPR_SUM' => $t1Sum
+        $request->validate(['term' => 'required|string|max:100']);
+        $term_searched = $request->input('term');
+        $so_info = DB::table('so_yppr079_t2')
+            ->where(function ($query) use ($term_searched) {
+                $query->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$term_searched])
+                    ->orWhereRaw('TRIM(CAST(BSTNK AS CHAR)) = ?', [$term_searched]);
+            })
+            ->select('IV_WERKS_PARAM', 'IV_AUART_PARAM', 'KUNNR', 'VBELN')
+            ->first();
+        if ($so_info) {
+            $params = [
+                'werks'           => $so_info->IV_WERKS_PARAM,
+                'auart'           => $so_info->IV_AUART_PARAM,
+                'compact'         => 1,
+                'highlight_kunnr' => $so_info->KUNNR,
+                'highlight_vbeln' => $so_info->VBELN,
+                'search_term'     => $term_searched,
             ];
+            return redirect()->route('dashboard', $params);
         }
+        return back()->withErrors(['term' => 'Nomor PO atau SO "' . $term_searched . '" tidak ditemukan.'])->withInput();
+    }
 
-        return response()->json($result);
+    public function apiSmallQtyDetails(Request $request)
+    {
+        $request->validate(['customerName' => 'required|string', 'locationName' => 'required|string|in:Semarang,Surabaya']);
+        $customerName = $request->query('customerName');
+        $locationName = $request->query('locationName');
+        $type = $request->query('type');
+        $werks = ($locationName === 'Semarang') ? '3000' : '2000';
+        $query = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+            ->join('maping as m', function ($join) {
+                $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })
+            ->where('t2.NAME1', $customerName)
+            ->where('t2.IV_WERKS_PARAM', $werks)
+            ->where('t1.QTY_BALANCE2', '>', 0)
+            ->where('t1.QTY_BALANCE2', '<=', 5);
+        if ($type === 'lokal') {
+            $query->where(function ($q) {
+                $q->where('m.Deskription', 'like', '%Local%')
+                    ->orWhere('m.Deskription', 'like', '%Replace%');
+            });
+        } elseif ($type === 'export') {
+            $query->where('m.Deskription', 'like', '%Export%');
+        }
+        $items = $query->select(
+            't2.VBELN',
+            't2.BSTNK',
+            't1.POSNR',
+            't1.MAKTX',
+            't1.KWMENG',
+            't1.QTY_BALANCE2'
+        )
+            ->orderBy('t2.VBELN', 'asc')->orderBy('t1.POSNR', 'asc')->get();
+        return response()->json(['ok' => true, 'data' => $items]);
     }
 }

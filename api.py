@@ -65,7 +65,7 @@ DB_CFG = {
     "host": os.environ.get("DB_HOST", "localhost"),
     "user": os.environ.get("DB_USER", "root"),
     "password": os.environ.get("DB_PASS", ""),
-    "database": os.environ.get("DB_NAME", "oso_yppr"),
+    "database": os.environ.get("DB_NAME", "outstanding_yppr"),
 }
 RFC_NAME = "Z_FM_YPPR079_SO"
 
@@ -198,7 +198,8 @@ def ensure_tables():
       EDATU DATE, WERKS VARCHAR(10), BSTNK VARCHAR(80),
       KWMENG DECIMAL(18,3), BMENG DECIMAL(18,3), VRKME VARCHAR(6), MEINS VARCHAR(6),
       MATNR VARCHAR(40), MAKTX VARCHAR(200),
-      KALAB DECIMAL(18,3), QTY_DELIVERY DECIMAL(18,3),
+      KALAB DECIMAL(18,3), KALAB2 DECIMAL(18,3),
+      QTY_DELIVERY DECIMAL(18,3),
       QTY_GI DECIMAL(18,3), QTY_BALANCE DECIMAL(18,3), QTY_BALANCE2 DECIMAL(18,3),
       MENGX1 DECIMAL(18,3), MENGX2 DECIMAL(18,3), MENGE DECIMAL(18,3),
       ASSYM DECIMAL(18,3), PAINT DECIMAL(18,3), PACKG DECIMAL(18,3),
@@ -229,7 +230,8 @@ def ensure_tables():
       EDATU DATE, WERKS VARCHAR(10), BSTNK VARCHAR(80),
       KWMENG DECIMAL(18,3), BMENG DECIMAL(18,3), VRKME VARCHAR(6), MEINS VARCHAR(6),
       MATNR VARCHAR(40), MAKTX VARCHAR(200),
-      KALAB DECIMAL(18,3), QTY_DELIVERY DECIMAL(18,3),
+      KALAB DECIMAL(18,3), KALAB2 DECIMAL(18,3),
+      QTY_DELIVERY DECIMAL(18,3),
       QTY_GI DECIMAL(18,3), QTY_BALANCE DECIMAL(18,3), QTY_BALANCE2 DECIMAL(18,3),
       MENGX1 DECIMAL(18,3), MENGX2 DECIMAL(18,3), MENGE DECIMAL(18,3),
       ASSYM DECIMAL(18,3), PAINT DECIMAL(18,3), PACKG DECIMAL(18,3),
@@ -248,6 +250,14 @@ def ensure_tables():
         cur.execute(ddl2)
         cur.execute(ddl2_fix)
         cur.execute(ddl3)
+
+        # Pastikan kolom KALAB2 ada di semua tabel (untuk kompatibilitas ke belakang)
+        for _tbl in ("so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3"):
+            try:
+                cur.execute(f"ALTER TABLE {_tbl} ADD COLUMN KALAB2 DECIMAL(18,3) AFTER KALAB")
+            except Exception:
+                # kolom sudah ada → aman
+                pass
 
         # ---- Perapihan index unik lama (kalau ada) ----
         # T1: buang UNIQUE lawas agar boleh menyimpan semua baris RFC
@@ -283,7 +293,7 @@ def upsert_generic(cur, table, werks, auart, rows):
         "EDATU", "WERKS", "BSTNK",
         "KWMENG", "BMENG", "VRKME", "MEINS",
         "MATNR", "MAKTX",
-        "KALAB", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
+        "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
         "MENGX1", "MENGX2", "MENGE",
         "ASSYM", "PAINT", "PACKG",
         "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
@@ -314,7 +324,7 @@ def upsert_generic(cur, table, werks, auart, rows):
             fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
             fnum(r.get("KWMENG")), fnum(r.get("BMENG")), r.get("VRKME"), r.get("MEINS"),
             r.get("MATNR"), r.get("MAKTX"),
-            fnum(r.get("KALAB")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
+            fnum(r.get("KALAB")), fnum(r.get("KALAB2")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
             fnum(r.get("QTY_BALANCE")), fnum(r.get("QTY_BALANCE2")),
             fnum(r.get("MENGX1")), fnum(r.get("MENGX2")), fnum(r.get("MENGE")),
             fnum(r.get("ASSYM")), fnum(r.get("PAINT")), fnum(r.get("PACKG")),
@@ -340,7 +350,7 @@ def upsert_t3(cur, werks, auart, rows):
         "EDATU", "WERKS", "BSTNK",
         "KWMENG", "BMENG", "VRKME", "MEINS",
         "MATNR", "MAKTX",
-        "KALAB", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
+        "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
         "MENGX1", "MENGX2", "MENGE",
         "ASSYM", "PAINT", "PACKG",
         "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
@@ -371,7 +381,7 @@ def upsert_t3(cur, werks, auart, rows):
             fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
             fnum(r.get("KWMENG")), fnum(r.get("BMENG")), r.get("VRKME"), r.get("MEINS"),
             r.get("MATNR"), r.get("MAKTX"),
-            fnum(r.get("KALAB")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
+            fnum(r.get("KALAB")), fnum(r.get("KALAB2")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
             fnum(r.get("QTY_BALANCE")), fnum(r.get("QTY_BALANCE2")),
             fnum(r.get("MENGX1")), fnum(r.get("MENGX2")), fnum(r.get("MENGE")),
             fnum(r.get("ASSYM")), fnum(r.get("PAINT")), fnum(r.get("PACKG")),
@@ -394,7 +404,7 @@ COMMON_COLS = [
     "EDATU", "WERKS", "BSTNK",
     "KWMENG", "BMENG", "VRKME", "MEINS",
     "MATNR", "MAKTX",
-    "KALAB", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
+    "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
     "MENGX1", "MENGX2", "MENGE",
     "ASSYM", "PAINT", "PACKG",
     "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
@@ -418,7 +428,7 @@ def _row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetim
         fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
         fnum(r.get("KWMENG")), fnum(r.get("BMENG")), r.get("VRKME"), r.get("MEINS"),
         r.get("MATNR"), r.get("MAKTX"),
-        fnum(r.get("KALAB")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
+        fnum(r.get("KALAB")), fnum(r.get("KALAB2")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
         fnum(r.get("QTY_BALANCE")), fnum(r.get("QTY_BALANCE2")),
         fnum(r.get("MENGX1")), fnum(r.get("MENGX2")), fnum(r.get("MENGE")),
         fnum(r.get("ASSYM")), fnum(r.get("PAINT")), fnum(r.get("PACKG")),

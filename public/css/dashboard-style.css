@@ -1,0 +1,442 @@
+.legend-badge {
+        padding: 0.2em 0.6em;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #fff;
+        text-align: center;
+        border-radius: 0.3rem;
+    }
+
+    .yz-grid {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 10px
+    }
+
+    .yz-card {
+        border: none;
+        border-radius: .75rem;
+        overflow: hidden
+    }
+
+    .yz-card .card-header {
+        background: #ecfdf5;
+        color: #14532d;
+        font-weight: 600;
+        border-bottom: 1px solid #d1fae5
+    }
+
+    .yz-main-title-wrapper {
+        background: #f0fdfa;
+        border: 1px solid #ccfbf1;
+        border-radius: 12px
+    }
+
+    .yz-table-title {
+        color: #0f766e;
+        font-weight: 600;
+        font-size: 1.1rem
+    }
+
+    .yz-table-title-nested {
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 10px;
+        padding: .5rem 1rem;
+        margin-bottom: 1rem
+    }
+
+    .yz-title-so {
+        color: #1e40af;
+        background: #eff6ff;
+        border: 1px solid #dbeafe
+    }
+
+    .yz-title-item {
+        color: #fff;
+        background: #38a3a5;
+        border: 1px solid #2e8486
+    }
+
+    thead th {
+        font-weight: 600;
+        font-size: .8rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        border-top: 0
+    }
+
+    .yz-header-customer th {
+        background: #f0fdfa;
+        color: #0f766e;
+        border-bottom: 2px solid #a7f3d0
+    }
+
+    .yz-header-so th {
+        background: #eff6ff;
+        color: #1e40af;
+        border-bottom: 2px solid #bfdbfe
+    }
+
+    .yz-header-item th {
+        background: #e0e7ff; /* Warna latar biru yang sangat lembut */
+        color: #3730a3; /* Warna teks ungu-biru tua yang kontras */
+        border-bottom: 2px solid #c7d2fe; /* Warna border yang serasi */
+        font-weight: 600; /* Dibuat sama seperti header lain (tidak terlalu tebal) */
+    }
+    
+    .yz-header-customer th,
+    .yz-kunnr-row td {
+        text-align: center;
+        vertical-align: middle
+    }
+
+    .yz-kunnr-row td:nth-child(2) {
+        text-align: left
+    }
+
+    .sticky-col {
+        position: sticky;
+        left: 0;
+        background: inherit
+    }
+
+    .yz-kunnr-row td {
+        background: #fff;
+        border-top: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+        transition: .2s background-color
+    }
+
+    .yz-kunnr-row td:first-child {
+        border-left: 1px solid #e2e8f0;
+        border-top-left-radius: 25px;
+        border-bottom-left-radius: 25px
+    }
+
+    .yz-kunnr-row td:last-child {
+        border-right: 1px solid #e2e8f0;
+        border-top-right-radius: 25px;
+        border-bottom-right-radius: 25px
+    }
+
+    .yz-kunnr-row:hover td {
+        background: #f8f9fa
+    }
+
+    .yz-kunnr-row {
+        cursor: pointer
+    }
+
+    .yz-kunnr-row.is-open td {
+        background: #f8f9fa;
+        border-color: #d1d5db
+    }
+
+    .yz-row-highlight-negative td {
+        background: #fee2e2 !important
+    }
+
+    .yz-row-highlight-negative:hover td {
+        background: #fecaca !important
+    }
+
+    .kunnr-caret {
+        display: inline-block;
+        width: 1rem;
+        text-align: center;
+        transition: .2s transform ease-in-out;
+        color: #16a3a5;
+        font-size: .8rem
+    }
+
+    .yz-kunnr-row.is-open .kunnr-caret {
+        transform: rotate(90deg)
+    }
+
+    .yz-caret {
+        display: inline-block;
+        transition: transform .2s ease-in-out
+    }
+
+    .yz-caret.rot {
+        transform: rotate(90deg)
+    }
+
+    .yz-nest-wrap {
+        padding: .5rem;
+        background: #f8f9fa;
+        margin-left: 0
+    }
+
+    @media (min-width: 768px) {
+        .yz-nest-wrap {
+            padding: 1rem;
+            margin-left: 60px
+        }
+    }
+
+    .yz-nest[style=""] .yz-nest-wrap {
+        animation: slideDown .4s ease-out
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-15px)
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0)
+        }
+    }
+
+    .yz-mini {
+        border: none;
+        border-collapse: separate;
+        border-spacing: 0 8px
+    }
+
+    .yz-mini tbody tr td {
+        background: #fff;
+        border-top: 1px solid #eef2f6;
+        border-bottom: 1px solid #eef2f6;
+        transition: .2s background-color
+    }
+
+    .yz-mini tbody tr td:first-child {
+        border-left: 1px solid #eef2f6;
+        border-top-left-radius: 15px;
+        border-bottom-left-radius: 15px
+    }
+
+    .yz-mini tbody tr td:last-child {
+        border-right: 1px solid #eef2f6;
+        border-top-right-radius: 15px;
+        border-bottom-right-radius: 15px
+    }
+
+    .yz-mini .js-t2row {
+        cursor: pointer
+    }
+
+    .yz-mini .js-t2row:hover td {
+        background: #f8f9fa
+    }
+
+    .yz-t2-vbeln {
+        font-weight: 600;
+        color: #15803d
+    }
+
+    .yz-bstnk-cell {
+        text-align: center
+    }
+
+    .yz-header-so+tbody td,
+    .yz-header-so th {
+        text-align: right
+    }
+
+    .yz-header-so+tbody td:nth-child(-n+3),
+    .yz-header-so th:nth-child(-n+3) {
+        text-align: left
+    }
+
+    .yz-header-item+tbody td,
+    .yz-header-item th {
+        text-align: center
+    }
+
+    .yz-loader-pulse {
+        animation: pulse-opacity 1.5s ease-in-out infinite
+    }
+
+    @keyframes pulse-opacity {
+
+        0%,
+        to {
+            opacity: 1
+        }
+
+        50% {
+            opacity: .6
+        }
+    }
+
+    .customer-focus-mode .yz-kunnr-row {
+        display: none
+    }
+
+    .customer-focus-mode .yz-kunnr-row.is-focused {
+        display: table-row
+    }
+
+    .so-focus-mode .js-t2row {
+        display: none
+    }
+
+    .so-focus-mode .js-t2row.is-focused {
+        display: table-row
+    }
+
+    .yz-chart-card {
+        border: 1px solid #e9ecef;
+        border-radius: .75rem;
+        transition: all .3s ease-in-out
+    }
+
+    .yz-chart-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .1) !important
+    }
+
+    .yz-chart-card .card-title {
+        font-weight: 600
+    }
+
+    .chart-container {
+        position: relative;
+        min-height: 350px;
+        width: 100%
+    }
+
+    .yz-kpi-card {
+        border: none;
+        border-radius: .75rem;
+        transition: all .2s ease-in-out
+    }
+
+    .yz-kpi-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .075) !important
+    }
+
+    .yz-kpi-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem
+    }
+
+    .bar-chart-container {
+        display: flex;
+        height: 20px;
+        width: 100%;
+        min-width: 250px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+        font-size: 0.75rem;
+        color: white;
+    }
+
+    .bar-segment {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all .2s ease-in-out;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis
+    }
+
+    .bar-segment:hover {
+        transform: scale(1.05);
+        z-index: 10;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+    }
+
+    .row-highlighted td {
+        background-color: #dbeafe !important;
+        animation: pulse-highlight 1.5s ease-in-out 2;
+        border-top: 1px solid #93c5fd !important;
+        border-bottom: 1px solid #93c5fd !important;
+    }
+
+    .yz-kpi-card.card-highlight-info {
+    background: linear-gradient(135deg, #e0f2fe, #f0f9ff);
+    border-left: 5px solid #0ea5e9;
+    }
+
+    .yz-kpi-card.card-highlight-warning {
+        background: linear-gradient(135deg, #fefce8, #fef3c7);
+        border-left: 5px solid #f59e0b;
+    }
+
+    .yz-kpi-card h5 {
+        font-size: 1rem;
+    }
+
+    
+    :root{
+    --kmi-green: #7BF1A8;
+    --kmi-green-text: #064e3b;            /* teks gelap yang kontras */
+    --kmi-green-soft: rgba(123,241,168,.18);  /* bg normal */
+    --kmi-green-soft-2: rgba(123,241,168,.26);/* bg hover */
+    --kmi-green-border: rgba(123,241,168,.45);
+    --kmi-green-border-2: rgba(123,241,168,.80);
+    --kmi-green-shadow: rgba(123,241,168,.35);
+    }
+
+    /* Nav-pills khusus pilihan AUART (PO/SO) */
+    .nav-pills .nav-link.pill-green{
+    background: var(--kmi-green-soft);
+    color: var(--kmi-green-text);
+    border: 1px solid var(--kmi-green-border);
+    font-weight: 600;
+    border-radius: .65rem;
+    transition: all .15s ease;
+    }
+
+    .nav-pills .nav-link.pill-green:hover{
+    background: var(--kmi-green-soft-2);
+    color: var(--kmi-green-text);
+    border-color: var(--kmi-green-border-2);
+    }
+
+    .nav-pills .nav-link.pill-green.active{
+    background: var(--kmi-green);
+    color: #053a2c; /* sedikit lebih gelap saat aktif */
+    border-color: #4ED58A; /* turunan #7BF1A8, lebih pekat */
+    box-shadow: 0 0 0 .2rem var(--kmi-green-shadow);
+    }
+
+    /* OPTIONAL: kalau butuh tombol biasa (bukan pills) dengan warna sama */
+    .btn-kmi-green{
+    background: var(--kmi-green);
+    color:#053a2c;
+    border:1px solid #93ff96;
+    font-weight:600;
+    }
+    .btn-kmi-green:hover{
+    filter: brightness(0.97);
+    color:#032f24;
+    border-color:#3DCB7E;
+    }
+    .btn-kmi-green:focus,
+    .btn-kmi-green:active{
+    box-shadow: 0 0 0 .25rem var(--kmi-green-shadow);
+    }
+
+    
+
+    @keyframes pulse-highlight {
+        0% {
+            background-color: #dbeafe;
+        }
+
+        50% {
+            background-color: #93c5fd;
+        }
+
+        100% {
+            background-color: #dbeafe;
+        }
+    }
+
