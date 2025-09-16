@@ -124,7 +124,7 @@ class SalesOrderController extends Controller
                 't1.VBELN',
                 't2.EDATU',
                 't1.WAERK',
-                DB::raw('SUM(t1.TOTPR) as total_value'),
+                DB::raw('SUM(t1.TOTPR2) as total_value'),
                 DB::raw('COUNT(DISTINCT t1.id) as item_count')
             )
             ->where('t1.KUNNR', $request->kunnr)

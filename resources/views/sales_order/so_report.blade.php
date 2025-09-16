@@ -285,7 +285,6 @@ $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
                 <th>GR PKG</th>
                 <th>Net Price</th>
                 <th>Outs. Packg Value</th>
-                <th>Outs. SO Value</th>
                 <th>Remark</th>
             </tr>
         </thead>
@@ -309,7 +308,6 @@ $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
             <td>${formatNumber(r.MENGE)}</td>
             <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
             <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-            <td>${formatCurrency(r.TOTPR, r.WAERK)}</td>
             <td class="text-center">
                 <i class="fas fa-pencil-alt remark-icon"
                    data-remark="${escapedRemark}"

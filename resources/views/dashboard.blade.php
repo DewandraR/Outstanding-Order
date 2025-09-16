@@ -155,8 +155,8 @@ $typesForPlant = collect($mapping[$werks] ?? []);
         {{-- [DIUBAH] Filter Plant (WERKS) --}}
         <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
             <li class="nav-item"><a class="nav-link {{ !$selectedLocation ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => null, 'view' => 'so'])) }}">All Plant</a></li>
-            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000', 'view' => 'so'])) }}">SMG</a></li>
-            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000', 'view' => 'so'])) }}">SBY</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000', 'view' => 'so'])) }}">Semarang</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000', 'view' => 'so'])) }}">Surabaya</a></li>
         </ul>
 
         {{-- [BARU] Filter Work Center (AUART) --}}
