@@ -34,7 +34,7 @@
                         alt="Company Logo"
                         class="max-h-64 w-auto object-contain mx-auto transition-transform duration-500 hover:scale-105">
                     <h2 class="mt-8 text-2xl font-bold text-green-800">
-                        Outstanding SO Monitoring
+                        Outstanding Sales Monitoring
                     </h2>
                     <p class="mt-2 text-sm text-gray-600">
                         PT Kayu Mabel Indonesia

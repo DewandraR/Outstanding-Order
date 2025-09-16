@@ -33,25 +33,15 @@
         height: 100%
     }
 
-    /* --- NEW: wadah chart fix tinggi, Chart.js akan mengisi ini --- */
     .chart-box {
         position: relative;
         height: 480px;
-    }
-
-    /* default */
-
-    .yz-chart-card {
-        border-radius: 1rem;
-        padding: 1.5rem;
-        height: 100%
     }
 </style>
 @endpush
 
 @section('content')
 
-{{-- Embed data TANPA JSON.parse, super aman --}}
 <script>
     window.__STOCK_DASH__ = @json($dashboardData, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
 </script>
@@ -95,7 +85,7 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-info-subtle text-info"><i class="fas fa-boxes-stacked"></i></div>
                 <div class="ms-3">
-                    <p class="mb-1 text-muted">WHFG Items (KALAB &gt; 0)</p>
+                    <p class="mb-1 text-muted">WHFG Items (Stock &gt; 0)</p>
                     <h3 class="mb-0 fw-bolder">{{ $fmtInt($kpi['whfg_count'] ?? null) }}</h3>
                 </div>
             </div>
@@ -125,7 +115,7 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
     </div>
 </div>
 
-{{-- Hanya 1 kartu: Most Stock Customers (ALL) --}}
+{{-- Most Stock Customers (ALL) --}}
 <div class="row g-4 mb-4">
     <div class="col-12">
         <div class="card shadow-sm yz-chart-card">
@@ -138,7 +128,6 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
                         <canvas id="chartTopWhfg"></canvas>
                     </div>
                 </div>
-
                 <div>
                     <h6 class="text-muted mb-2">Stock Packing Qty</h6>
                     <div class="chart-box">
@@ -158,21 +147,19 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
         const data = window.__STOCK_DASH__ || {};
         const fmt = v => new Intl.NumberFormat('id-ID').format(Number(v || 0));
 
-        // Hitung tinggi container SECARA TERBATAS (tidak membesar terus)
         function setContainerHeight(canvas, rows) {
-            const perRow = 26; // tinggi per bar
-            const MIN = 360; // tinggi minimum
-            const MAX = 720; // batas maksimum
+            const perRow = 26;
+            const MIN = 360;
+            const MAX = 720;
             const h = Math.min(MAX, Math.max(MIN, rows * perRow + 80));
-            const holder = canvas.parentElement; // .chart-box
-            holder.style.height = h + 'px';
+            canvas.parentElement.style.height = h + 'px';
         }
 
-        function renderBar(canvasId, label, items, valueKey) {
+        // DIUBAH: Fungsi renderBar ditambahkan parameter 'breakdownKey'
+        function renderBar(canvasId, label, items, valueKey, breakdownKey) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return;
 
-            // sembunyikan yang 0
             const src = Array.isArray(items) ? items.filter(r => Number(r[valueKey] || 0) > 0) : [];
             if (!src.length) {
                 canvas.parentElement.innerHTML =
@@ -183,11 +170,9 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             const labels = src.map(r => r.NAME1 || '');
             const vals = src.map(r => Number(r[valueKey] || 0));
 
-            // Tetapkan tinggi WADAH (bukan canvas) agar stabil
             setContainerHeight(canvas, labels.length);
 
-            // Warna hijau (Bootstrap success)
-            const fill = 'rgba(25, 135, 84, 0.35)'; // #198754 dengan alfa
+            const fill = 'rgba(25, 135, 84, 0.35)';
             const stroke = '#198754';
 
             new Chart(canvas.getContext('2d'), {
@@ -206,11 +191,35 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
                 options: {
                     indexAxis: 'y',
                     responsive: true,
-                    maintainAspectRatio: false, // isi tinggi .chart-box
+                    maintainAspectRatio: false,
                     animation: false,
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        // [DITAMBAHKAN] Logika Tooltip kustom
+                        tooltip: {
+                            callbacks: {
+                                // Label utama: "WHFG Qty: 1.804"
+                                label: (context) => `${label}: ${fmt(context.parsed.x)}`,
+                                // Footer untuk rincian lokasi
+                                footer: (tooltipItems) => {
+                                    const context = tooltipItems[0];
+                                    const dataPoint = src[context.dataIndex];
+                                    const breakdown = dataPoint.breakdown ? dataPoint.breakdown[breakdownKey] : null;
+
+                                    if (!breakdown) return '';
+
+                                    const parts = [];
+                                    const smgQty = breakdown['3000'] || 0;
+                                    const sbyQty = breakdown['2000'] || 0;
+
+                                    if (smgQty > 0) parts.push(`SMG: ${fmt(smgQty)}`);
+                                    if (sbyQty > 0) parts.push(`SBY: ${fmt(sbyQty)}`);
+
+                                    return parts.join(' | ');
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -234,8 +243,9 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
         }
 
         const tc = (data.topCustomers || {});
-        renderBar('chartTopWhfg', 'WHFG Qty', tc.whfg || [], 'whfg_qty');
-        renderBar('chartTopFg', 'FG Qty', tc.fg || [], 'fg_qty');
+        // DIUBAH: Panggilan fungsi renderBar ditambahkan parameter breakdownKey
+        renderBar('chartTopWhfg', 'WHFG Qty', tc.whfg || [], 'whfg_qty', 'whfg');
+        renderBar('chartTopFg', 'FG Qty', tc.fg || [], 'fg_qty', 'fg');
     })();
 </script>
 @endpush

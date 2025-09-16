@@ -29,23 +29,41 @@ class StockDashboardController extends Controller
             'fg_count'             => (clone $baseFg)->count(),
         ];
 
-        // ===== Qty per customer (sekali query) =====
-        $perCustomer = DB::table('so_yppr079_t1 as s')
+        // [DIUBAH] Query untuk mengambil data per customer DAN per lokasi
+        $perCustomerPerLocation = DB::table('so_yppr079_t1 as s')
             ->when($location, fn($q, $loc) => $q->where('s.IV_WERKS_PARAM', $loc))
             ->whereNotNull('s.NAME1')->where('s.NAME1', '!=', '')
             ->select(
                 's.NAME1',
+                's.IV_WERKS_PARAM', // Ambil lokasi
                 DB::raw('SUM(CASE WHEN s.KALAB  > 0 THEN s.KALAB  ELSE 0 END) AS whfg_qty'),
                 DB::raw('SUM(CASE WHEN s.KALAB2 > 0 THEN s.KALAB2 ELSE 0 END) AS fg_qty')
             )
-            ->groupBy('s.NAME1')
+            ->groupBy('s.NAME1', 's.IV_WERKS_PARAM') // Group berdasarkan lokasi juga
             ->get();
 
-        // Ranking ALL (tanpa nol)
-        $rankWhfg = $perCustomer->filter(fn($r) => (float)$r->whfg_qty > 0)
-                                ->sortByDesc('whfg_qty')->values();
-        $rankFg   = $perCustomer->filter(fn($r) => (float)$r->fg_qty > 0)
-                                ->sortByDesc('fg_qty')->values();
+        // [DITAMBAHKAN] Agregasi data di PHP untuk membuat struktur dengan rincian
+        $customerData = collect($perCustomerPerLocation)->groupBy('NAME1')->map(function ($items, $name) {
+            $whfg_breakdown = $items->pluck('whfg_qty', 'IV_WERKS_PARAM');
+            $fg_breakdown = $items->pluck('fg_qty', 'IV_WERKS_PARAM');
+
+            return [
+                'NAME1' => $name,
+                'whfg_qty' => $items->sum('whfg_qty'),
+                'fg_qty' => $items->sum('fg_qty'),
+                'breakdown' => [
+                    'whfg' => $whfg_breakdown,
+                    'fg' => $fg_breakdown,
+                ]
+            ];
+        })->values();
+
+
+        // Ranking ALL (berdasarkan data yang sudah diagregasi)
+        $rankWhfg = $customerData->filter(fn($r) => (float)$r['whfg_qty'] > 0)
+            ->sortByDesc('whfg_qty')->values();
+        $rankFg   = $customerData->filter(fn($r) => (float)$r['fg_qty'] > 0)
+            ->sortByDesc('fg_qty')->values();
 
         // Mapping untuk sidebar
         $mapping = DB::table('maping')
@@ -56,7 +74,7 @@ class StockDashboardController extends Controller
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
         $dashboardData = [
-            'kpi'          => $kpi,
+            'kpi'            => $kpi,
             'topCustomers' => [
                 'whfg' => $rankWhfg,
                 'fg'   => $rankFg,

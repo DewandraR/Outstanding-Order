@@ -274,46 +274,52 @@ $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
         }
 
         function renderLevel3_Items(rows) {
-            if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
-            let html = `<div class="table-responsive"><table class="table table-sm table-hover mb-0 yz-mini">
-                <thead class="yz-header-item">
-                    <tr>
-                        <th style="width: 40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-                        <th>Item</th><th>Material FG</th>
-                        <th>Desc FG</th><th>Qty SO</th>
-                        <th>Outs. SO</th><th>Stock Packing</th>
-                        <th>GR PKG</th>
-                        <th>Net Price</th>
-                        <th>Outs. Packg Value</th>
-                        <th>Outs. SO Value</th>
-                        <th>Remark</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-            rows.forEach(r => {
-                const isChecked = selectedItems.has(r.id.toString());
-                const hasRemark = r.remark && r.remark.trim() !== '';
-                const escapedRemark = r.remark ? encodeURIComponent(r.remark) : '';
-                html += `<tr data-item-id="${r.id}">
-                    <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked' : ''}></td>
-                    <td>${r.POSNR ?? ''}</td>
-                    <td>${r.MATNR ?? ''}</td>
-                    <td>${r.MAKTX ?? ''}</td>
-                    <td>${formatNumber(r.KWMENG)}</td>
-                    <td>${formatNumber(r.PACKG)}</td>
-                    <td>${formatNumber(r.KALAB2)}</td>
-                    <td>${formatNumber(r.MENGE)}</td>
-                    <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
-                    <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-                    <td>${formatCurrency(r.TOTPR, r.WAERK)}</td>
-                    <td class="text-center">
-                        <i class="fas fa-pencil-alt remark-icon" data-id="${r.id}" data-remark="${escapedRemark}" title="Tambah/Edit Catatan"></i>
-                        <span class="remark-dot" style="display: ${hasRemark ? 'inline-block' : 'none'};"></span>
-                    </td>
-                </tr>`;
-            });
-            html += `</tbody></table></div>`;
-            return html;
+    if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
+    let html = `<div class="table-responsive"><table class="table table-sm table-hover mb-0 yz-mini">
+        <thead class="yz-header-item">
+            <tr>
+                <th style="width: 40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+                <th>Item</th><th>Material FG</th>
+                <th>Desc FG</th><th>Qty SO</th>
+                <th>Outs. SO</th><th>Stock Packing</th>
+                <th>GR PKG</th>
+                <th>Net Price</th>
+                <th>Outs. Packg Value</th>
+                <th>Outs. SO Value</th>
+                <th>Remark</th>
+            </tr>
+        </thead>
+        <tbody>`;
+    rows.forEach(r => {
+        const isChecked = selectedItems.has(String(r.id)); // tetap untuk export
+        const hasRemark = r.remark && r.remark.trim() !== '';
+        const escapedRemark = r.remark ? encodeURIComponent(r.remark) : '';
+        html += `<tr data-item-id="${r.id}"
+                     data-werks="${r.WERKS_KEY}"
+                     data-auart="${r.AUART_KEY}"
+                     data-vbeln="${r.VBELN_KEY}"
+                     data-posnr="${r.POSNR_KEY}">
+            <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked' : ''}></td>
+            <td>${r.POSNR ?? ''}</td>
+            <td>${r.MATNR ?? ''}</td>
+            <td>${r.MAKTX ?? ''}</td>
+            <td>${formatNumber(r.KWMENG)}</td>
+            <td>${formatNumber(r.PACKG)}</td>
+            <td>${formatNumber(r.KALAB2)}</td>
+            <td>${formatNumber(r.MENGE)}</td>
+            <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
+            <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
+            <td>${formatCurrency(r.TOTPR, r.WAERK)}</td>
+            <td class="text-center">
+                <i class="fas fa-pencil-alt remark-icon"
+                   data-remark="${escapedRemark}"
+                   title="Tambah/Edit Catatan"></i>
+                <span class="remark-dot" style="display: ${hasRemark ? 'inline-block' : 'none'};"></span>
+            </td>
+        </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    return html;
         }
 
         //-----------------------------------------------------
@@ -422,66 +428,71 @@ $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
 
         document.body.addEventListener('click', function(e) {
             if (e.target.classList.contains('remark-icon')) {
-                const itemId = e.target.dataset.id;
+                const rowEl = e.target.closest('tr');
                 const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
+                // simpan kunci natural pada tombol save (dataset)
+                saveRemarkBtn.dataset.werks = rowEl.dataset.werks;
+                saveRemarkBtn.dataset.auart = rowEl.dataset.auart;
+                saveRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
+                saveRemarkBtn.dataset.posnr = rowEl.dataset.posnr;
 
                 remarkTextarea.value = currentRemark;
-                saveRemarkBtn.dataset.itemId = itemId;
                 remarkFeedback.textContent = '';
 
-                // ⬇️ PENTING: pastikan modal menjadi anak langsung <body>
                 if (remarkModalEl.parentElement !== document.body) {
                     document.body.appendChild(remarkModalEl);
                 }
-
-                // (opsional) pastikan tidak ada instance modal lama nyangkut
                 if (bootstrap.Modal.getInstance(remarkModalEl)) {
                     bootstrap.Modal.getInstance(remarkModalEl).hide();
                 }
-
                 remarkModal.show();
             }
         });
 
         saveRemarkBtn.addEventListener('click', async function() {
-            const itemId = this.dataset.itemId;
-            const remarkText = remarkTextarea.value;
-            this.disabled = true;
-            this.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Menyimpan...`;
-            try {
-                const response = await fetch(saveRemarkUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        id: itemId,
-                        remark: remarkText
-                    })
-                });
-                const result = await response.json();
-                if (!response.ok || !result.ok) {
-                    throw new Error(result.message || 'Gagal menyimpan catatan.');
-                }
-                const remarkIcon = document.querySelector(`.remark-icon[data-id='${itemId}']`);
-                const remarkDot = remarkIcon.nextElementSibling;
-                remarkIcon.dataset.remark = encodeURIComponent(remarkText);
-                remarkDot.style.display = remarkText.trim() !== '' ? 'inline-block' : 'none';
-                remarkFeedback.textContent = 'Catatan berhasil disimpan!';
-                remarkFeedback.className = 'small mt-2 text-success';
-                setTimeout(() => remarkModal.hide(), 1000);
-            } catch (error) {
-                console.error('Error:', error);
-                remarkFeedback.textContent = error.message;
-                remarkFeedback.className = 'small mt-2 text-danger';
-            } finally {
-                this.disabled = false;
-                this.innerHTML = 'Simpan Catatan';
-            }
-        });
+        const payload = {
+            werks: this.dataset.werks,
+            auart: this.dataset.auart,
+            vbeln: this.dataset.vbeln,
+            posnr: this.dataset.posnr,
+            remark: remarkTextarea.value
+        };
+        this.disabled = true;
+        this.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Menyimpan...`;
+        try {
+            const response = await fetch(saveRemarkUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.message || 'Gagal menyimpan catatan.');
 
+            // update dot & data-remark pada ikon di baris terkait
+            const rowSel = `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr='${payload.posnr}']`;
+            const rowEl = document.querySelector(rowSel);
+            const remarkIcon = rowEl?.querySelector('.remark-icon');
+            const remarkDot = remarkIcon?.nextElementSibling;
+            if (remarkIcon) remarkIcon.dataset.remark = encodeURIComponent(payload.remark || '');
+            if (remarkDot) remarkDot.style.display = (payload.remark.trim() !== '' ? 'inline-block' : 'none');
+
+            remarkFeedback.textContent = 'Catatan berhasil disimpan!';
+            remarkFeedback.className = 'small mt-2 text-success';
+            setTimeout(() => remarkModal.hide(), 800);
+        } catch (error) {
+            console.error('Error:', error);
+            remarkFeedback.textContent = error.message;
+            remarkFeedback.className = 'small mt-2 text-danger';
+        } finally {
+            this.disabled = false;
+            this.innerHTML = 'Simpan Catatan';
+        }
+    });
+        //-----------------------------------------------------
         if (exportDropdownContainer) {
             exportDropdownContainer.addEventListener('click', function(e) {
                 if (e.target.classList.contains('export-option')) {

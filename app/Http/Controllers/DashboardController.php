@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
@@ -13,16 +14,24 @@ class DashboardController extends Controller
      */
     private function getSoDashboardData(Request $request)
     {
-        $location = $request->query('location'); // '2000' | '3000' | null
+        $location = $request->query('location'); // Ini adalah WERKS '2000' | '3000' | null
         $type     = $request->query('type');     // 'lokal' | 'export' | null
+        $auart    = $request->query('auart');     // [BARU] Filter untuk AUART
 
         $today     = now()->startOfDay();
-        $endOfWeek = now()->endOfWeek();
+        $startWeek = now()->startOfWeek(Carbon::MONDAY)->startOfDay();
+        $endWeekEx = (clone $startWeek)->addWeek(); // exclusive
 
         // Parser tanggal EDATU yang aman (t3)
         $safeEdatu = "COALESCE(
         STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
         STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
+
+        // Parser tanggal EDATU yang aman (t2)
+        $safeEdatuT2 = "COALESCE(
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
     )";
 
         // ==========================
@@ -42,7 +51,9 @@ class DashboardController extends Controller
             })->where('m.Deskription', 'like', '%Export%');
         }
 
+        // [DIUBAH] Menerapkan filter location (WERKS) dan auart
         $relevantVbelnsQuery->when($location, fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc));
+        $relevantVbelnsQuery->when($auart, fn($q, $val) => $q->where('t3.IV_AUART_PARAM', $val));
 
         // Hanya SO yang punya item siap kirim (PACKG > 0)
         $relevantVbelnsQuery->whereExists(function ($q) {
@@ -73,8 +84,7 @@ class DashboardController extends Controller
             ->distinct()->count('VBELN');
 
         // =========================================================
-        // 3) KPI Value Ready to Ship (USD/IDR) – MATCH SQL kamu
-        //    SUM(TOTPR2) dari t1, group by t1.WAERK, PACKG>0
+        // 3) KPI Value Ready to Ship (USD/IDR) — dari t1 (tetap)
         // =========================================================
         $kpiTotalsQuery = DB::table('so_yppr079_t1 as t1')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
@@ -86,22 +96,35 @@ class DashboardController extends Controller
             CAST(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS total_idr
         ")->first();
 
-        // Value to ship this week (TOTPR2 + PACKG>0 + range EDATU)
-        $valueThisWeekUSD = DB::table('so_yppr079_t1 as t1')
-            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
-            ->where('t1.WAERK', 'USD')
-            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery))
-            ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $endOfWeek])
-            ->sum('t1.TOTPR2');
+        // =========================================================
+        // 3A) Value to Ship This Week — PAKAI t2 (mirror SQL kamu)
+        // =========================================================
+        $weekAgg = DB::table('so_yppr079_t2 as t2')
+            ->when($type === 'lokal', function ($q) {
+                $q->join('maping as m', function ($join) {
+                    $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Local%');
+            })
+            ->when($type === 'export', function ($q) {
+                $q->join('maping as m', function ($join) {
+                    $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Export%');
+            })
+            // [DIUBAH] Menerapkan filter location (WERKS) dan auart
+            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->when($auart, fn($q, $val) => $q->where('t2.IV_AUART_PARAM', $val))
+            ->whereRaw('CAST(t2.PACKG AS DECIMAL(18,3)) <> 0')
+            ->whereRaw("{$safeEdatuT2} >= ? AND {$safeEdatuT2} < ?", [$startWeek, $endWeekEx])
+            ->selectRaw("
+            CAST(SUM(CASE WHEN TRIM(t2.WAERK)='USD' THEN CAST(t2.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS usd,
+            CAST(SUM(CASE WHEN TRIM(t2.WAERK)='IDR' THEN CAST(t2.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS idr
+        ")
+            ->first();
 
-        $valueThisWeekIDR = DB::table('so_yppr079_t1 as t1')
-            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
-            ->where('t1.WAERK', 'IDR')
-            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery))
-            ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $endOfWeek])
-            ->sum('t1.TOTPR2');
+        $valueThisWeekUSD = (float) ($weekAgg->usd ?? 0);
+        $valueThisWeekIDR = (float) ($weekAgg->idr ?? 0);
 
         $chartData['kpi'] = [
             'total_outstanding_value_usd' => (float) ($totalsByCurrency->total_usd ?? 0),
@@ -111,8 +134,8 @@ class DashboardController extends Controller
             'total_overdue_so'     => $totalOverdueSo,
             'overdue_rate'         => $totalOutstandingSo > 0 ? ($totalOverdueSo / $totalOutstandingSo) * 100 : 0,
 
-            'value_to_ship_this_week_usd' => (float) $valueThisWeekUSD,
-            'value_to_ship_this_week_idr' => (float) $valueThisWeekIDR,
+            'value_to_ship_this_week_usd' => $valueThisWeekUSD,
+            'value_to_ship_this_week_idr' => $valueThisWeekIDR,
 
             // Bottleneck dihitung dari baseQuery yang SUDAH dibatasi VBELN relevan
             'potential_bottlenecks' => (clone $baseQuery)
@@ -122,7 +145,6 @@ class DashboardController extends Controller
 
         // ==================================================================
         // 4) Value Ready to Ship vs Overdue by Location (tanpa currency)
-        //     Total per lokasi = on_time_value + overdue_value
         // ==================================================================
         $chartData['value_by_location_status'] = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
@@ -175,9 +197,76 @@ class DashboardController extends Controller
             ->limit(5)
             ->get();
 
+        // ===========================================================
+        // 7) DUE THIS WEEK – pakai t2 (aman untuk ONLY_FULL_GROUP_BY)
+        // ===========================================================
+        // [MODIFIED] Query untuk tabel SO Due This Week
+        $dueThisWeekBySo = DB::table('so_yppr079_t2 as t2')
+            ->leftJoin('maping as m', function ($join) {
+                $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })
+            ->when($type === 'lokal', function ($q) {
+                $q->where('m.Deskription', 'like', '%Local%');
+            })
+            ->when($type === 'export', function ($q) {
+                $q->where('m.Deskription', 'like', '%Export%');
+            })
+            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->when($auart, fn($q, $val) => $q->where('t2.IV_AUART_PARAM', $val))
+            ->whereRaw('CAST(t2.PACKG AS DECIMAL(18,3)) <> 0')
+            ->whereRaw("{$safeEdatuT2} >= ? AND {$safeEdatuT2} < ?", [$startWeek, $endWeekEx])
+            ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't2.WAERK', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
+            ->selectRaw("
+            t2.VBELN,
+            t2.BSTNK,
+            t2.NAME1,
+            t2.WAERK,
+            t2.IV_WERKS_PARAM,
+            t2.IV_AUART_PARAM,
+            CAST(SUM(t2.TOTPR2) AS DECIMAL(18,2)) AS total_value,
+            DATE_FORMAT(MIN({$safeEdatuT2}), '%Y-%m-%d') AS due_date
+        ")
+            ->orderByDesc('total_value')
+            ->limit(50)
+            ->get();
+
+        $dueThisWeekByCustomer = DB::table('so_yppr079_t2 as t2')
+            ->when($type === 'lokal', function ($q) {
+                $q->join('maping as m', function ($join) {
+                    $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Local%');
+            })
+            ->when($type === 'export', function ($q) {
+                $q->join('maping as m', function ($join) {
+                    $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Export%');
+            })
+            // [DIUBAH] Menerapkan filter location (WERKS) dan auart
+            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->when($auart, fn($q, $val) => $q->where('t2.IV_AUART_PARAM', $val))
+            ->whereRaw('CAST(t2.PACKG AS DECIMAL(18,3)) <> 0')
+            ->whereRaw("{$safeEdatuT2} >= ? AND {$safeEdatuT2} < ?", [$startWeek, $endWeekEx])
+            ->groupBy('t2.NAME1', 't2.WAERK')
+            ->selectRaw("
+            t2.NAME1,
+            t2.WAERK,
+            CAST(SUM(t2.TOTPR2) AS DECIMAL(18,2)) AS total_value
+        ")
+            ->orderByDesc('total_value')
+            ->get();
+
+        $chartData['due_this_week'] = [
+            'start'       => $startWeek->toDateTimeString(),
+            'end_excl'    => $endWeekEx->toDateTimeString(),
+            'by_so'       => $dueThisWeekBySo,
+            'by_customer' => $dueThisWeekByCustomer,
+        ];
+
         return $chartData;
     }
-
 
 
     /**

@@ -163,9 +163,14 @@ class SalesOrderController extends Controller
         $request->validate(['vbeln' => 'required|string', 'werks' => 'required|string', 'auart' => 'required|string']);
 
         $items = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('item_remarks', 't1.id', '=', 'item_remarks.so_item_id')
+            ->leftJoin('item_remarks as ir', function ($j) {
+                $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
+                    ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
+                    ->on('ir.VBELN', '=', 't1.VBELN')
+                    ->on('ir.POSNR', '=', 't1.POSNR');
+            })
             ->select(
-                't1.id',
+                't1.id', // boleh tetap dipakai untuk ceklis UI, tapi TIDAK untuk remark
                 't1.MAKTX',
                 't1.KWMENG',
                 't1.PACKG',
@@ -179,9 +184,15 @@ class SalesOrderController extends Controller
                 't1.TOTPR',
                 't1.NETWR',
                 't1.WAERK',
-                'item_remarks.remark',
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
-                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR")
+                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
+                // kunci natural untuk dikirim ke FE
+                't1.IV_WERKS_PARAM as WERKS_KEY',
+                't1.IV_AUART_PARAM as AUART_KEY',
+                't1.VBELN as VBELN_KEY',
+                't1.POSNR as POSNR_KEY',
+                // remark
+                'ir.remark'
             )
             ->where('t1.VBELN', $request->vbeln)
             ->where('t1.IV_WERKS_PARAM', $request->werks)
@@ -212,20 +223,16 @@ class SalesOrderController extends Controller
         $auart = $validated['auart'];
 
         $items = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('item_remarks', 't1.id', '=', 'item_remarks.so_item_id')
-            ->whereIn('t1.id', $itemIds)
-            ->select(
-                't1.VBELN',
-                't1.POSNR',
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.PACKG',
-                't1.KALAB',
-                't1.KALAB2',
-                'item_remarks.remark',
-                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR_formatted")
-            )
-            ->orderBy('t1.VBELN', 'asc')->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')->get();
+            ->leftJoin('item_remarks as ir', function ($j) {
+                $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
+                    ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
+                    ->on('ir.VBELN', '=', 't1.VBELN')
+                    ->on('ir.POSNR', '=', 't1.POSNR');
+            })
+            ->whereIn('t1.id', $itemIds) // <- kalau seleksi masih pakai id, ini tetap boleh
+            ->select(/* kolom2, lalu */'ir.remark')
+            ->orderBy('t1.VBELN')->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
+            ->get();
 
         foreach ($items as $item) {
             $item->MATNR = $item->MATNR_formatted;
@@ -270,20 +277,33 @@ class SalesOrderController extends Controller
     public function apiSaveRemark(Request $request)
     {
         $validated = $request->validate([
-            'id'     => 'required|integer|exists:so_yppr079_t1,id',
+            'werks' => 'required|string',
+            'auart' => 'required|string',
+            'vbeln' => 'required|string',
+            'posnr' => 'required|string',
             'remark' => 'nullable|string|max:1000',
         ]);
 
-        $remarkText = $validated['remark'] ?? null;
+        $remarkText = trim($validated['remark'] ?? '');
 
         try {
-            if (empty(trim($remarkText))) {
-                DB::table('item_remarks')->where('so_item_id', $validated['id'])->delete();
+            if ($remarkText === '') {
+                DB::table('item_remarks')->where([
+                    'IV_WERKS_PARAM' => $validated['werks'],
+                    'IV_AUART_PARAM' => $validated['auart'],
+                    'VBELN'          => $validated['vbeln'],
+                    'POSNR'          => $validated['posnr'],
+                ])->delete();
             } else {
                 DB::table('item_remarks')->updateOrInsert(
-                    ['so_item_id' => $validated['id']],
                     [
-                        'remark' => $remarkText,
+                        'IV_WERKS_PARAM' => $validated['werks'],
+                        'IV_AUART_PARAM' => $validated['auart'],
+                        'VBELN'          => $validated['vbeln'],
+                        'POSNR'          => $validated['posnr'],
+                    ],
+                    [
+                        'remark'     => $remarkText,
                         'updated_at' => now(),
                         'created_at' => now(),
                     ]

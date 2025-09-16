@@ -424,6 +424,21 @@
     box-shadow: 0 0 0 .25rem var(--kmi-green-shadow);
     }
 
+
+    .yz-scrollable-table-container {
+        max-height: 500px; /* Anda bisa sesuaikan tinggi maksimum sesuai kebutuhan */
+        overflow-y: auto;
+        position: relative;
+    }
+
+    .yz-scrollable-table-container .table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        /* [PENTING] Pastikan baris ini ada dan aktif. 
+       Warnanya akan mengikuti class .table-light yang sudah ada di thead */
+       background-color: #f8f9fa; 
+    }
     
 
     @keyframes pulse-highlight {

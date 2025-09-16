@@ -22,12 +22,10 @@ class StockController extends Controller
 
         $werks = $request->query('werks');
 
-        // Default redirect ke whfg jika hanya werks yang ada
         if ($werks && !$request->has('type')) {
             return redirect()->route('stock.index', ['werks' => $werks, 'type' => 'whfg']);
         }
 
-        // SANITASI: pastikan hanya 'whfg' atau 'fg'
         $type = $request->query('type') === 'fg' ? 'fg' : 'whfg';
 
         $rows = null;
@@ -43,8 +41,9 @@ class StockController extends Controller
                         't1.KUNNR',
                         't1.NAME1',
                         't1.WAERK',
-                        DB::raw('SUM(t1.NETPR * t1.KALAB) AS TOTAL_VALUE'),   // ⬅️ ganti TOTPR
-                        DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT')
+                        DB::raw('SUM(t1.NETPR * t1.KALAB) AS TOTAL_VALUE'),
+                        DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
+                        DB::raw('SUM(t1.KALAB) AS TOTAL_QTY') // DITAMBAHKAN: Menghitung total qty WHFG
                     );
             } else { // fg
                 $q->where('t1.KALAB2', '>', 0)
@@ -52,8 +51,9 @@ class StockController extends Controller
                         't1.KUNNR',
                         't1.NAME1',
                         't1.WAERK',
-                        DB::raw('SUM(t1.NETPR * t1.KALAB2) AS TOTAL_VALUE'),  // ⬅️ ganti TOTPR
-                        DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT')
+                        DB::raw('SUM(t1.NETPR * t1.KALAB2) AS TOTAL_VALUE'),
+                        DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
+                        DB::raw('SUM(t1.KALAB2) AS TOTAL_QTY') // DITAMBAHKAN: Menghitung total qty FG
                     );
             }
 
@@ -69,6 +69,7 @@ class StockController extends Controller
             'selected' => ['werks' => $werks, 'type' => $type],
         ]);
     }
+
     /**
      * API: Ambil daftar SO untuk 1 customer (level-2 table).
      */
@@ -88,8 +89,9 @@ class StockController extends Controller
                     't1.VBELN',
                     't2.EDATU',
                     't1.WAERK',
-                    DB::raw('SUM(t1.NETPR * t1.KALAB) AS total_value'),   // ⬅️ ganti TOTPR
-                    DB::raw('COUNT(t1.id) AS item_count')
+                    DB::raw('SUM(t1.NETPR * t1.KALAB) AS total_value'),
+                    DB::raw('COUNT(t1.id) AS item_count'),
+                    DB::raw('SUM(t1.KALAB) AS total_qty') // DITAMBAHKAN: Menghitung total qty WHFG per SO
                 );
         } else {
             $rows->where('t1.KALAB2', '>', 0)
@@ -97,14 +99,14 @@ class StockController extends Controller
                     't1.VBELN',
                     't2.EDATU',
                     't1.WAERK',
-                    DB::raw('SUM(t1.NETPR * t1.KALAB2) AS total_value'),  // ⬅️ ganti TOTPR
-                    DB::raw('COUNT(t1.id) AS item_count')
+                    DB::raw('SUM(t1.NETPR * t1.KALAB2) AS total_value'),
+                    DB::raw('COUNT(t1.id) AS item_count'),
+                    DB::raw('SUM(t1.KALAB2) AS total_qty') // DITAMBAHKAN: Menghitung total qty FG per SO
                 );
         }
 
         $rows = $rows->groupBy('t1.VBELN', 't2.EDATU', 't1.WAERK')->get();
 
-        // (Bagian overdue/format EDATU kamu boleh biarkan seperti semula)
         $today = now()->startOfDay();
         foreach ($rows as $row) {
             $overdue = 0;
@@ -132,7 +134,6 @@ class StockController extends Controller
         $request->validate(['vbeln' => 'required', 'werks' => 'required', 'type' => 'required']);
         $type = $request->type;
 
-        // Query diubah untuk menghapus kolom dan menambahkan kolom VALUE
         $items = DB::table('so_yppr079_t1')
             ->select(
                 DB::raw("TRIM(LEADING '0' FROM POSNR) as POSNR"),
@@ -143,7 +144,6 @@ class StockController extends Controller
                 'KALAB',  // WHFG
                 'NETPR',
                 'WAERK',
-                // Menambahkan kolom VALUE dengan logika kondisional
                 DB::raw("CASE 
                     WHEN '{$type}' = 'whfg' THEN (KALAB * NETPR) 
                     ELSE (KALAB2 * NETPR) 
