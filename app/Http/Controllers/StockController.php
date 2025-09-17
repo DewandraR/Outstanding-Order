@@ -22,13 +22,31 @@ class StockController extends Controller
 
         $werks = $request->query('werks');
 
+        // kalau user belum pilih type, tetap redirect ke default agar tabelnya jelas
         if ($werks && !$request->has('type')) {
             return redirect()->route('stock.index', ['werks' => $werks, 'type' => 'whfg']);
         }
 
         $type = $request->query('type') === 'fg' ? 'fg' : 'whfg';
 
+        // ============== NEW: total qty utk pill, selalu dihitung ==============
+        $pillTotals = ['whfg_qty' => 0, 'fg_qty' => 0];
+        if ($werks) {
+            $pillTotals['whfg_qty'] = (float) DB::table('so_yppr079_t1')
+                ->where('IV_WERKS_PARAM', $werks)
+                ->where('KALAB', '>', 0)
+                ->sum('KALAB');
+
+            $pillTotals['fg_qty'] = (float) DB::table('so_yppr079_t1')
+                ->where('IV_WERKS_PARAM', $werks)
+                ->where('KALAB2', '>', 0)
+                ->sum('KALAB2');
+        }
+        // =====================================================================
+
         $rows = null;
+        $grandTotalQty = 0;
+        $grandTotalsCurr = [];
 
         if ($werks && $type) {
             $q = DB::table('so_yppr079_t1 as t1')
@@ -43,9 +61,9 @@ class StockController extends Controller
                         't1.WAERK',
                         DB::raw('SUM(t1.NETPR * t1.KALAB) AS TOTAL_VALUE'),
                         DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
-                        DB::raw('SUM(t1.KALAB) AS TOTAL_QTY') // DITAMBAHKAN: Menghitung total qty WHFG
+                        DB::raw('SUM(t1.KALAB) AS TOTAL_QTY')
                     );
-            } else { // fg
+            } else {
                 $q->where('t1.KALAB2', '>', 0)
                     ->select(
                         't1.KUNNR',
@@ -53,7 +71,7 @@ class StockController extends Controller
                         't1.WAERK',
                         DB::raw('SUM(t1.NETPR * t1.KALAB2) AS TOTAL_VALUE'),
                         DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
-                        DB::raw('SUM(t1.KALAB2) AS TOTAL_QTY') // DITAMBAHKAN: Menghitung total qty FG
+                        DB::raw('SUM(t1.KALAB2) AS TOTAL_QTY')
                     );
             }
 
@@ -61,12 +79,36 @@ class StockController extends Controller
                 ->orderBy('t1.NAME1', 'asc')
                 ->paginate(25)
                 ->withQueryString();
+
+            // grand total qty (untuk footer & pill aktif)
+            $grandTotalQty = ($type === 'whfg') ? $pillTotals['whfg_qty'] : $pillTotals['fg_qty'];
+
+            // grand total value per currency
+            $valueQuery = DB::table('so_yppr079_t1')
+                ->select('WAERK', DB::raw(
+                    $type === 'whfg'
+                        ? 'SUM(NETPR * KALAB) as val'
+                        : 'SUM(NETPR * KALAB2) as val'
+                ))
+                ->where('IV_WERKS_PARAM', $werks)
+                ->when($type === 'whfg', fn($qq) => $qq->where('KALAB', '>', 0))
+                ->when($type === 'fg',   fn($qq) => $qq->where('KALAB2', '>', 0))
+                ->groupBy('WAERK')
+                ->get();
+
+            foreach ($valueQuery as $r) {
+                $grandTotalsCurr[$r->WAERK] = (float) $r->val;
+            }
         }
 
         return view('stock_report', [
-            'mapping'  => $mapping,
-            'rows'     => $rows,
-            'selected' => ['werks' => $werks, 'type' => $type],
+            'mapping'        => $mapping,
+            'rows'           => $rows,
+            'selected'       => ['werks' => $werks, 'type' => $type],
+            'grandTotalQty'  => $grandTotalQty,
+            'grandTotalsCurr' => $grandTotalsCurr,
+            // NEW: kirim total qty utk kedua pill
+            'pillTotals'     => $pillTotals,
         ]);
     }
 

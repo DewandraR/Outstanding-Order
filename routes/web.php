@@ -57,6 +57,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/outstanding-so/export', [SalesOrderController::class, 'exportData'])->name('so.export');
     Route::post('/api/so-save-remark', [SalesOrderController::class, 'apiSaveRemark'])->name('so.api.save_remark');
 
+    // (BARU) Export PDF: Overview Customer (Customer, Overdue SO, Overdue Rate, Value + Total)
+    Route::get('/outstanding-so/export/summary', [SalesOrderController::class, 'exportCustomerSummary'])
+        ->name('so.export.summary');
+
 
     // ==========================================================
     // == ROUTE UNTUK LAPORAN STOK (DETAIL)

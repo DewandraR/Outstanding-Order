@@ -4,10 +4,139 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
+
 
 class DashboardController extends Controller
 {
+
+    private function soTotalsCacheKey($location, $type, $auart): string
+    {
+        return sprintf(
+            'so:report:totals:%s|%s|%s',
+            $location ?: 'all',
+            $type ?: 'all',
+            $auart ?: 'all'
+        );
+    }
+
+    /**
+     * Ambil total dari cache SO Report; jika belum ada, hitung sekali
+     * dengan query yang sama (TOTPR2, PACKG > 0) lalu simpan ke cache.
+     */
+    private function getSoReportTotalsNoCompute(Request $request): array
+    {
+        $loc   = $request->query('location');   // '2000' | '3000' | null
+        $type  = $request->query('type');       // 'lokal' | 'export' | null
+        $auart = $request->query('auart');      // null | string
+
+        $cacheKey = sprintf('so:rep:totals:v2:%s|%s|%s', $loc ?: 'all', $type ?: 'all', $auart ?: 'all');
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($loc, $type, $auart) {
+            // Basis sama seperti SO Report: t2 (header) + t1 (item), ambil hanya yang siap packing
+            $q = DB::table('so_yppr079_t2 as t2')
+                ->join(
+                    'so_yppr079_t1 as t1',
+                    DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                    '=',
+                    DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+                )
+                ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
+                ->when($loc,   fn($qq, $v) => $qq->where('t2.IV_WERKS_PARAM', $v))
+                ->when($auart, fn($qq, $v) => $qq->where('t2.IV_AUART_PARAM', $v));
+
+            // Filter tipe PERSIS seperti di SO Report
+            if ($type === 'lokal') {
+                $q->join('maping as m', function ($j) {
+                    $j->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where(function ($w) {
+                    // Lokal = Local + Replace
+                    $w->where('m.Deskription', 'like', '%Local%')
+                        ->orWhere('m.Deskription', 'like', '%Replace%');
+                });
+            } elseif ($type === 'export') {
+                $q->join('maping as m', function ($j) {
+                    $j->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Export%')
+                    ->where('m.Deskription', 'not like', '%Replace%')
+                    ->where('m.Deskription', 'not like', '%Local%');
+            }
+
+            // TOTAL diambil mentah dari t1.TOTPR, dikelompokkan oleh currency t2
+            $row = $q->selectRaw("
+                    CAST(SUM(CASE WHEN t2.WAERK='USD' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS usd,
+                    CAST(SUM(CASE WHEN t2.WAERK='IDR' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS idr
+               ")->first();
+
+            return [
+                'usd' => (float) ($row->usd ?? 0),
+                'idr' => (float) ($row->idr ?? 0),
+            ];
+        });
+    }
+
+    private function getSoReportTotals(Request $request): array
+    {
+        $loc   = $request->query('location');   // '2000' | '3000' | null
+        $type  = $request->query('type');       // 'lokal' | 'export' | null
+        $auart = $request->query('auart');      // string | null
+
+        $cacheKey = sprintf('so:report:totals:%s|%s|%s', $loc ?: 'all', $type ?: 'all', $auart ?: 'all');
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($loc, $type, $auart) {
+
+            // Kumpulkan VBELN relevan (pola yang sama seperti SO Report)
+            $vbelns = DB::table('so_yppr079_t3 as t3')
+                ->when($type === 'lokal', function ($q) {
+                    // Lokal pada dashboard = Local (+ bisa ikut Replace bila mau digabungkan)
+                    $q->join('maping as m', function ($j) {
+                        $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                            ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                    })->where(function ($qq) {
+                        $qq->where('m.Deskription', 'like', '%Local%')
+                            ->orWhere('m.Deskription', 'like', '%Replace%'); // ikutkan Replace di Lokal
+                    });
+                })
+                ->when($type === 'export', function ($q) {
+                    // Export = hanya yang Export, TIDAK termasuk Replace maupun Local
+                    $q->join('maping as m', function ($j) {
+                        $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                            ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                    })->where('m.Deskription', 'like', '%Export%')
+                        ->where('m.Deskription', 'not like', '%Replace%')
+                        ->where('m.Deskription', 'not like', '%Local%');
+                })
+                ->when($loc,   fn($q, $v) => $q->where('t3.IV_WERKS_PARAM', $v))
+                ->when($auart, fn($q, $v) => $q->where('t3.IV_AUART_PARAM', $v))
+                ->whereExists(function ($q) {
+                    $q->select(DB::raw(1))
+                        ->from('so_yppr079_t1 as s')
+                        ->whereColumn('s.VBELN', 't3.VBELN')
+                        ->whereRaw('CAST(s.PACKG AS DECIMAL(18,3)) > 0');
+                })
+                ->pluck('t3.VBELN');
+
+            // TOTAL diambil langsung dari t1.TOTPR2 (value ready to ship) seperti SO Report
+            $row = DB::table('so_yppr079_t1 as s')
+                ->whereRaw('CAST(s.PACKG AS DECIMAL(18,3)) > 0')
+                ->whereIn('s.VBELN', $vbelns)
+                ->selectRaw("
+                CAST(SUM(CASE WHEN TRIM(s.WAERK)='USD' THEN CAST(s.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS usd,
+                CAST(SUM(CASE WHEN TRIM(s.WAERK)='IDR' THEN CAST(s.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS idr
+            ")
+                ->first();
+
+            return [
+                'usd' => (float) ($row->usd ?? 0),
+                'idr' => (float) ($row->idr ?? 0),
+            ];
+        });
+    }
+
+
     public function apiSoUrgencyDetails(Request $request)
     {
         $request->validate([
@@ -96,7 +225,7 @@ class DashboardController extends Controller
 
         return response()->json(['ok' => true, 'data' => $rows]);
     }
-    
+
     public function apiSoStatusDetails(Request $request)
     {
         $request->validate([
@@ -252,15 +381,7 @@ class DashboardController extends Controller
         // =========================================================
         // 3) KPI Value Ready to Ship (USD/IDR) — dari t1 (tetap)
         // =========================================================
-        $kpiTotalsQuery = DB::table('so_yppr079_t1 as t1')
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
-            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery));
-
-        $totalsByCurrency = (clone $kpiTotalsQuery)
-            ->selectRaw("
-            CAST(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS total_usd,
-            CAST(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS total_idr
-        ")->first();
+        $reportTotals = $this->getSoReportTotals($request);
 
         // =========================================================
         // 3A) Value to Ship This Week — PAKAI t2 (mirror SQL kamu)
@@ -292,19 +413,19 @@ class DashboardController extends Controller
         $valueThisWeekUSD = (float) ($weekAgg->usd ?? 0);
         $valueThisWeekIDR = (float) ($weekAgg->idr ?? 0);
 
+        $repTotals = $this->getSoReportTotalsNoCompute($request);
+
         $chartData['kpi'] = [
-            'total_outstanding_value_usd' => (float) ($totalsByCurrency->total_usd ?? 0),
-            'total_outstanding_value_idr' => (float) ($totalsByCurrency->total_idr ?? 0),
+            'total_outstanding_value_usd' => $repTotals['usd'],
+            'total_outstanding_value_idr' => $repTotals['idr'],
 
-            'total_outstanding_so' => $totalOutstandingSo,
-            'total_overdue_so'     => $totalOverdueSo,
-            'overdue_rate'         => $totalOutstandingSo > 0 ? ($totalOverdueSo / $totalOutstandingSo) * 100 : 0,
-
+            // sisanya tetap (jumlah SO, overdue, dll) — atau biarkan yang sudah ada
+            'total_outstanding_so'        => $totalOutstandingSo,
+            'total_overdue_so'            => $totalOverdueSo,
+            'overdue_rate'                => $totalOutstandingSo > 0 ? ($totalOverdueSo / $totalOutstandingSo) * 100 : 0,
             'value_to_ship_this_week_usd' => $valueThisWeekUSD,
             'value_to_ship_this_week_idr' => $valueThisWeekIDR,
-
-            // Bottleneck dihitung dari baseQuery yang SUDAH dibatasi VBELN relevan
-            'potential_bottlenecks' => (clone $baseQuery)
+            'potential_bottlenecks'       => (clone $baseQuery)
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > CAST(t1.KALAB2 AS DECIMAL(15,3))')
                 ->count(),
         ];

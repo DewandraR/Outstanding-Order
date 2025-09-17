@@ -63,9 +63,9 @@
 
 {{-- KPI CARDS --}}
 @php
-$kpi = $dashboardData['kpi'] ?? [];
+$kpi    = $dashboardData['kpi'] ?? [];
 $fmtUsd = fn($v) => '$'.number_format((float)($v ?? 0), 2, '.', ',');
-$fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
+$fmtNum = fn($v) => number_format((float)($v ?? 0), 0, ',', '.'); // untuk qty
 @endphp
 
 <div class="row g-4 mb-4">
@@ -80,17 +80,19 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             </div>
         </div>
     </div>
+
     <div class="col-md-6 col-xl-3">
         <div class="card kpi-card h-100 shadow-sm">
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-info-subtle text-info"><i class="fas fa-boxes-stacked"></i></div>
                 <div class="ms-3">
                     <p class="mb-1 text-muted">WHFG Stock</p>
-                    <h3 class="mb-0 fw-bolder">{{ $fmtInt($kpi['whfg_count'] ?? null) }}</h3>
+                    <h3 class="mb-0 fw-bolder">{{ $fmtNum($kpi['whfg_qty'] ?? 0) }}</h3>
                 </div>
             </div>
         </div>
     </div>
+
     <div class="col-md-6 col-xl-3">
         <div class="card kpi-card h-100 shadow-sm">
             <div class="card-body d-flex align-items-center">
@@ -102,13 +104,14 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             </div>
         </div>
     </div>
+
     <div class="col-md-6 col-xl-3">
         <div class="card kpi-card h-100 shadow-sm">
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-success-subtle text-success"><i class="fas fa-cubes"></i></div>
                 <div class="ms-3">
                     <p class="mb-1 text-muted">Packing Stock</p>
-                    <h3 class="mb-0 fw-bolder">{{ $fmtInt($kpi['fg_count'] ?? null) }}</h3>
+                    <h3 class="mb-0 fw-bolder">{{ $fmtNum($kpi['fg_qty'] ?? 0) }}</h3>
                 </div>
             </div>
         </div>

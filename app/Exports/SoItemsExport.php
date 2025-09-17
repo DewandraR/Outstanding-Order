@@ -42,6 +42,7 @@ class SoItemsExport implements FromCollection, WithHeadings, WithMapping, Should
     public function headings(): array
     {
         return [
+            'Costumer',
             'PO',
             'SO',
             'Item',
@@ -65,6 +66,7 @@ class SoItemsExport implements FromCollection, WithHeadings, WithMapping, Should
     public function map($item): array
     {
         return [
+            $item->headerInfo->NAME1 ?? '',
             $item->headerInfo->BSTNK ?? '',
             $item->VBELN,
             (int)$item->POSNR,

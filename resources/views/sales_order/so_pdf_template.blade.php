@@ -61,39 +61,38 @@
 
     <table class="table">
         <thead style="font-size: 9px;">
-            <tr>
-                {{-- Lebar kolom yang disesuaikan untuk landscape --}}
-                <th style="width: 8%;">PO</th>
-                <th style="width: 6%;">SO</th>
-                <th style="width: 4%;">Item</th>
-                <th style="width: 10%;">Material FG</th>
-                <th class="text-left" style="width: 28%;">Desc FG</th> {{-- Diperlebar --}}
-                <th style="width: 5%;">Qty SO</th>
-                <th style="width: 5%;">Outs. SO</th>
-                <th style="width: 5%;">WHFG</th>
-                <th style="width: 6%;">Stock Packg.</th>
-                <th class="text-left" style="width: 23%;">Remark</th> {{-- Diperlebar --}}
-            </tr>
+        <tr>
+            <th style="width: 14%;">Customer</th>
+            <th style="width: 8%;">PO</th>
+            <th style="width: 6%;">SO</th>
+            <th style="width: 4%;">Item</th>
+            <th style="width: 10%;">Material FG</th>
+            <th class="text-left" style="width: 21%;">Desc FG</th>
+            <th style="width: 5%;">Qty SO</th>
+            <th style="width: 5%;">Outs. SO</th>
+            <th style="width: 5%;">WHFG</th>
+            <th style="width: 6%;">Stock Packg.</th>
+            <th class="text-left" style="width: 16%;">Remark</th>
+        </tr>
         </thead>
         <tbody>
-            @forelse($items as $item)
-            <tr>
-                <td>{{ $item->headerInfo->BSTNK ?? '' }}</td>
-                <td>{{ $item->VBELN }}</td>
-                <td>{{ (int)$item->POSNR }}</td>
-                <td>{{ $item->MATNR }}</td>
-                <td class="text-left">{{ $item->MAKTX }}</td>
-                <td>{{ number_format($item->KWMENG, 0) }}</td>
-                <td>{{ number_format($item->PACKG, 0) }}</td>
-                <td>{{ number_format($item->KALAB ?? 0, 0) }}</td>
-                <td>{{ number_format($item->KALAB2 ?? 0, 0) }}</td>
-                <td class="text-left">{{ $item->remark }}</td>
-            </tr>
-            @empty
-            <tr>
-                <td colspan="10">Tidak ada item yang dipilih untuk diekspor.</td>
-            </tr>
-            @endforelse
+        @forelse($items as $item)
+        <tr>
+            <td class="text-left">{{ $item->headerInfo->NAME1 ?? '' }}</td>
+            <td>{{ $item->headerInfo->BSTNK ?? '' }}</td>
+            <td>{{ $item->VBELN }}</td>
+            <td>{{ (int)$item->POSNR }}</td>
+            <td>{{ $item->MATNR }}</td>
+            <td class="text-left">{{ $item->MAKTX }}</td>
+            <td>{{ number_format($item->KWMENG, 0) }}</td>
+            <td>{{ number_format($item->PACKG, 0) }}</td>
+            <td>{{ number_format($item->KALAB ?? 0, 0) }}</td>
+            <td>{{ number_format($item->KALAB2 ?? 0, 0) }}</td>
+            <td class="text-left">{{ $item->remark }}</td>
+        </tr>
+        @empty
+        <tr><td colspan="11">Tidak ada item yang dipilih untuk diekspor.</td></tr>
+        @endforelse
         </tbody>
     </table>
 </body>

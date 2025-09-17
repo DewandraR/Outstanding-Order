@@ -61,7 +61,23 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 <i class="fas fa-users me-2"></i>Overview Customer
             </h5>
         </div>
+        
+        @php
+            // total per currency untuk tabel Overview Customer
+            $totalsByCurr = [];
+            foreach ($rows as $r) {
+                $cur = $r->WAERK ?? '';
+                $val = (float) $r->TOTPR;
+                $totalsByCurr[$cur] = ($totalsByCurr[$cur] ?? 0) + $val;
+            }
 
+            // helper format (biar sama persis dengan tampilan Value per baris)
+            $formatTotal = function($val, $cur) {
+                if ($cur === 'IDR') return 'Rp ' . number_format($val, 2, ',', '.');
+                if ($cur === 'USD') return '$' . number_format($val, 2, '.', ',');
+                return ($cur ? ($cur . ' ') : '') . number_format($val, 2, ',', '.');
+            };
+        @endphp
         <div class="table-responsive yz-table px-md-3">
             <table class="table table-hover mb-0 align-middle yz-grid">
                 <thead class="yz-header-customer">
@@ -70,7 +86,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                         <th class="text-start" style="min-width:250px;">Customer</th>
                         <th style="min-width:120px; text-align:center;">Overdue PO</th>
                         <th style="min-width:150px; text-align:center;">Overdue Rate</th>
-                        <th style="min-width:150px;">Value</th>
+                        <th style="min-width:150px;">Outs. Value</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -117,6 +133,18 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                     </tr>
                     @endforelse
                 </tbody>
+                <tfoot>
+                    @foreach($totalsByCurr as $cur => $sum)
+                    <tr class="table-light">
+                        <th></th>
+                        <th class="text-start">Total ({{ $cur ?: 'N/A' }})</th>
+                        <th class="text-center" colspan="2">—</th>
+                        <th class="text-end">
+                            {{ $formatTotal($sum, $cur) }}
+                        </th>
+                    </tr>
+                    @endforeach
+                </tfoot>
             </table>
         </div>
     </div>
@@ -272,7 +300,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                                 <th class="text-center">PO</th>
                                 <th>Customer</th>
                                 <th class="text-center">Plant</th>
-                                <th class="text-center">Work Center</th>
+                                <th class="text-center">Order Type</th>
                                 <th class="text-center">Due</th>
                                 <th class="text-end">Value</th>
                             </tr>
@@ -587,7 +615,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
             row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
             row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Overdue PO');
             row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Overdue Rate');
-            row.querySelector('td:nth-child(5)')?.setAttribute('data-label', 'Value');
+            row.querySelector('td:nth-child(5)')?.setAttribute('data-label', 'Outs. Value');
         });
     });
 
@@ -736,46 +764,73 @@ $typesForPlant = collect($mapping[$werks] ?? []);
             };
 
             function renderT2(rows, kunnr) {
-                if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
-                let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
-                                <table class="table table-sm mb-0 yz-mini">
-                                    <thead class="yz-header-so">
-                                        <tr>
-                                            <th style="width:40px;text-align:center;"></th>
-                                            <th style="min-width:150px;text-align:left;">PO</th>
-                                            <th style="min-width:100px;text-align:left;">SO</th>
-                                            <th style="min-width:100px;text-align:right;">Outs. Value</th>
-                                            <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
-                                            <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
-                                            <th style="min-width:120px;text-align:center;">Shortage %</th>
-                                        </tr>
-                                    </thead><tbody>`;
-                rows.forEach((r, i) => {
-                    const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                    const overdueDays = r.Overdue;
-                    const rowHighlightClass = overdueDays < 0 ? 'yz-row-highlight-negative' : '';
-                    const edatuDisplay = r.FormattedEdatu || '';
-                    const shortageDisplay = `${(r.ShortagePercentage || 0).toFixed(2)}%`;
-                    html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-                                    <td style="text-align:center;"><span class="yz-caret">▸</span></td>
-                                    <td style="text-align:left;">${r.BSTNK ?? ''}</td>
-                                    <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
-                                    <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-                                    <td style="text-align:center;">${edatuDisplay}</td>
-                                    <td style="text-align:center;">${overdueDays ?? 0}</td>
-                                    <td style="text-align:center;">${shortageDisplay}</td>
-                                </tr>
-                                <tr id="${rid}" class="yz-nest" style="display:none;">
-                                    <td colspan="7" class="p-0">
-                                        <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
-                                            <div class="yz-slot-t3 p-2"></div>
-                                        </div>
-                                    </td>
-                                </tr>`;
-                });
-                html += `</tbody></table></div>`;
-                return html;
-            }
+    if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
+
+    // -- akumulasi total per currency
+    const totalsByCurr = {}; // { USD: number, IDR: number, ... }
+    rows.forEach(r => {
+        const cur = (r.WAERK || '').trim();
+        const val = parseFloat(r.TOTPR) || 0;
+        totalsByCurr[cur] = (totalsByCurr[cur] || 0) + val;
+    });
+
+    let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
+                    <table class="table table-sm mb-0 yz-mini">
+                        <thead class="yz-header-so">
+                            <tr>
+                                <th style="width:40px;text-align:center;"></th>
+                                <th style="min-width:150px;text-align:left;">PO</th>
+                                <th style="min-width:100px;text-align:left;">SO</th>
+                                <th style="min-width:100px;text-align:right;">Outs. Value</th>
+                                <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
+                                <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
+                                <th style="min-width:120px;text-align:center;">Shortage %</th>
+                            </tr>
+                        </thead><tbody>`;
+
+    rows.forEach((r, i) => {
+        const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
+        const overdueDays = r.Overdue;
+        const rowHighlightClass = overdueDays < 0 ? 'yz-row-highlight-negative' : '';
+        const edatuDisplay = r.FormattedEdatu || '';
+        const shortageDisplay = `${(r.ShortagePercentage || 0).toFixed(2)}%`;
+        html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+                        <td style="text-align:center;"><span class="yz-caret">▸</span></td>
+                        <td style="text-align:left;">${r.BSTNK ?? ''}</td>
+                        <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
+                        <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
+                        <td style="text-align:center;">${edatuDisplay}</td>
+                        <td style="text-align:center;">${overdueDays ?? 0}</td>
+                        <td style="text-align:center;">${shortageDisplay}</td>
+                    </tr>
+                    <tr id="${rid}" class="yz-nest" style="display:none;">
+                        <td colspan="7" class="p-0">
+                            <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
+                                <div class="yz-slot-t3 p-2"></div>
+                            </div>
+                        </td>
+                    </tr>`;
+    });
+
+    html += `</tbody>`;
+
+    // -- sisipkan FOOTER total per currency
+    html += `<tfoot>`;
+    Object.entries(totalsByCurr).forEach(([cur, sum]) => {
+        html += `<tr class="table-light">
+                    <th></th>
+                    <th colspan="2" style="text-align:left;">Total (${cur || 'N/A'})</th>
+                    <th style="text-align:right;">${formatCurrencyForTable(sum, cur)}</th>
+                    <th style="text-align:center;">—</th>
+                    <th style="text-align:center;">—</th>
+                    <th style="text-align:center;">—</th>
+                 </tr>`;
+    });
+    html += `</tfoot>`;
+
+    html += `</table></div>`;
+    return html;
+}
 
             function renderT3(rows) {
                 if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
@@ -1400,7 +1455,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                                         <th class="text-center" style="min-width:120px;">SO</th>
                                         <th>CUSTOMER</th>
                                         <th class="text-center" style="min-width:100px;">PLANT</th>
-                                        <th class="text-center" style="min-width:120px;">WORK CENTER</th>
+                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
                                         <th class="text-center" style="min-width:120px;">DUE DATE</th>
                                     </tr>
                                 </thead>
@@ -1531,7 +1586,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                                         <th class="text-center" style="min-width:120px;">SO</th>
                                         <th>CUSTOMER</th>
                                         <th class="text-center" style="min-width:100px;">PLANT</th>
-                                        <th class="text-center" style="min-width:120px;">WORK CENTER</th>
+                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
                                         <th class="text-center" style="min-width:120px;">DUE DATE</th>
                                     </tr>
                                 </thead>
