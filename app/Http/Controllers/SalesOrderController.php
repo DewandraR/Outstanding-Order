@@ -229,14 +229,24 @@ class SalesOrderController extends Controller
                     ->on('ir.VBELN', '=', 't1.VBELN')
                     ->on('ir.POSNR', '=', 't1.POSNR');
             })
-            ->whereIn('t1.id', $itemIds) // <- kalau seleksi masih pakai id, ini tetap boleh
-            ->select(/* kolom2, lalu */'ir.remark')
-            ->orderBy('t1.VBELN')->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
+            ->whereIn('t1.id', $itemIds) // seleksi export tetap bisa pakai id
+            ->select(
+                't1.VBELN',
+                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
+                // ⬇️ alias-kan langsung ke MATNR supaya tak perlu foreach
+                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$'
+                 THEN TRIM(LEADING '0' FROM t1.MATNR)
+                 ELSE t1.MATNR END AS MATNR"),
+                't1.MAKTX',
+                't1.KWMENG',
+                't1.PACKG',
+                't1.KALAB',
+                't1.KALAB2',
+                'ir.remark'
+            )
+            ->orderBy('t1.VBELN', 'asc')
+            ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
-
-        foreach ($items as $item) {
-            $item->MATNR = $item->MATNR_formatted;
-        }
 
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName = $locationMap[$werks] ?? $werks;

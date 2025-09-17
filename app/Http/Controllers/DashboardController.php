@@ -8,6 +8,172 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    public function apiSoUrgencyDetails(Request $request)
+    {
+        $request->validate([
+            'status'   => 'required|string|in:overdue_over_30,overdue_1_30,due_this_week,on_time',
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string', // Filter work center
+        ]);
+
+        $status   = $request->query('status');
+        $location = $request->query('location');
+        $type     = $request->query('type');
+        $auart    = $request->query('auart');
+
+        // =================================================================
+        // LANGKAH 1: Dapatkan VBELN yang relevan (logika inti dari getSoDashboardData)
+        // Ini memastikan kita hanya bekerja pada SO yang memiliki item siap kirim (PACKG > 0)
+        // dan sesuai dengan filter yang aktif di dashboard.
+        // =================================================================
+
+        $safeEdatu = "COALESCE(
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
+
+        $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3');
+
+        if ($type === 'lokal') {
+            $relevantVbelnsQuery->join('maping as m', function ($join) {
+                $join->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })->where('m.Deskription', 'like', '%Local%');
+        } elseif ($type === 'export') {
+            $relevantVbelnsQuery->join('maping as m', function ($join) {
+                $join->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })->where('m.Deskription', 'like', '%Export%');
+        }
+
+        $relevantVbelnsQuery->when($location, fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc));
+        $relevantVbelnsQuery->when($auart, fn($q, $val) => $q->where('t3.IV_AUART_PARAM', $val));
+
+        // Filter krusial: Hanya SO yang punya item siap kirim (PACKG > 0)
+        $relevantVbelnsQuery->whereExists(function ($q) {
+            $q->select(DB::raw(1))
+                ->from('so_yppr079_t1 as t1_exists')
+                ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+                ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) > 0');
+        });
+
+        $relevantVbelnsQuery->select('t3.VBELN')->distinct();
+
+
+        // =================================================================
+        // LANGKAH 2: Bangun query utama dengan filter status dari chart
+        // =================================================================
+
+        $base = DB::table('so_yppr079_t3 as t3')
+            ->whereIn('t3.VBELN', $relevantVbelnsQuery); // <-- Hanya proses VBELN yang relevan
+
+        // Terapkan filter status berdasarkan segmen chart yang di-klik
+        if ($status === 'overdue_over_30') {
+            $base->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) > 30");
+        } elseif ($status === 'overdue_1_30') {
+            $base->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 1 AND 30");
+        } elseif ($status === 'due_this_week') {
+            // Logika ini harus sama persis dengan yang menghitung angka di chart
+            $base->whereRaw("{$safeEdatu} BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        } else { // on_time
+            $base->whereRaw("{$safeEdatu} > DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        }
+
+        // Ambil data yang dibutuhkan untuk tabel
+        $rows = $base
+            ->groupBy('t3.VBELN', 't3.BSTNK', 't3.NAME1', 't3.IV_WERKS_PARAM', 't3.IV_AUART_PARAM')
+            ->selectRaw("
+            t3.VBELN,
+            t3.BSTNK,
+            t3.NAME1,
+            t3.IV_WERKS_PARAM,
+            t3.IV_AUART_PARAM,
+            DATE_FORMAT(MIN({$safeEdatu}), '%Y-%m-%d') AS due_date
+        ")
+            ->orderByRaw("MIN({$safeEdatu}) ASC") // Urutkan berdasarkan tanggal jatuh tempo
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
+    
+    public function apiSoStatusDetails(Request $request)
+    {
+        $request->validate([
+            'status'   => 'required|string|in:overdue,due_this_week,on_time',
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+        ]);
+
+        $status   = $request->query('status');
+        $location = $request->query('location');
+        $type     = $request->query('type');
+
+        // Parser tanggal EDATU yang sama dengan bagian PO dashboard
+        $safeEdatu = "
+        COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d')
+        )
+    ";
+
+        // Base query mengacu ke logika dashboard PO (t2 + join t1, filter PACKG!=0)
+        $base = DB::table('so_yppr079_t2 as t2');
+
+        if ($type === 'lokal') {
+            $base->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($q) {
+                $q->select('IV_AUART', 'IV_WERKS')->from('maping')->where('Deskription', 'like', '%Local%')
+                    ->union(
+                        DB::table('so_yppr079_t2')
+                            ->select('IV_AUART_PARAM as IV_AUART', 'IV_WERKS_PARAM as IV_WERKS')
+                            ->groupBy('IV_AUART_PARAM', 'IV_WERKS_PARAM')
+                            ->havingRaw("SUM(CASE WHEN WAERK = 'IDR' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN WAERK = 'USD' THEN 1 ELSE 0 END) = 0")
+                    );
+            });
+        } elseif ($type === 'export') {
+            $base->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($q) {
+                $q->select('IV_AUART', 'IV_WERKS')
+                    ->from('maping')
+                    ->where('Deskription', 'like', '%Export%')
+                    ->where('Deskription', 'not like', '%Replace%')
+                    ->where('Deskription', 'not like', '%Local%');
+            });
+        }
+
+        $base->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
+
+        // Join tetap diperlukan, tetapi filter PACKG dihapus
+        $base->join(
+            'so_yppr079_t1 as t1',
+            DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+            '=',
+            DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+        );
+
+        // Filter status sesuai pilahan chart
+        if ($status === 'overdue') {
+            $base->whereRaw("{$safeEdatu} < CURDATE()");
+        } elseif ($status === 'due_this_week') {
+            $base->whereRaw("{$safeEdatu} >= CURDATE() AND {$safeEdatu} <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        } else { // on_time
+            $base->whereRaw("{$safeEdatu} > DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
+        }
+
+        $rows = $base
+            ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
+            ->selectRaw("
+          t2.VBELN,
+          t2.BSTNK,
+          t2.NAME1,
+          t2.IV_WERKS_PARAM,
+          t2.IV_AUART_PARAM,
+          DATE_FORMAT(MIN({$safeEdatu}), '%Y-%m-%d') AS due_date
+      ")
+            ->orderByRaw("MIN({$safeEdatu}) ASC") // Diurutkan berdasarkan tanggal
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
     /**
      * [DISEMPURNAKAN] Fungsi untuk mengambil data khusus untuk dasbor Outstanding SO.
      * Fokus pada item dengan PACKG != 0 (siap kirim).

@@ -74,7 +74,7 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-primary-subtle text-primary"><i class="fas fa-coins"></i></div>
                 <div class="ms-3">
-                    <p class="mb-1 text-muted">Inventory Value (WHFG)</p>
+                    <p class="mb-1 text-muted">Inventory WHFG</p>
                     <h5 class="mb-0 fw-bolder">{{ $fmtUsd($kpi['whfg_total_value_usd'] ?? null) }}</h5>
                 </div>
             </div>
@@ -85,7 +85,7 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-info-subtle text-info"><i class="fas fa-boxes-stacked"></i></div>
                 <div class="ms-3">
-                    <p class="mb-1 text-muted">WHFG Items (Stock &gt; 0)</p>
+                    <p class="mb-1 text-muted">WHFG Stock</p>
                     <h3 class="mb-0 fw-bolder">{{ $fmtInt($kpi['whfg_count'] ?? null) }}</h3>
                 </div>
             </div>
@@ -96,7 +96,7 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-warning-subtle text-warning"><i class="fas fa-sack-dollar"></i></div>
                 <div class="ms-3">
-                    <p class="mb-1 text-muted">Inventory Value (FG)</p>
+                    <p class="mb-1 text-muted">Inventory FG</p>
                     <h5 class="mb-0 fw-bolder">{{ $fmtUsd($kpi['fg_total_value_usd'] ?? null) }}</h5>
                 </div>
             </div>
@@ -107,7 +107,7 @@ $fmtInt = fn($v) => number_format((int)($v ?? 0), 0, ',', '.');
             <div class="card-body d-flex align-items-center">
                 <div class="kpi-icon bg-success-subtle text-success"><i class="fas fa-cubes"></i></div>
                 <div class="ms-3">
-                    <p class="mb-1 text-muted">FG Items (Packing &gt; 0)</p>
+                    <p class="mb-1 text-muted">Packing Stock</p>
                     <h3 class="mb-0 fw-bolder">{{ $fmtInt($kpi['fg_count'] ?? null) }}</h3>
                 </div>
             </div>

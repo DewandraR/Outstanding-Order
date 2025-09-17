@@ -440,6 +440,104 @@
        background-color: #f8f9fa; 
     }
     
+    .yz-overlay-backdrop{
+    position:absolute; inset:0;
+    background: rgba(33,37,41,.15);
+    z-index: 20; display:none;
+    }
+
+    .yz-overlay-panel{
+    position:absolute; right:12px; top:12px;
+    width: 520px; max-width: calc(100% - 24px);
+    max-height: calc(100% - 24px);
+    background:#fff; border-radius:12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.2);
+    z-index: 30; display:none; overflow: hidden;
+    }
+
+    .yz-overlay-panel .yz-panel-head{
+    padding: .75rem 1rem; border-bottom:1px solid #eee;
+    display:flex; align-items:center; justify-content:space-between;
+    font-weight:600;
+    }
+
+    .yz-overlay-panel .yz-panel-body{
+    max-height: calc(100% - 50px);
+    overflow:auto; padding: .75rem 1rem;
+    }
+
+    #so-status-details {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        padding: 1rem; /* Beri sedikit jarak dari tepi kartu induk */
+        display: none; /* Diubah oleh JavaScript saat di-klik */
+
+        /* Efek backdrop */
+        background-color: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(5px);
+        border-radius: .75rem; /* Menyesuaikan sudut kartu induk */
+    }
+
+    /* Mengatur kartu di dalam overlay agar mengisi 100% ruang
+    dan menjadi wadah flexbox vertikal. */
+    #so-status-details > .card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Mencegah konten keluar dari sudut kartu */
+    }
+
+    /* Mengatur card-body untuk "tumbuh" dan mengisi sisa ruang
+    dan juga menjadi wadah flexbox vertikal. */
+    #so-status-details .card-body {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Penting agar tabel tidak membuat card-body melar */
+    }
+
+    /* KUNCI UTAMA: Membuat HANYA area tabel yang bisa di-scroll. */
+    #so-status-details .yz-scrollable-table-container {
+        flex-grow: 1; /* Perintahkan untuk mengisi semua sisa ruang vertikal */
+        overflow-y: auto; /* Tampilkan scrollbar jika kontennya lebih panjang */
+    }
+
+    #so-status-details,
+    #so-urgency-details {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        padding: 1rem;
+        display: none;
+        background-color: #f0f2f5;
+        border-radius: .75rem;
+    }
+
+    /* Mengatur kartu di dalam overlay agar mengisi 100% ruang */
+    #so-status-details > .card,
+    #so-urgency-details > .card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* Mengatur card-body untuk "tumbuh" dan mengisi sisa ruang */
+    #so-status-details .card-body,
+    #so-urgency-details .card-body {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* Membuat HANYA area tabel yang bisa di-scroll */
+    #so-status-details .yz-scrollable-table-container,
+    #so-urgency-details .yz-scrollable-table-container {
+        flex-grow: 1;
+        overflow-y: auto;
+    }
 
     @keyframes pulse-highlight {
         0% {

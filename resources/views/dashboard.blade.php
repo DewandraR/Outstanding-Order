@@ -138,6 +138,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
 <div id="dashboard-data-holder"
      data-chart-data='{{ json_encode($chartData ?? null) }}'
      data-selected-type="{{ $selectedType ?? '' }}"
+     data-mapping-data='{{ json_encode($mapping ?? null) }}'
      style="display: none;">
 </div>
 
@@ -152,28 +153,28 @@ $typesForPlant = collect($mapping[$werks] ?? []);
         @endif
     </div>
     <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
-        {{-- [DIUBAH] Filter Plant (WERKS) --}}
+    {{-- Filter Plant (WERKS) --}}
         <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-            <li class="nav-item"><a class="nav-link {{ !$selectedLocation ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => null, 'view' => 'so'])) }}">All Plant</a></li>
-            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000', 'view' => 'so'])) }}">Semarang</a></li>
-            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000', 'view' => 'so'])) }}">Surabaya</a></li>
+            <li class="nav-item"><a class="nav-link {{ !$selectedLocation ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => null, 'view' => $view])) }}">All Plant</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000', 'view' => $view])) }}">Semarang</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000', 'view' => $view])) }}">Surabaya</a></li>
         </ul>
 
-        {{-- [BARU] Filter Work Center (AUART) --}}
+        {{-- Filter Work Center (AUART) --}}
         @if (!empty($availableAuart) && $availableAuart->count() > 1)
         <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-            <li class="nav-item"><a class="nav-link {{ !request('auart') ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['auart' => null, 'view' => 'so'])) }}">All Work Center</a></li>
+            <li class="nav-item"><a class="nav-link {{ !request('auart') ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['auart' => null, 'view' => $view])) }}">All Work Center</a></li>
             @foreach($availableAuart as $wc)
-            <li class="nav-item"><a class="nav-link {{ request('auart') == $wc->IV_AUART ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['auart' => $wc->IV_AUART, 'view' => 'so'])) }}">{{ $wc->Deskription }}</a></li>
+            <li class="nav-item"><a class="nav-link {{ request('auart') == $wc->IV_AUART ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['auart' => $wc->IV_AUART, 'view' => $view])) }}">{{ $wc->Deskription }}</a></li>
             @endforeach
         </ul>
         @endif
 
         {{-- Filter Tipe (Export/Lokal) --}}
         <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-            <li class="nav-item"><a class="nav-link {{ !$selectedType ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => null, 'view' => 'so'])) }}">All Type</a></li>
-            <li class="nav-item"><a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'export', 'view' => 'so'])) }}">Export</a></li>
-            <li class="nav-item"><a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'lokal', 'view' => 'so'])) }}">Lokal</a></li>
+            <li class="nav-item"><a class="nav-link {{ !$selectedType ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => null, 'view' => $view])) }}">All Type</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'export', 'view' => $view])) }}">Export</a></li>
+            <li class="nav-item"><a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}" href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'lokal', 'view' => $view])) }}">Lokal</a></li>
         </ul>
     </div>
 </div>
@@ -359,7 +360,8 @@ $typesForPlant = collect($mapping[$werks] ?? []);
         </div>
     </div>
     <div class="col-lg-5">
-        <div class="card shadow-sm h-100 yz-chart-card">
+    {{-- [PASTIKAN ADA] Tambahkan class position-relative --}}
+        <div class="card shadow-sm h-100 yz-chart-card position-relative">
             <div class="card-body d-flex flex-column">
                 <h5 class="card-title"><i class="fas fa-clock me-2"></i>SO Fulfillment Urgency</h5>
                 <hr class="mt-2">
@@ -367,6 +369,8 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                     <canvas id="chartSoUrgency"></canvas>
                 </div>
             </div>
+            {{-- PINDAHKAN KE LUAR DARI CARD-BODY --}}
+            <div id="so-urgency-details" style="display:none;"></div>
         </div>
     </div>
 </div>
@@ -454,13 +458,15 @@ $typesForPlant = collect($mapping[$werks] ?? []);
         </div>
     </div>
     <div class="col-lg-5">
-        <div class="card shadow-sm h-100 yz-chart-card">
+    {{-- [DIUBAH] Tambahkan class position-relative di sini --}}
+        <div class="card shadow-sm h-100 yz-chart-card position-relative">
             <div class="card-body d-flex flex-column">
                 <h5 class="card-title"><i class="fas fa-chart-pie me-2"></i>PO Status Overview</h5>
                 <hr class="mt-2">
                 <div class="chart-container flex-grow-1">
                     <canvas id="chartSOStatus"></canvas>
                 </div>
+                <div id="so-status-details" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -573,7 +579,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
 
 <script>
     // ==========================
-    // Tabel Detail PO helpers
+    // Tabel Detail PO helpers (TIDAK DIUBAH)
     // ==========================
     document.addEventListener('DOMContentLoaded', function() {
         const customerRows = document.querySelectorAll('.yz-kunnr-row');
@@ -586,7 +592,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
     });
 
     // ==========================
-    // Helper umum (formatting)
+    // Helper umum (formatting) (TIDAK DIUBAH)
     // ==========================
     const formatFullCurrency = (value, currency) => {
         const n = parseFloat(value);
@@ -710,7 +716,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
         const rootElement = document.getElementById('yz-root');
         const showTable = rootElement ? !!parseInt(rootElement.dataset.show) : false;
 
-        // ---------- MODE TABEL (LAPORAN) ----------
+        // ---------- MODE TABEL (LAPORAN) (TIDAK DIUBAH) ----------
         if (showTable) {
             const apiT2 = "{{ route('dashboard.api.t2') }}";
             const apiT3 = "{{ route('dashboard.api.t3') }}";
@@ -732,18 +738,18 @@ $typesForPlant = collect($mapping[$werks] ?? []);
             function renderT2(rows, kunnr) {
                 if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
                 let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
-                        <table class="table table-sm mb-0 yz-mini">
-                            <thead class="yz-header-so">
-                                <tr>
-                                    <th style="width:40px;text-align:center;"></th>
-                                    <th style="min-width:150px;text-align:left;">PO</th>
-                                    <th style="min-width:100px;text-align:left;">SO</th>
-                                    <th style="min-width:100px;text-align:right;">Outs. Value</th>
-                                    <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
-                                    <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
-                                    <th style="min-width:120px;text-align:center;">Shortage %</th>
-                                </tr>
-                            </thead><tbody>`;
+                                <table class="table table-sm mb-0 yz-mini">
+                                    <thead class="yz-header-so">
+                                        <tr>
+                                            <th style="width:40px;text-align:center;"></th>
+                                            <th style="min-width:150px;text-align:left;">PO</th>
+                                            <th style="min-width:100px;text-align:left;">SO</th>
+                                            <th style="min-width:100px;text-align:right;">Outs. Value</th>
+                                            <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
+                                            <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
+                                            <th style="min-width:120px;text-align:center;">Shortage %</th>
+                                        </tr>
+                                    </thead><tbody>`;
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const overdueDays = r.Overdue;
@@ -751,21 +757,21 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                     const edatuDisplay = r.FormattedEdatu || '';
                     const shortageDisplay = `${(r.ShortagePercentage || 0).toFixed(2)}%`;
                     html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-                                <td style="text-align:center;"><span class="yz-caret">▸</span></td>
-                                <td style="text-align:left;">${r.BSTNK ?? ''}</td>
-                                <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
-                                <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-                                <td style="text-align:center;">${edatuDisplay}</td>
-                                <td style="text-align:center;">${overdueDays ?? 0}</td>
-                                <td style="text-align:center;">${shortageDisplay}</td>
-                            </tr>
-                            <tr id="${rid}" class="yz-nest" style="display:none;">
-                                <td colspan="7" class="p-0">
-                                    <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
-                                        <div class="yz-slot-t3 p-2"></div>
-                                    </div>
-                                </td>
-                            </tr>`;
+                                    <td style="text-align:center;"><span class="yz-caret">▸</span></td>
+                                    <td style="text-align:left;">${r.BSTNK ?? ''}</td>
+                                    <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
+                                    <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
+                                    <td style="text-align:center;">${edatuDisplay}</td>
+                                    <td style="text-align:center;">${overdueDays ?? 0}</td>
+                                    <td style="text-align:center;">${shortageDisplay}</td>
+                                </tr>
+                                <tr id="${rid}" class="yz-nest" style="display:none;">
+                                    <td colspan="7" class="p-0">
+                                        <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
+                                            <div class="yz-slot-t3 p-2"></div>
+                                        </div>
+                                    </td>
+                                </tr>`;
                 });
                 html += `</tbody></table></div>`;
                 return html;
@@ -789,16 +795,16 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 </thead><tbody>`;
                 rows.forEach(r => {
                     out += `<tr>
-                            <td style="text-align:center;">${r.POSNR ?? ''}</td>
-                            <td style="text-align:center;">${r.MATNR ?? ''}</td>
-                            <td>${r.MAKTX ?? ''}</td>
-                            <td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td>
-                            <td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td>
-                            <td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td>
-                            <td>${parseFloat(r.KALAB).toLocaleString('id-ID')}</td>
-                            <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
-                            <td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-                        </tr>`;
+                                <td style="text-align:center;">${r.POSNR ?? ''}</td>
+                                <td style="text-align:center;">${r.MATNR ?? ''}</td>
+                                <td>${r.MAKTX ?? ''}</td>
+                                <td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td>
+                                <td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td>
+                                <td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td>
+                                <td>${parseFloat(r.KALAB).toLocaleString('id-ID')}</td>
+                                <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
+                                <td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
+                            </tr>`;
                 });
                 out += `</tbody></table></div>`;
                 return out;
@@ -889,7 +895,6 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 });
             });
 
-            // LOGIKA UNTUK SEARCH HIGHLIGHT
             const handleSearchHighlight = () => {
                 const urlParams = new URLSearchParams(window.location.search);
                 const highlightKunnr = urlParams.get('highlight_kunnr');
@@ -924,30 +929,40 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 }
             };
             handleSearchHighlight();
-
             return;
         }
 
-        // ---------- KODE DI BAWAH INI SUDAH DIPERBAIKI ----------
+        // ---------- MODE DASHBOARD ----------
         const dataHolder = document.getElementById('dashboard-data-holder');
         if (!dataHolder) return;
-        
+
+        const mappingData = JSON.parse(dataHolder.dataset.mappingData || '{}');
+        const plantMap = { '2000': 'Surabaya', '3000': 'Semarang' };
+        const auartMap = {};
+        if (mappingData) {
+            for (const werks in mappingData) {
+                mappingData[werks].forEach(item => {
+                    auartMap[item.IV_AUART] = item.Deskription;
+                });
+            }
+        }
+
         const currentView = new URLSearchParams(window.location.search).get('view');
         const chartData = JSON.parse(dataHolder.dataset.chartData);
         const selectedType = dataHolder.dataset.selectedType;
-        
+
         if (!chartData || !chartData.kpi) {
             document.querySelectorAll('.row.g-4.mb-4').forEach(el => el.style.display = 'none');
             return;
         }
-        
+
         Chart.defaults.font.family = 'Inter, sans-serif';
         Chart.defaults.plugins.legend.position = 'bottom';
         Chart.defaults.responsive = true;
         Chart.defaults.maintainAspectRatio = false;
-
+        
+        // --- [BAGIAN DASHBOARD SO] ---
         if (currentView === 'so') {
-            // Logika untuk toggle tabel
             const toggleCard = document.getElementById('toggle-due-tables-card');
             const tablesContainer = document.getElementById('due-this-week-tables');
             if (toggleCard && tablesContainer) {
@@ -956,15 +971,13 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                     tablesContainer.style.display = isHidden ? '' : 'none';
                 });
             }
-            
-            // KPI SO
+
             document.getElementById('kpi-so-val-usd').textContent = formatFullCurrency(chartData.kpi.total_outstanding_value_usd, 'USD');
             document.getElementById('kpi-so-val-idr').textContent = formatFullCurrency(chartData.kpi.total_outstanding_value_idr, 'IDR');
             document.getElementById('kpi-so-ship-week-usd').textContent = formatFullCurrency(chartData.kpi.value_to_ship_this_week_usd, 'USD');
             document.getElementById('kpi-so-ship-week-idr').textContent = formatFullCurrency(chartData.kpi.value_to_ship_this_week_idr, 'IDR');
             document.getElementById('kpi-so-bottleneck').textContent = chartData.kpi.potential_bottlenecks;
 
-            // Bar by location & status
             const ctxLocationStatus = document.getElementById('chartValueByLocationStatus');
             if (ctxLocationStatus) {
                 const locationData = chartData.value_by_location_status || [];
@@ -996,17 +1009,11 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                             }]
                         },
                         options: {
-                            scales: {
-                                x: { stacked: true },
-                                y: { stacked: true, beginAtZero: true }
-                            },
+                            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
                             plugins: {
                                 tooltip: {
                                     callbacks: {
-                                        label: (ctx) => {
-                                            const val = Number(ctx.raw) || 0;
-                                            return `${ctx.dataset.label}: ${formatFullCurrency(val, 'USD')}`;
-                                        }
+                                        label: (ctx) => `${ctx.dataset.label}: ${formatFullCurrency(Number(ctx.raw) || 0, 'USD')}`
                                     }
                                 }
                             }
@@ -1015,15 +1022,16 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 }
             }
 
-            // Doughnut urgency
+            // --- [DIUBAH] Logika untuk chart SO Urgency
             const ctxSoUrgency = document.getElementById('chartSoUrgency');
             if (ctxSoUrgency && chartData.aging_analysis) {
                 const agingData = chartData.aging_analysis;
                 const total = Object.values(agingData).reduce((a, b) => a + b, 0);
+
                 if (total === 0) {
                     showNoDataMessage('chartSoUrgency');
                 } else {
-                    new Chart(ctxSoUrgency, {
+                    const soUrgencyChart = new Chart(ctxSoUrgency, { // Simpan instance chart
                         type: 'doughnut',
                         data: {
                             labels: ['Overdue > 30 Days', 'Overdue 1-30 Days', 'Due This Week', 'On Time'],
@@ -1032,12 +1040,28 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                                 backgroundColor: ['#b91c1c', '#ef4444', '#f59e0b', '#10b981']
                             }]
                         },
-                        options: { cutout: '60%' }
+                        options: { 
+                            cutout: '60%',
+                            // [BARU] Tambahkan event onClick di sini
+                            onClick: async (evt, elements) => {
+                                if (!elements.length) return;
+                                const idx = elements[0].index;
+                                const label = soUrgencyChart.data.labels[idx];
+                                const map = {
+                                    'Overdue > 30 Days': 'overdue_over_30',
+                                    'Overdue 1-30 Days': 'overdue_1_30',
+                                    'Due This Week': 'due_this_week',
+                                    'On Time': 'on_time'
+                                };
+                                const statusKey = map[label];
+                                if (!statusKey) return;
+                                await loadSoUrgencyDetails(statusKey, label);
+                            }
+                        }
                     });
                 }
             }
 
-            // Top customers (SO)
             const topCustomerData = selectedType === 'lokal' ? chartData.top_customers_value_idr : chartData.top_customers_value_usd;
             const topCustomerCurrency = selectedType === 'lokal' ? 'IDR' : 'USD';
             createHorizontalBarChart('chartTopCustomersValueSO', topCustomerData, 'total_value', 'Value Awaiting Shipment', {
@@ -1045,8 +1069,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 border: 'rgba(59, 130, 246, 1)'
             }, topCustomerCurrency);
 
-        } else {
-            // KPI PO
+        } else { // --- [BAGIAN DASHBOARD PO] (TIDAK DIUBAH) ---
             document.getElementById('kpi-out-usd').textContent = formatFullCurrency(chartData.kpi.total_outstanding_value_usd, 'USD');
             document.getElementById('kpi-out-idr').textContent = formatFullCurrency(chartData.kpi.total_outstanding_value_idr, 'IDR');
             document.getElementById('kpi-out-so').textContent = chartData.kpi.total_outstanding_so;
@@ -1054,8 +1077,6 @@ $typesForPlant = collect($mapping[$werks] ?? []);
             document.getElementById('kpi-overdue-rate').textContent = `(${(chartData.kpi.overdue_rate || 0).toFixed(1)}%)`;
 
             const currencyToDisplay = selectedType === 'lokal' ? 'IDR' : 'USD';
-
-            // Outstanding by location
             const ctxLocation = document.getElementById('chartOutstandingLocation');
             if (ctxLocation) {
                 const locationData = chartData.outstanding_by_location;
@@ -1079,12 +1100,7 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                             }]
                         },
                         options: {
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: { callback: (v) => new Intl.NumberFormat('id-ID').format(v) }
-                                }
-                            },
+                            scales: { y: { beginAtZero: true, ticks: { callback: (v) => new Intl.NumberFormat('id-ID').format(v) } } },
                             plugins: {
                                 tooltip: {
                                     callbacks: {
@@ -1102,14 +1118,14 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 }
             }
 
-            // Status doughnut
             const ctxStatus = document.getElementById('chartSOStatus');
+            let soStatusChart = null;
             if (ctxStatus) {
                 const statusData = chartData.so_status;
                 if (statusData && (statusData.overdue + statusData.due_this_week + statusData.on_time === 0)) {
                     showNoDataMessage('chartSOStatus');
                 } else if (statusData) {
-                    new Chart(ctxStatus, {
+                    soStatusChart = new Chart(ctxStatus, {
                         type: 'doughnut',
                         data: {
                             labels: ['Overdue', 'Due This Week', 'On Time'],
@@ -1120,34 +1136,33 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                                 borderWidth: 2
                             }]
                         },
-                        options: { cutout: '60%' }
+                        options: { 
+                            cutout: '60%',
+                            onClick: async (evt, elements) => {
+                                if (!elements.length) return;
+                                const idx = elements[0].index;
+                                const label = soStatusChart.data.labels[idx];
+                                const map = { 'Overdue': 'overdue', 'Due This Week': 'due_this_week', 'On Time': 'on_time' };
+                                const statusKey = map[label];
+                                if (!statusKey) return;
+                                await loadSoStatusDetails(statusKey, label);
+                            }
+                        }
                     });
                 }
             }
-
-            // Top value (PO)
+            
             const topValueTitle = document.querySelector('#chartTopCustomersValue')?.closest('.card')?.querySelector('.card-title');
             if (selectedType === 'lokal') {
                 if (topValueTitle) topValueTitle.innerHTML = `<i class="fas fa-crown me-2"></i>Top 4 Customers by Outstanding Value (IDR)`;
-                createHorizontalBarChart('chartTopCustomersValue', chartData.top_customers_value_idr, 'total_value', 'Total Outstanding', {
-                    bg: 'rgba(25, 135, 84, 0.6)',
-                    border: 'rgba(25, 135, 84, 1)'
-                }, 'IDR');
+                createHorizontalBarChart('chartTopCustomersValue', chartData.top_customers_value_idr, 'total_value', 'Total Outstanding', { bg: 'rgba(25, 135, 84, 0.6)', border: 'rgba(25, 135, 84, 1)' }, 'IDR');
             } else {
                 if (topValueTitle) topValueTitle.innerHTML = `<i class="fas fa-crown me-2"></i>Top 4 Customers by Outstanding Value (USD)`;
-                createHorizontalBarChart('chartTopCustomersValue', chartData.top_customers_value_usd, 'total_value', 'Total Outstanding', {
-                    bg: 'rgba(13, 110, 253, 0.6)',
-                    border: 'rgba(13, 110, 253, 1)'
-                }, 'USD');
+                createHorizontalBarChart('chartTopCustomersValue', chartData.top_customers_value_usd, 'total_value', 'Total Outstanding', { bg: 'rgba(13, 110, 253, 0.6)', border: 'rgba(13, 110, 253, 1)' }, 'USD');
             }
 
-            // Top overdue customers
-            createHorizontalBarChart('chartTopOverdueCustomers', chartData.top_customers_overdue, 'overdue_count', 'Jumlah PO Terlambat', {
-                bg: 'rgba(220, 53, 69, 0.6)',
-                border: 'rgba(220, 53, 69, 1)'
-            });
+            createHorizontalBarChart('chartTopOverdueCustomers', chartData.top_customers_overdue, 'overdue_count', 'Jumlah PO Terlambat', { bg: 'rgba(220, 53, 69, 0.6)', border: 'rgba(220, 53, 69, 1)' });
 
-            // Performance table
             const performanceData = chartData.so_performance_analysis;
             const performanceTbody = document.getElementById('so-performance-tbody');
             if (performanceTbody) {
@@ -1192,7 +1207,6 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 }
             }
 
-            // Small quantity stacked bar + onClick detail
             const ctxSmallQty = document.getElementById('chartSmallQtyByCustomer');
             const smallQtyDataRaw = chartData.small_qty_by_customer || [];
             if (ctxSmallQty) {
@@ -1227,15 +1241,9 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                         },
                         options: {
                             indexAxis: 'y',
-                            scales: {
-                                // [MODIFIED] Menghapus 'stacked: true' agar bar tidak ditumpuk
-                                x: { beginAtZero: true, title: { display: true, text: 'Item (With Qty Outstanding ≤ 5)' } },
-                                y: {}
-                            },
+                            scales: { x: { beginAtZero: true, title: { display: true, text: 'Item (With Qty Outstanding ≤ 5)' } }, y: {} },
                             maintainAspectRatio: false,
-                            plugins: {
-                                tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x} PO` } }
-                            },
+                            plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x} PO` } } },
                             onClick: async (event, elements) => {
                                 if (elements.length === 0) return;
                                 const barElement = elements[0];
@@ -1258,7 +1266,6 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                                     const result = await response.json();
                                     if (result.ok && result.data.length > 0) {
                                         result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2) - parseFloat(b.QTY_BALANCE2));
-                                        // [SESUDAH DIUBAH] Tambahkan class yz-scrollable-table-container
                                         let tableHtml = `<div class="table-responsive yz-scrollable-table-container"><table class="table table-striped table-hover table-sm align-middle">
                                             <thead class="table-light"><tr>
                                                 <th style="width:5%;" class="text-center">No.</th>
@@ -1295,6 +1302,254 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 }
             }
         }
+        
+        /**
+         * [UNTUK PO] FUNGSI MEMUAT DETAIL STATUS SO (TIDAK DIUBAH)
+         */
+        async function loadSoStatusDetails(statusKey, labelText) {
+            const container = document.getElementById('so-status-details');
+            if (!container) return;
+            container.style.display = 'block';
+            container.innerHTML = `
+                <div class="card yz-chart-card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled><i class="fas fa-times"></i></button>
+                        </div>
+                        <hr class="mt-2">
+                        <div class="d-flex align-items-center justify-content-center p-4 text-muted">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...
+                        </div>
+                    </div>
+                </div>`;
+
+            const qs = new URLSearchParams(window.location.search);
+            const api = new URL("{{ route('dashboard.api.soStatusDetails') }}", window.location.origin);
+            api.searchParams.set('status', statusKey);
+            if (qs.get('location')) api.searchParams.set('location', qs.get('location'));
+            if (qs.get('type')) api.searchParams.set('type', qs.get('type'));
+
+            try {
+                const res = await fetch(api);
+                const json = await res.json();
+                if (!json.ok) throw new Error('Gagal mengambil data dari server.');
+                
+                renderSoStatusTable(json.data, labelText);
+
+            } catch (e) {
+                const errorHtml = `
+                    <div class="card yz-chart-card shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="closeSoStatusDetailsError"><i class="fas fa-times"></i></button>
+                            </div>
+                            <hr class="mt-2">
+                            <div class="alert alert-danger mb-0">${e.message}</div>
+                        </div>
+                    </div>`;
+                container.innerHTML = errorHtml;
+                document.getElementById('closeSoStatusDetailsError')?.addEventListener('click', () => {
+                    container.style.display = 'none';
+                    container.innerHTML = '';
+                });
+            }
+        }
+
+        /**
+         * [UNTUK PO] FUNGSI RENDER TABEL STATUS SO (TIDAK DIUBAH)
+         */
+        function renderSoStatusTable(rows, labelText) {
+            const container = document.getElementById('so-status-details');
+            if (!container) return;
+            const formatDate = (s) => !s ? '' : s.split('-').reverse().join('-');
+            const table = (rows || []).map((r, i) => {
+                const plantName = plantMap[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM;
+                const workCenterName = auartMap[r.IV_AUART_PARAM] || r.IV_AUART_PARAM;
+                return `<tr>
+                            <td class="text-center">${i + 1}</td>
+                            <td class="text-center">${r.BSTNK ?? '-'}</td>
+                            <td class="text-center">${r.VBELN}</td>
+                            <td>${r.NAME1 ?? ''}</td>
+                            <td class="text-center">${plantName}</td>
+                            <td class="text-center">${workCenterName}</td>
+                            <td class="text-center">${formatDate(r.due_date) || '-'}</td>
+                        </tr>`;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="card yz-chart-card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="card-title mb-0">
+                                <i class="fas fa-list me-2"></i>PO List — ${labelText}
+                            </h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="closeSoStatusDetails">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <hr class="mt-2">
+                        ${rows && rows.length ? `
+                        <div class="table-responsive yz-scrollable-table-container">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="text-center" style="width:60px;">NO.</th>
+                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                        <th>CUSTOMER</th>
+                                        <th class="text-center" style="min-width:100px;">PLANT</th>
+                                        <th class="text-center" style="min-width:120px;">WORK CENTER</th>
+                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${table}</tbody>
+                            </table>
+                        </div>` : `
+                        <div class="text-muted p-4 text-center">
+                            <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                        </div>`}
+                    </div>
+                </div>`;
+            document.getElementById('closeSoStatusDetails')?.addEventListener('click', () => {
+                container.style.display = 'none';
+                container.innerHTML = '';
+            });
+        }
+        
+        // =========================================================================
+        // [BARU] FUNGSI-FUNGSI UNTUK DETAIL SO FULFILLMENT URGENCY (DASHBOARD SO)
+        // =========================================================================
+
+        /**
+         * [BARU] FUNGSI UNTUK MEMUAT DATA DETAIL URGENCY & MEMBUAT OVERLAY
+         */
+        async function loadSoUrgencyDetails(statusKey, labelText) {
+            const container = document.getElementById('so-urgency-details');
+            if (!container) return;
+            // Cukup tampilkan, biarkan CSS yang mengatur style dan posisi
+            container.style.display = 'block'; 
+
+            // Membuat efek overlay
+            Object.assign(container.style, {
+                position: 'absolute', top: '0', left: '0',
+                width: '100%', height: '100%',
+                background: 'var(--bs-card-bg, white)',
+                zIndex: '10', display: 'flex', padding: '1rem'
+            });
+
+            // Tampilkan loading spinner
+            container.innerHTML = `
+                <div class="card yz-chart-card shadow-sm h-100 w-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>SO List — ${labelText}</h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled><i class="fas fa-times"></i></button>
+                        </div>
+                        <hr class="mt-2">
+                        <div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...
+                        </div>
+                    </div>
+                </div>`;
+
+            const qs = new URLSearchParams(window.location.search);
+            const api = new URL("{{ route('dashboard.api.soUrgencyDetails') }}", window.location.origin);
+            api.searchParams.set('status', statusKey);
+            if (qs.get('location')) api.searchParams.set('location', qs.get('location'));
+            if (qs.get('type')) api.searchParams.set('type', qs.get('type'));
+            if (qs.get('auart')) api.searchParams.set('auart', qs.get('auart'));
+
+            try {
+                const res = await fetch(api);
+                const json = await res.json();
+                if (!json.ok) throw new Error(json.error || 'Gagal mengambil data dari server.');
+                renderSoUrgencyTable(json.data, labelText);
+            } catch (e) {
+                const errorHtml = `
+                    <div class="card yz-chart-card shadow-sm h-100 w-100">
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="closeSoUrgencyDetailsError"><i class="fas fa-times"></i></button>
+                            </div>
+                            <hr class="mt-2">
+                            <div class="alert alert-danger mb-0">${e.message}</div>
+                        </div>
+                    </div>`;
+                container.innerHTML = errorHtml;
+                document.getElementById('closeSoUrgencyDetailsError')?.addEventListener('click', () => {
+                    container.removeAttribute('style');
+                    container.innerHTML = '';
+                });
+            }
+        }
+
+        /**
+         * [BARU] FUNGSI UNTUK MERENDER TABEL DETAIL URGENCY SO
+         */
+        function renderSoUrgencyTable(rows, labelText) {
+            const container = document.getElementById('so-urgency-details');
+            if (!container) return;
+
+            const formatDate = (s) => !s ? '' : s.split('-').reverse().join('-');
+            
+            const table = (rows || []).map((r, i) => {
+                const plantName = plantMap[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM;
+                const workCenterName = auartMap[r.IV_AUART_PARAM] || r.IV_AUART_PARAM;
+                return `<tr>
+                            <td class="text-center">${i + 1}</td>
+                            <td class="text-center">${r.BSTNK ?? '-'}</td>
+                            <td class="text-center">${r.VBELN}</td>
+                            <td>${r.NAME1 ?? ''}</td>
+                            <td class="text-center">${plantName}</td>
+                            <td class="text-center">${workCenterName}</td>
+                            <td class="text-center">${formatDate(r.due_date) || '-'}</td>
+                        </tr>`;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="card yz-chart-card shadow-sm h-100 w-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="card-title mb-0">
+                                <i class="fas fa-list me-2"></i>SO List — ${labelText}
+                            </h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="closeSoUrgencyDetails">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <hr class="mt-2">
+                        ${rows && rows.length ? `
+                        <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                    <tr>
+                                        <th class="text-center" style="width:60px;">NO.</th>
+                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                        <th>CUSTOMER</th>
+                                        <th class="text-center" style="min-width:100px;">PLANT</th>
+                                        <th class="text-center" style="min-width:120px;">WORK CENTER</th>
+                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${table}</tbody>
+                            </table>
+                        </div>` : `
+                        <div class="text-muted p-4 text-center">
+                            <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                        </div>`}
+                    </div>
+                </div>`;
+
+            document.getElementById('closeSoUrgencyDetails')?.addEventListener('click', () => {
+                container.removeAttribute('style'); // Hapus style inline untuk menghilangkan overlay
+                container.innerHTML = '';
+            });
+        }
+
     })();
 </script>
 @endpush
