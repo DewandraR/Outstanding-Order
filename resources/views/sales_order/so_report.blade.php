@@ -7,10 +7,11 @@
 @php
     // Variabel PHP untuk state halaman
     $selectedWerks = $selected['werks'] ?? null;
-    $selectedAuart = $selected['auart'] ?? null;
+    // <-- penting: hilangkan spasi tersembunyi pada nilai terpilih
+    $selectedAuart = trim((string)($selected['auart'] ?? ''));
     $typesForPlant = collect($mapping[$selectedWerks] ?? []);
-    $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-    $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
+    $locationMap   = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+    $locName       = $locationMap[$selectedWerks] ?? $selectedWerks;
 @endphp
 
 {{-- =========================================================
@@ -24,16 +25,24 @@
       @if($selectedWerks && $typesForPlant->count())
         <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
           @foreach($typesForPlant as $t)
+            @php
+              // <-- penting: pastikan setiap kode AUART dari DB juga di-trim
+              $auartCode = trim((string)$t->IV_AUART);
+              $isActive  = ($selectedAuart === $auartCode);
+            @endphp
             <li class="nav-item mb-2 me-2">
-              <a class="nav-link pill-green {{ $selectedAuart == $t->IV_AUART ? 'active' : '' }}"
-                 href="{{ route('so.index', ['werks' => $selectedWerks, 'auart' => $t->IV_AUART]) }}">
+              <a
+                class="nav-link pill-green {{ $isActive ? 'active' : '' }}"
+                href="{{ route('so.index', ['werks' => $selectedWerks, 'auart' => $auartCode]) }}"
+              >
                 {{ $t->Deskription }}
               </a>
             </li>
           @endforeach
         </ul>
       @else
-        <i class="fas fa-info-circle me-2"></i> Pilih Plant dulu dari sidebar untuk menampilkan pilihan SO Type.
+        <i class="fas fa-info-circle me-2"></i>
+        Pilih Plant dulu dari sidebar untuk menampilkan pilihan SO Type.
       @endif
     </div>
 

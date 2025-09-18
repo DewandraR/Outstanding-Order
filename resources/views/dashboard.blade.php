@@ -26,27 +26,38 @@ $locName = $locationMap[$werks] ?? $werks;
      ========================================================= --}}
 @if(filled($werks))
 @php
-$typesForPlant = collect($mapping[$werks] ?? []);
+    $typesForPlant  = collect($mapping[$werks] ?? []);
+    $selectedAuart  = trim((string)($auart ?? '')); // penting: buang spasi tersembunyi
 @endphp
 <div class="card yz-card shadow-sm mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-        <div class="py-1 w-100">
-            @if($typesForPlant->count())
-            <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
-                @foreach($typesForPlant as $t)
-                <li class="nav-item mb-2 me-2">
-                    <a class="nav-link pill-green {{ ($auart ?? null) == $t->IV_AUART ? 'active' : '' }}"
-                       href="{{ route('dashboard', ['werks' => $werks, 'auart' => $t->IV_AUART, 'compact' => 1]) }}">
-                        {{ $t->Deskription }}
-                    </a>
-                </li>
-                @endforeach
-            </ul>
-            @else
-            <i class="fas fa-info-circle me-2"></i> Silakan pilih Plant terlebih dahulu dari sidebar.
-            @endif
-        </div>
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
+    <div class="py-1 w-100">
+      @if($typesForPlant->count())
+        <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
+          @foreach($typesForPlant as $t)
+            @php
+              $auartCode = trim((string)$t->IV_AUART);          // penting: trim dari DB
+              $isActive  = ($selectedAuart === $auartCode);
+
+              // jaga query yang lain tetap ikut (view, type, dll.)
+              $pillUrl   = route('dashboard', array_merge(request()->query(), [
+                              'werks'   => $werks,
+                              'auart'   => $auartCode,
+                              'compact' => 1,
+                            ]));
+            @endphp
+            <li class="nav-item mb-2 me-2">
+              <a class="nav-link pill-green {{ $isActive ? 'active' : '' }}" href="{{ $pillUrl }}">
+                {{ $t->Deskription }}
+              </a>
+            </li>
+          @endforeach
+        </ul>
+      @else
+        <i class="fas fa-info-circle me-2"></i> Silakan pilih Plant terlebih dahulu dari sidebar.
+      @endif
     </div>
+  </div>
 </div>
 @endif
 
