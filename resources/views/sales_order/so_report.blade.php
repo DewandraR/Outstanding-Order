@@ -50,7 +50,7 @@
         </ul>
       </div>
 
-      {{-- ⬇️ Tambahkan tombol ini --}}
+      {{-- Export Overview PDF --}}
       @if($selectedWerks && $selectedAuart)
         <a
           href="{{ route('so.export.summary', ['werks' => $selectedWerks, 'auart' => $selectedAuart]) }}"
@@ -196,6 +196,10 @@
   .remark-dot { height:8px; width:8px; background:#0d6efd; border-radius:50%; display:inline-block; margin-left:5px; vertical-align:middle; }
   .so-selected-dot{ height:8px; width:8px; background:#0d6efd; border-radius:50%; display:none; }
   .yz-footer-customer th { background:#f4faf7; border-top:2px solid #cfe9dd; }
+
+  /* Ikon pensil pada TABEL 2 (SO) jika ada item yang diberi remark) */
+  .so-remark-flag { color:#6c757d; margin-right:6px; display:none; }
+  .so-remark-flag.active { color:#0d6efd; }
 </style>
 @endpush
 
@@ -280,9 +284,38 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  // ===== Helper khusus TABEL 2 (SO) untuk ikon pensil =====
+  function updateSoRemarkFlagFromCache(vbeln){
+    const items = itemsCache.get(vbeln) || [];
+    const hasAny = items.some(it => (it.remark || '').trim() !== '');
+    document.querySelectorAll(`.js-t2row[data-vbeln='${vbeln}'] .so-remark-flag`)
+      .forEach(el => {
+        el.style.display = hasAny ? 'inline-block' : 'none';
+        el.classList.toggle('active', hasAny);
+      });
+  }
+
+  function recalcSoRemarkFlagFromDom(vbeln){
+    const nest = document.querySelector(`.js-t2row[data-vbeln='${vbeln}']`)?.nextElementSibling;
+    let hasAny = false;
+    if (nest) {
+      nest.querySelectorAll('.remark-icon').forEach(ic => {
+        const txt = decodeURIComponent(ic.dataset.remark || '');
+        if (txt.trim() !== '') hasAny = true;
+      });
+    }
+    document.querySelectorAll(`.js-t2row[data-vbeln='${vbeln}'] .so-remark-flag`)
+      .forEach(el => {
+        el.style.display = hasAny ? 'inline-block' : 'none';
+        el.classList.toggle('active', hasAny);
+      });
+  }
+  // ========================================================
+
   // -------------------------------------------------------
   // 3) RENDERERS
   // -------------------------------------------------------
+  // ============== TABEL 2 (SO per customer) ==============
   function renderLevel2_SO(rows, kunnr){
     if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
     let html = `<h5 class="yz-table-title-nested yz-title-so">
@@ -300,7 +333,7 @@ document.addEventListener('DOMContentLoaded', function () {
                       <th class="text-center">Req. Deliv. Date</th>
                       <th class="text-center">Overdue (Days)</th>
                       <th class="text-center">Outs. Value</th>
-                      <th style="width:22px;"></th>
+                      <th style="width:28px;"></th>
                     </tr>
                   </thead>
                   <tbody>`;
@@ -308,6 +341,8 @@ document.addEventListener('DOMContentLoaded', function () {
     rows.forEach((r,i) => {
       const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
       const rowHighlightClass = r.Overdue < 0 ? 'yz-row-highlight-negative' : '';
+      const hasRemark = Number(r.remark_count || 0) > 0;
+
       html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
                 <td class="text-center">
                   <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}">
@@ -318,7 +353,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td class="text-center">${r.FormattedEdatu || '-'}</td>
                 <td class="text-center">${r.Overdue}</td>
                 <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-                <td class="text-center"><span class="so-selected-dot"></span></td>
+                <td class="text-center">
+                  <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" 
+                     title="Ada item yang diberi catatan" 
+                     style="display:${hasRemark ? 'inline-block' : 'none'};"></i>
+                  <span class="so-selected-dot"></span>
+                </td>
               </tr>
               <tr id="${rid}" class="yz-nest" style="display:none;">
                 <td colspan="8" class="p-0">
@@ -331,6 +371,7 @@ document.addEventListener('DOMContentLoaded', function () {
     html += `</tbody></table>`;
     return html;
   }
+  // ============ /END TABEL 2 (SO per customer) ===========
 
   function renderLevel3_Items(rows){
     if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
@@ -451,6 +492,9 @@ document.addEventListener('DOMContentLoaded', function () {
               itemBox.innerHTML = renderLevel3_Items(jd.data);
               applySelectionsToRenderedItems(itemBox);
               itemRow.dataset.loaded = '1';
+
+              // === update ikon pensil TABEL 2 berdasar cache ===
+              updateSoRemarkFlagFromCache(vbeln);
             } catch(e){
               itemBox.innerHTML = `<div class="alert alert-danger m-3">${e.message}</div>`;
             }
@@ -544,7 +588,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  // Klik ikon remark
+  // Klik ikon remark (level 3)
   document.body.addEventListener('click', function(e){
     if (!e.target.classList.contains('remark-icon')) return;
 
@@ -584,13 +628,16 @@ document.addEventListener('DOMContentLoaded', function () {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.message || 'Gagal menyimpan catatan.');
 
-      // update dot & dataset remark pada baris terkait
+      // update dot & dataset remark pada baris item terkait (level 3)
       const rowSel = `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr='${payload.posnr}']`;
       const rowEl = document.querySelector(rowSel);
       const remarkIcon = rowEl?.querySelector('.remark-icon');
-      const remarkDot  = remarkIcon?.nextElementSibling;
+      const remarkDot  = rowEl?.querySelector('.remark-dot');
       if (remarkIcon) remarkIcon.dataset.remark = encodeURIComponent(payload.remark || '');
       if (remarkDot)  remarkDot.style.display = (payload.remark.trim() !== '' ? 'inline-block' : 'none');
+
+      // === after save: hitung ulang ikon pensil TABEL 2 utk SO terkait ===
+      recalcSoRemarkFlagFromDom(payload.vbeln);
 
       remarkFeedback.textContent = 'Catatan berhasil disimpan!';
       remarkFeedback.className = 'small mt-2 text-success';
