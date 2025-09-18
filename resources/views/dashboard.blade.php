@@ -164,9 +164,9 @@ $typesForPlant = collect($mapping[$werks] ?? []);
      ========================================================= --}}
 @else
 <div id="dashboard-data-holder"
-     data-chart-data='{{ json_encode($chartData ?? null) }}'
-     data-selected-type="{{ $selectedType ?? '' }}"
-     data-mapping-data='{{ json_encode($mapping ?? null) }}'
+     data-chart-data='@json($chartData)'
+     data-mapping-data='@json($mapping)'
+     data-selected-type='{{ $selectedType }}'
      style="display: none;">
 </div>
 
@@ -1027,8 +1027,9 @@ $typesForPlant = collect($mapping[$werks] ?? []);
                 });
             }
 
-            document.getElementById('kpi-so-val-usd').textContent = formatFullCurrency(chartData.kpi.total_outstanding_value_usd, 'USD');
-            document.getElementById('kpi-so-val-idr').textContent = formatFullCurrency(chartData.kpi.total_outstanding_value_idr, 'IDR');
+            const soTotals = (chartData.so_report_totals || {});
+            document.getElementById('kpi-so-val-usd').textContent = formatFullCurrency(Number(soTotals.usd || 0), 'USD');
+            document.getElementById('kpi-so-val-idr').textContent = formatFullCurrency(Number(soTotals.idr || 0), 'IDR');
             document.getElementById('kpi-so-ship-week-usd').textContent = formatFullCurrency(chartData.kpi.value_to_ship_this_week_usd, 'USD');
             document.getElementById('kpi-so-ship-week-idr').textContent = formatFullCurrency(chartData.kpi.value_to_ship_this_week_idr, 'IDR');
             document.getElementById('kpi-so-bottleneck').textContent = chartData.kpi.potential_bottlenecks;
