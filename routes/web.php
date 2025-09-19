@@ -24,16 +24,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/dashboard/search', [DashboardController::class, 'search'])->name('dashboard.search');
 
-    // API untuk Dashboard
+    // API untuk Dashboard (yang sudah ada)
     Route::get('/dashboard/api/t2', [DashboardController::class, 'apiT2'])->name('dashboard.api.t2');
     Route::get('/dashboard/api/t3', [DashboardController::class, 'apiT3'])->name('dashboard.api.t3');
     Route::get('/dashboard/api/small-qty-details', [DashboardController::class, 'apiSmallQtyDetails'])->name('dashboard.api.smallQtyDetails');
-
-    // API klik "PO Status Overview"
     Route::get('/dashboard/api/so-status-details', [DashboardController::class, 'apiSoStatusDetails'])->name('dashboard.api.soStatusDetails');
-
-    // [DITAMBAHKAN] API klik "SO Fulfillment Urgency"
     Route::get('/dashboard/api/so-urgency-details', [DashboardController::class, 'apiSoUrgencyDetails'])->name('dashboard.api.soUrgencyDetails');
+
+    // ✅ BARU: klik segment "Overdue Distribution (Days)" → overlay tabel
+    Route::get(
+        '/dashboard/api/po-overdue-details',
+        [DashboardController::class, 'apiPoOverdueDetails']
+    )->name('dashboard.api.poOverdueDetails');
+
+    Route::get('/dashboard/api/so-bottlenecks-details', [DashboardController::class, 'apiSoBottlenecksDetails'])
+    ->name('dashboard.api.soBottlenecksDetails');
 });
 
 

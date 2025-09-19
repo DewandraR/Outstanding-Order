@@ -142,43 +142,64 @@ class SalesOrderController extends Controller
             'auart' => 'required|string',
         ]);
 
+        $werks = $request->werks;
+        $auart = $request->auart;
+
+        // Subquery: hitung jumlah remark per SO (hanya untuk item outstanding / PACKG != 0)
+        $remarksSub = DB::table('item_remarks as ir')
+            ->join('so_yppr079_t1 as t1r', function ($j) {
+                $j->on('t1r.IV_WERKS_PARAM', '=', 'ir.IV_WERKS_PARAM')
+                ->on('t1r.IV_AUART_PARAM', '=', 'ir.IV_AUART_PARAM')
+                ->on('t1r.VBELN', '=', 'ir.VBELN')
+                ->on('t1r.POSNR', '=', 'ir.POSNR');
+            })
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->where('ir.IV_AUART_PARAM', $auart)
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+            ->whereRaw('CAST(t1r.PACKG AS DECIMAL(18,3)) <> 0') // konsisten dg filter item Anda
+            ->select('ir.VBELN', DB::raw('COUNT(*) AS remark_count'))
+            ->groupBy('ir.VBELN');
+
         $rows = DB::table('so_yppr079_t1 as t1')
             ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
+            ->leftJoinSub($remarksSub, 'rk', function ($join) {
+                $join->on('rk.VBELN', '=', 't1.VBELN');
+            })
             ->select(
                 't1.VBELN',
                 't2.EDATU',
                 't1.WAERK',
                 DB::raw('SUM(t1.TOTPR2) as total_value'),
-                DB::raw('COUNT(DISTINCT t1.id) as item_count')
+                DB::raw('COUNT(DISTINCT t1.id) as item_count'),
+                // <-- kolom baru untuk FE Tabel-2
+                DB::raw('COALESCE(MAX(rk.remark_count), 0) AS remark_count')
             )
             ->where('t1.KUNNR', $request->kunnr)
-            ->where('t1.IV_WERKS_PARAM', $request->werks)
-            ->where('t1.IV_AUART_PARAM', $request->auart)
-            ->where('t1.PACKG', '!=', 0)
+            ->where('t1.IV_WERKS_PARAM', $werks)
+            ->where('t1.IV_AUART_PARAM', $auart)
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0') // hanya outstanding
             ->groupBy('t1.VBELN', 't2.EDATU', 't1.WAERK')
             ->get();
 
+        // Hitung overdue seperti sebelumnya
         $today = now()->startOfDay();
         foreach ($rows as $row) {
-            $overdue = 0;
-            $formattedEdatu = '';
+            $overdue = 0; $formattedEdatu = '';
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
-                    $edatuDate = Carbon::parse($row->EDATU);
+                    $edatuDate = \Carbon\Carbon::parse($row->EDATU)->startOfDay();
                     $formattedEdatu = $edatuDate->format('d-m-Y');
-                    $overdue = $today->diffInDays($edatuDate->startOfDay(), false); // negatif = telat
-                } catch (\Exception $e) {
-                    // biarkan default
-                }
+                    $overdue = $today->diffInDays($edatuDate, false); // negatif = telat
+                } catch (\Exception $e) { /* ignore */ }
             }
             $row->Overdue        = $overdue;
             $row->FormattedEdatu = $formattedEdatu;
         }
 
-        // Urutkan dari paling telat (nilai Overdue paling negatif) ke paling cepat
+        // Urutkan dari yang paling telat
         return response()->json([
             'ok'   => true,
-            'data' => $rows->sortBy('Overdue')->values(),
+            'data' => collect($rows)->sortBy('Overdue')->values(),
         ]);
     }
 

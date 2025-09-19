@@ -4,11 +4,127 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    public function apiSoBottlenecksDetails(Request $request)
+{
+    $request->validate([
+        'location' => 'nullable|string|in:2000,3000',
+        'type'     => 'nullable|string|in:lokal,export',
+        'auart'    => 'nullable|string',
+    ]);
+
+    $location = $request->query('location'); // 2000|3000|null
+    $type     = $request->query('type');     // lokal|export|null
+    $auart    = $request->query('auart');    // optional
+
+    // Parser EDATU untuk T2 (dipakai min due_date per SO)
+    $safeEdatuT2 = "COALESCE(
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
+
+    // === AUART efektif (SAMAKAN DENGAN KPI DI getSoDashboardData)
+    $effectiveAuart = $auart;
+    if (!$effectiveAuart && $location && $type) {
+        $effectiveAuart = DB::table('maping')
+            ->where('IV_WERKS', $location)
+            ->when($type === 'export', function ($q) {
+                $q->where('Deskription', 'like', '%Export%')
+                  ->where('Deskription', 'not like', '%Replace%')
+                  ->where('Deskription', 'not like', '%Local%');
+            })
+            ->when($type === 'lokal', function ($q) {
+                $q->where('Deskription', 'like', '%Local%');
+            })
+            ->orderBy('IV_AUART')
+            ->value('IV_AUART');
+    }
+
+    // === VBELN relevan (SAMAKAN DENGAN KPI): outstanding & sesuai lokasi+AUART efektif
+    $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3')
+        ->when($location,       fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
+        ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
+        ->whereExists(function ($q) {
+            $q->select(DB::raw(1))
+              ->from('so_yppr079_t1 as t1_exists')
+              ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+              ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
+        })
+        ->select('t3.VBELN')
+        ->distinct();
+
+    // === LOGIKA BOTTLENECK (SAMAKAN DENGAN KPI): item outstanding & PACKG > KALAB2
+    $rows = DB::table('so_yppr079_t1 as t1')
+        ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+        ->whereIn('t1.VBELN', $relevantVbelnsQuery)
+        ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > 0')
+        ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > CAST(t1.KALAB2 AS DECIMAL(15,3))')
+        // (opsional) jaga-jaga filter eksplisit lokasi/AUART bila dikirim langsung:
+        ->when($location,       fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+        ->when($effectiveAuart, fn($q, $v)   => $q->where('t2.IV_AUART_PARAM', $v))
+        // === tetap keluarkan 1 baris per SO dengan due date terawal
+        ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
+        ->selectRaw("
+            t2.VBELN,
+            t2.BSTNK,
+            t2.NAME1,
+            t2.IV_WERKS_PARAM,
+            t2.IV_AUART_PARAM,
+            DATE_FORMAT(MIN({$safeEdatuT2}), '%Y-%m-%d') AS due_date
+        ")
+        ->orderByRaw("MIN({$safeEdatuT2}) ASC")
+        ->limit(2000)
+        ->get();
+
+    return response()->json(['ok' => true, 'data' => $rows]);
+}
+    public function apiPoOverdueDetails(Request $request)
+    {
+        $request->validate([
+            'werks'  => 'required|string',               // '2000' | '3000'
+            'auart'  => 'required|string',               // contoh: 'ZRP2', 'ZOR4', dst.
+            'bucket' => 'required|string|in:1_30,31_60,61_90,gt_90',
+        ]);
+
+        $werks  = $request->query('werks');
+        $auart  = $request->query('auart');
+        $bucket = $request->query('bucket');
+
+        // Parser tanggal: EDATU dari T2 saja
+        $safeEdatu = "COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+
+        $q = DB::table('so_yppr079_t2 as t2')
+            ->selectRaw("
+                TRIM(t2.BSTNK)                            AS PO,
+                TRIM(t2.VBELN)                            AS SO,
+                DATE_FORMAT($safeEdatu, '%Y-%m-%d')       AS EDATU,
+                DATEDIFF(CURDATE(), $safeEdatu)           AS OVERDUE_DAYS
+            ")
+            ->where('t2.IV_WERKS_PARAM', $werks)
+            ->where('t2.IV_AUART_PARAM', $auart);
+
+        // Filter bucket hari
+        switch ($bucket) {
+            case '1_30':  $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 1 AND 30");  break;
+            case '31_60': $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 31 AND 60"); break;
+            case '61_90': $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 61 AND 90"); break;
+            case 'gt_90': $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) > 90");              break;
+        }
+
+        $rows = $q->orderByDesc('OVERDUE_DAYS')
+            ->orderBy('t2.VBELN')
+            ->orderBy('t2.BSTNK')
+            ->limit(2000)
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
     /* ======================================================================
      * API DETAIL (unchanged)
      * ====================================================================*/
@@ -23,53 +139,74 @@ class DashboardController extends Controller
         ]);
 
         $status   = $request->query('status');
-        $location = $request->query('location');
-        $type     = $request->query('type');
-        $auart    = $request->query('auart');
+        $location = $request->query('location');   // '2000' | '3000' | null
+        $type     = $request->query('type');       // 'lokal' | 'export' | null
+        $auart    = $request->query('auart');      // optional
 
+        // === Parser tanggal aman utk EDATU (format campuran di DB)
         $safeEdatu = "COALESCE(
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t3.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
         )";
 
-        $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3');
-
-        if ($type === 'lokal') {
-            $relevantVbelnsQuery->join('maping as m', function ($join) {
-                $join->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
-            })->where('m.Deskription', 'like', '%Local%');
-        } elseif ($type === 'export') {
-            $relevantVbelnsQuery->join('maping as m', function ($join) {
-                $join->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
-            })->where('m.Deskription', 'like', '%Export%');
+        // === Samakan "AUART efektif" seperti dashboard SO
+        $effectiveAuart = $auart;
+        if (!$effectiveAuart && $location && $type) {
+            $effectiveAuart = DB::table('maping')
+                ->where('IV_WERKS', $location)
+                ->when($type === 'export', function ($q) {
+                    $q->where('Deskription', 'like', '%Export%')
+                    ->where('Deskription', 'not like', '%Replace%')
+                    ->where('Deskription', 'not like', '%Local%');
+                })
+                ->when($type === 'lokal', function ($q) {
+                    // Ikuti SO Report: untuk "lokal" ambil yang Local (bukan Replace)
+                    $q->where('Deskription', 'like', '%Local%');
+                })
+                ->orderBy('IV_AUART')
+                ->value('IV_AUART');
         }
 
-        $relevantVbelnsQuery
-            ->when($location, fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
-            ->when($auart,    fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
+        // === Subquery VBELN relevan (hanya yang masih outstanding: PACKG > 0)
+        $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3')
+            ->when($type === 'lokal', function ($q) {
+                $q->join('maping as m', function ($j) {
+                    $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Local%');
+            })
+            ->when($type === 'export', function ($q) {
+                $q->join('maping as m', function ($j) {
+                    $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Export%');
+            })
+            ->when($location,       fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
+            ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
             ->whereExists(function ($q) {
                 $q->select(DB::raw(1))
-                    ->from('so_yppr079_t1 as t1_exists')
-                    ->whereColumn('t1_exists.VBELN', 't3.VBELN')
-                    ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) > 0');
+                ->from('so_yppr079_t1 as t1_exists')
+                ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+                ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
             })
             ->select('t3.VBELN')
             ->distinct();
 
+        // === Basis data yang akan diambil detailnya
         $base = DB::table('so_yppr079_t3 as t3')->whereIn('t3.VBELN', $relevantVbelnsQuery);
 
+        // === Filter status sesuai donut
         if ($status === 'overdue_over_30') {
             $base->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) > 30");
         } elseif ($status === 'overdue_1_30') {
             $base->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 1 AND 30");
         } elseif ($status === 'due_this_week') {
             $base->whereRaw("{$safeEdatu} BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
-        } else {
+        } else { // 'on_time'
             $base->whereRaw("{$safeEdatu} > DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
         }
 
+        // === Keluarkan list unik per SO (VBELN) plus due date terawal
         $rows = $base
             ->groupBy('t3.VBELN', 't3.BSTNK', 't3.NAME1', 't3.IV_WERKS_PARAM', 't3.IV_AUART_PARAM')
             ->selectRaw("
@@ -274,9 +411,9 @@ class DashboardController extends Controller
                 ->whereRaw("{$safeEdatuT2} >= ? AND {$safeEdatuT2} < ?", [$startWeek, $endWeekEx])
                 ->selectRaw("CAST(SUM(CASE WHEN TRIM(t2.WAERK)='IDR' THEN CAST(t2.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS idr")
                 ->value('idr') ?? 0),
-            'potential_bottlenecks'       => (clone $baseQuery)
+            'potential_bottlenecks' => (clone $baseQuery)
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > CAST(t1.KALAB2 AS DECIMAL(15,3))')
-                ->count(),
+                ->distinct()->count('t1.VBELN'),
         ];
 
         // ===== Panel lainnya (tetap) =====
@@ -652,18 +789,19 @@ class DashboardController extends Controller
                     'm.Deskription',
                     'm.IV_WERKS',
                     DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
-                    DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN t1.TOTPR ELSE 0 END) as total_value_idr"),
-                    DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN t1.TOTPR ELSE 0 END) as total_value_usd"),
+                    // value overdue by currency — T2 only
+                    DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t2.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
+                    DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t2.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
                     DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
                     DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
                     DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
                     DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
                     DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
                 )
-                    ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-                    ->groupBy('m.IV_WERKS', 'm.Deskription')
-                    ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
-                    ->get();
+                ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+                ->groupBy('m.IV_WERKS', 'm.Deskription')
+                ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
+                ->get();
 
                 $chartData['so_performance_analysis'] = $performanceQuery;
 
