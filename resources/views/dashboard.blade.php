@@ -424,6 +424,51 @@ $locName = $locationMap[$werks] ?? $werks;
         </div>
     </div>
 </div>
+
+{{-- 🆕 ROW: Item with Remark --}}
+<div class="row g-4 mb-4">
+  <div class="col-lg-5">
+    <div class="card yz-card shadow-sm h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">
+            <i class="fas fa-sticky-note me-2"></i>Item with Remark
+          </h5>
+          <button id="btn-open-remark-list" class="btn btn-sm btn-outline-primary">
+            Lihat Daftar
+          </button>
+        </div>
+        <hr class="mt-2">
+        <div class="chart-container flex-grow-1" style="min-height: 220px;">
+          <canvas id="chart-remarks"></canvas>
+        </div>
+        <div class="small text-muted mt-2" id="remarks-subtitle"></div>
+      </div>
+    </div>
+  </div>
+
+  {{-- 🆕 TABEL INLINE muncul di bawah donut (bukan modal) --}}
+  <div class="col-lg-7">
+    <div id="remark-inline-container" class="card yz-card shadow-sm h-100" style="display:none;">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">
+            <i class="fas fa-list me-2"></i>
+            Daftar Item dengan Remark
+          </h5>
+          <button id="btn-close-remark-list" class="btn btn-sm btn-outline-secondary">
+            Tutup
+          </button>
+        </div>
+        <hr class="mt-2">
+        <div id="remark-list-box-inline" class="table-responsive">
+          <div class="text-center text-muted py-3">Memuat data…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 @else
 {{-- ==================== DASHBOARD PO ==================== --}}
 <div class="row g-4 mb-4">
@@ -617,7 +662,7 @@ $locName = $locationMap[$werks] ?? $werks;
 <script>
 /* =========================================================
    HELPER: Tabel Overview Customer (atribut untuk mobile)
-   ========================================================= */
+   ======================================================== */
 document.addEventListener('DOMContentLoaded', function() {
   const customerRows = document.querySelectorAll('.yz-kunnr-row');
   customerRows.forEach(row => {
@@ -630,7 +675,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 /* =========================================================
    HELPER UMUM
-   ========================================================= */
+   ======================================================== */
 const formatFullCurrency = (value, currency) => {
   const n = parseFloat(value);
   if (isNaN(n)) return '';
@@ -734,7 +779,7 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
 
 /* =========================================================
    SCRIPT UTAMA
-   ========================================================= */
+   ======================================================== */
 (() => {
   const rootElement = document.getElementById('yz-root');
   const showTable = rootElement ? !!parseInt(rootElement.dataset.show) : false;
@@ -983,7 +1028,7 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
       });
     }
 
-    // 🆕 Potential Bottlenecks toggle + fetch
+    // 🆕 Potential Bottlenecks toggle + fetch (tetap seperti semula)
     const bottleneckCard = document.getElementById('toggle-bottlenecks-card');
     const bottleneckBox  = document.getElementById('bottlenecks-tables');
     const apiSoBottlenecks = "{{ route('dashboard.api.soBottlenecksDetails') }}";
@@ -1043,7 +1088,6 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
       bottleneckCard.addEventListener('click', async () => {
         const isHidden = bottleneckBox.style.display === 'none';
         if (!isHidden) { bottleneckBox.style.display = 'none'; return; }
-
         bottleneckBox.style.display = '';
         bottleneckBox.innerHTML = `
           <div class="card yz-chart-card shadow-sm">
@@ -1138,6 +1182,229 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
       bg: 'rgba(59, 130, 246, 0.7)', border: 'rgba(59, 130, 246, 1)'
     }, topCustomerCurrency);
 
+    /* ========================  🆕 ITEM WITH REMARK (INLINE)  ======================== */
+    (function itemWithRemarkInline(){
+      const apiRemarkSummary = "{{ route('so.api.remark_summary') }}";
+      const apiRemarkItems   = "{{ route('so.api.remark_items') }}";
+
+      const donutCanvas   = document.getElementById('chart-remarks');
+      const subtitleEl    = document.getElementById('remarks-subtitle');
+      const openBtn       = document.getElementById('btn-open-remark-list');
+      const inlineCard    = document.getElementById('remark-inline-container');
+      const closeBtn      = document.getElementById('btn-close-remark-list');
+      const listBox       = document.getElementById('remark-list-box-inline');
+
+      if (!donutCanvas || !subtitleEl || !openBtn || !inlineCard || !listBox || !closeBtn) return;
+
+      const qs = new URLSearchParams(window.location.search);
+      const currentLocation = qs.get('location');
+      const currentType     = qs.get('type');
+      const currentAuart    = qs.get('auart');
+
+      let donutChart = null;
+      const numberFmtID = new Intl.NumberFormat('id-ID');
+
+      function showInlineCard() {
+        inlineCard.style.display = '';
+        inlineCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      function hideInlineCard() {
+        inlineCard.style.display = 'none';
+        listBox.innerHTML = '<div class="text-center text-muted py-3">Memuat data…</div>';
+      }
+      const fmtDateTime = (str) => {
+        if (!str) return '';
+        try {
+          const d = new Date(str);
+          if (isNaN(d.getTime())) return str;
+          return d.toLocaleString('id-ID');
+        } catch { return str; }
+      };
+
+      async function fetchSummary() {
+        const url = new URL(apiRemarkSummary, window.location.origin);
+        if (currentLocation) url.searchParams.set('location', currentLocation);
+        if (currentType)     url.searchParams.set('type', currentType);
+        if (currentAuart)    url.searchParams.set('auart', currentAuart);
+        const res  = await fetch(url, { headers: { 'X-Requested-With':'XMLHttpRequest' } });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'Gagal memuat ringkasan remark.');
+        return json.data || {};
+      }
+
+      function renderSubtitle(data) {
+        const totalItems = Number(data.total_item_remarks || 0);
+        const totalSO    = Number(data.total_so_with_remarks || 0);
+        let topText = '';
+        const top = Array.isArray(data.top_so) ? data.top_so.slice(0, 3) : [];
+        if (top.length) {
+          const s = top.map(r => `${r.VBELN} (${numberFmtID.format(r.item_count)} items)`).join(', ');
+          topText = ` • Top SO: ${s}`;
+        }
+        subtitleEl.textContent = `Total: ${numberFmtID.format(totalItems)} items • ${numberFmtID.format(totalSO)} SO${topText}`;
+      }
+
+      function drawDonut(data) {
+        const values = [
+          Number(data.total_item_remarks || 0),
+          Number(data.total_so_with_remarks || 0),
+        ];
+        const labels = ['Items with Remark', 'SO with Remark'];
+
+        if (donutChart) { donutChart.destroy(); donutChart = null; }
+        donutChart = new Chart(donutCanvas, {
+          type: 'doughnut',
+          data: {
+            labels,
+            datasets: [{
+              data: values,
+              backgroundColor: ['#3b82f6', '#22c55e'],
+              borderColor: ['#ffffff'],
+              borderWidth: 2
+            }]
+          },
+          options: {
+            cutout: '60%',
+            plugins: {
+              legend: { display: true, position: 'bottom' },
+              tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${numberFmtID.format(ctx.raw)}` } }
+            },
+            onClick: async () => { await openList(); } // klik donut -> buka list inline
+          }
+        });
+      }
+
+      const __plantName = w => ({ '2000': 'Surabaya', '3000': 'Semarang' }[String(w || '').trim()] || (w ?? ''));
+
+/* Ambil deskripsi AUART dari #dashboard-data-holder (jika ada); fallback ke label standar */
+const __auartDescMap = (() => {
+  try {
+    const holder = document.getElementById('dashboard-data-holder');
+    const raw = holder?.dataset?.mappingData || '{}';
+    const mapping = JSON.parse(raw);
+    const out = {};
+    Object.keys(mapping || {}).forEach(werks => {
+      (mapping[werks] || []).forEach(m => { out[String(m.IV_AUART)] = m.Deskription; });
+    });
+    /* fallback default bila tidak ada di mapping */
+    return Object.assign({
+      ZOR1: 'KMI Export SBY',
+      ZOR3: 'KMI Local SBY',
+      ZRP1: 'KMI Replace SBY',
+      ZOR2: 'KMI Export SMG',
+      ZOR4: 'KMI Local SMG',
+      ZRP2: 'KMI Replace SMG',
+    }, out);
+  } catch { 
+    return {
+      ZOR1: 'KMI Export SBY',
+      ZOR3: 'KMI Local SBY',
+      ZRP1: 'KMI Replace SBY',
+      ZOR2: 'KMI Export SMG',
+      ZOR4: 'KMI Local SMG',
+      ZRP2: 'KMI Replace SMG',
+    };
+  }
+})();
+
+/* ================== TABEL ITEM WITH REMARK (REPLACE YANG LAMA) ================== */
+function buildTable(rows) {
+  // helper: hapus leading zero, tetap kembalikan "0" kalau semuanya nol/kosong
+  const stripZeros = v => {
+    const s = String(v ?? '').trim();
+    if (!s) return '';
+    const z = s.replace(/^0+/, '');
+    return z.length ? z : '0';
+  };
+
+  if (!rows || !rows.length) {
+    return `<div class="text-center text-muted py-4">
+              <i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.
+            </div>`;
+  }
+
+  const body = rows.map((r, i) => {
+    const posnr = stripZeros(r.POSNR);        // Item tanpa leading zero
+    const plant = __plantName(r.IV_WERKS_PARAM);
+    const auart = (r.IV_AUART_PARAM || '').trim();
+    const auartDesc = __auartDescMap[auart] || auart || '-';
+
+    return `
+      <tr>
+        <td class="text-center">${i + 1}</td>
+        <td class="text-center">${r.VBELN || '-'}</td>
+        <td class="text-center">${posnr || '-'}</td>
+        <td class="text-center">${plant || '-'}</td>
+        <td class="text-center">${auartDesc}</td>
+        <td>${(r.remark || '').replace(/\n/g,'<br>')}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <table class="table table-striped table-hover table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th class="text-center" style="width:60px;">No.</th>
+          <th class="text-center" style="min-width:110px;">SO</th>
+          <th class="text-center" style="min-width:90px;">Item</th>
+          <th class="text-center" style="min-width:110px;">Plant</th>
+          <th class="text-center" style="min-width:160px;">Order Type</th>
+          <th style="min-width:220px;" class="text-center">Remark</th>
+        </tr>
+      </thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+      async function openList(vbelnOpt) {
+        try {
+          showInlineCard();
+          listBox.innerHTML = `<div class="d-flex justify-content-center align-items-center py-4 text-muted">
+            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+          </div>`;
+
+          const url = new URL(apiRemarkItems, window.location.origin);
+          if (currentLocation) url.searchParams.set('location', currentLocation);
+          if (currentType)     url.searchParams.set('type', currentType);
+          if (currentAuart)    url.searchParams.set('auart', currentAuart);
+          if (vbelnOpt)        url.searchParams.set('vbeln', vbelnOpt);
+
+          const res  = await fetch(url, { headers: { 'X-Requested-With':'XMLHttpRequest' } });
+          const json = await res.json();
+          if (!json.ok) throw new Error(json.error || 'Gagal memuat daftar item.');
+
+          listBox.innerHTML = buildTable(json.data || []);
+        } catch (e) {
+          listBox.innerHTML = `<div class="alert alert-danger m-0"><i class="fas fa-exclamation-triangle me-2"></i>${e.message}</div>`;
+        }
+      }
+
+      // events
+      openBtn.addEventListener('click', () => openList());
+      closeBtn.addEventListener('click', () => hideInlineCard());
+
+      // init: summary + donut
+      (async () => {
+        try {
+          const data = await fetchSummary();
+          renderSubtitle(data);
+          drawDonut(data);
+        } catch (e) {
+          const container = donutCanvas.parentElement;
+          if (container) {
+            container.innerHTML = `
+              <div class="d-flex align-items-center justify-content-center p-4 text-danger" style="min-height:220px;">
+                <i class="fas fa-exclamation-triangle me-2"></i>${e.message}
+              </div>`;
+          }
+          subtitleEl.textContent = '';
+        }
+      })();
+    })();
+    /* ====================== END ITEM WITH REMARK ====================== */
+
     return; // selesai untuk view=SO
   }
 
@@ -1166,7 +1433,7 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
             label: `Outstanding (${currencyToDisplay})`,
             data: [semarang_val, surabaya_val],
             backgroundColor: currencyToDisplay === 'IDR' ? 'rgba(25, 135, 84, 0.6)' : 'rgba(54, 162, 235, 0.6)',
-            borderColor:    currencyToDisplay === 'IDR' ? 'rgba(25, 135, 84, 1)' : 'rgba(54, 162, 235, 1)',
+            borderColor:    currencyToDisplay === 'IDR' ? 'rgba(25, 135, 84, 1)'  : 'rgba(54, 162, 235, 1)',
             borderWidth: 1, borderRadius: 5
           }]
         },
@@ -1379,7 +1646,6 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
         const text = await res.text();
         let json;
         try { json = JSON.parse(text); } catch (_) { throw new Error('Server mengembalikan HTML/error page.'); }
-
         if (!res.ok || !json.ok) throw new Error(json?.message || json?.error || 'Gagal mengambil data.');
 
         const rows = json.data || [];
@@ -1731,8 +1997,8 @@ const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, cu
         <td class="text-center">${r.BSTNK ?? '-'}</td>
         <td class="text-center">${r.VBELN}</td>
         <td>${r.NAME1 ?? ''}</td>
-        <td class="text-center">${plantMap[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
-        <td class="text-center">${auartMap[r.IV_AUART_PARAM] || r.IV_AUART_PARAM}</td>
+        <td class="text-center">${({ '2000':'Surabaya','3000':'Semarang' })[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
+        <td class="text-center">${({})[r.IV_AUART_PARAM] || r.IV_AUART_PARAM}</td>
         <td class="text-center">${formatDate(r.due_date) || '-'}</td>
       </tr>`).join('');
     container.innerHTML = `

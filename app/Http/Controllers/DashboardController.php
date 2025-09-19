@@ -8,79 +8,179 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    public function apiSoBottlenecksDetails(Request $request)
-{
-    $request->validate([
-        'location' => 'nullable|string|in:2000,3000',
-        'type'     => 'nullable|string|in:lokal,export',
-        'auart'    => 'nullable|string',
-    ]);
+    public function apiSoRemarkSummary(Request $request)
+    {
+        $request->validate([
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string',
+        ]);
 
-    $location = $request->query('location'); // 2000|3000|null
-    $type     = $request->query('type');     // lokal|export|null
-    $auart    = $request->query('auart');    // optional
+        $location = $request->query('location'); // 2000|3000|null
+        $type     = $request->query('type');     // lokal|export|null
+        $auart    = $request->query('auart');
 
-    // Parser EDATU untuk T2 (dipakai min due_date per SO)
-    $safeEdatuT2 = "COALESCE(
-        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-    )";
+        // Samakan “AUART efektif” dengan dashboard SO lain
+        $effectiveAuart = $auart;
+        if (!$effectiveAuart && $location && $type) {
+            $effectiveAuart = DB::table('maping')
+                ->where('IV_WERKS', $location)
+                ->when($type === 'export', fn($q) => $q->where('Deskription','like','%Export%')
+                                                    ->where('Deskription','not like','%Replace%')
+                                                    ->where('Deskription','not like','%Local%'))
+                ->when($type === 'lokal',  fn($q) => $q->where('Deskription','like','%Local%'))
+                ->orderBy('IV_AUART')->value('IV_AUART');
+        }
 
-    // === AUART efektif (SAMAKAN DENGAN KPI DI getSoDashboardData)
-    $effectiveAuart = $auart;
-    if (!$effectiveAuart && $location && $type) {
-        $effectiveAuart = DB::table('maping')
-            ->where('IV_WERKS', $location)
-            ->when($type === 'export', function ($q) {
-                $q->where('Deskription', 'like', '%Export%')
-                  ->where('Deskription', 'not like', '%Replace%')
-                  ->where('Deskription', 'not like', '%Local%');
-            })
-            ->when($type === 'lokal', function ($q) {
-                $q->where('Deskription', 'like', '%Local%');
-            })
-            ->orderBy('IV_AUART')
-            ->value('IV_AUART');
+        // Basis remark items
+        $base = DB::table('item_remarks')
+            ->whereNotNull('remark')->whereRaw('TRIM(remark) <> ""')
+            ->when($location,       fn($q,$v)=>$q->where('IV_WERKS_PARAM',$v))
+            ->when($effectiveAuart, fn($q,$v)=>$q->where('IV_AUART_PARAM',$v));
+
+        $totalItemRemarks = (clone $base)->count();
+        $totalSoWithRemarks = (clone $base)->distinct()->count('VBELN');
+
+        // TOP SO by jumlah item remark (opsional untuk tooltip/legend)
+        $bySo = (clone $base)
+            ->selectRaw('VBELN, COUNT(*) AS item_count')
+            ->groupBy('VBELN')->orderByDesc('item_count')->limit(10)->get();
+
+        return response()->json([
+            'ok' => true,
+            'data' => [
+                'total_item_remarks'  => $totalItemRemarks,
+                'total_so_with_remarks'=> $totalSoWithRemarks,
+                'top_so'              => $bySo,
+            ]
+        ]);
     }
 
-    // === VBELN relevan (SAMAKAN DENGAN KPI): outstanding & sesuai lokasi+AUART efektif
-    $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3')
-        ->when($location,       fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
-        ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
-        ->whereExists(function ($q) {
-            $q->select(DB::raw(1))
-              ->from('so_yppr079_t1 as t1_exists')
-              ->whereColumn('t1_exists.VBELN', 't3.VBELN')
-              ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
-        })
-        ->select('t3.VBELN')
-        ->distinct();
+    public function apiSoRemarkItems(Request $request)
+    {
+        $request->validate([
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string',
+            'vbeln'    => 'nullable|string', // kalau diisi, hanya 1 SO
+        ]);
 
-    // === LOGIKA BOTTLENECK (SAMAKAN DENGAN KPI): item outstanding & PACKG > KALAB2
-    $rows = DB::table('so_yppr079_t1 as t1')
-        ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-        ->whereIn('t1.VBELN', $relevantVbelnsQuery)
-        ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > 0')
-        ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > CAST(t1.KALAB2 AS DECIMAL(15,3))')
-        // (opsional) jaga-jaga filter eksplisit lokasi/AUART bila dikirim langsung:
-        ->when($location,       fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-        ->when($effectiveAuart, fn($q, $v)   => $q->where('t2.IV_AUART_PARAM', $v))
-        // === tetap keluarkan 1 baris per SO dengan due date terawal
-        ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
-        ->selectRaw("
-            t2.VBELN,
-            t2.BSTNK,
-            t2.NAME1,
-            t2.IV_WERKS_PARAM,
-            t2.IV_AUART_PARAM,
-            DATE_FORMAT(MIN({$safeEdatuT2}), '%Y-%m-%d') AS due_date
-        ")
-        ->orderByRaw("MIN({$safeEdatuT2}) ASC")
-        ->limit(2000)
-        ->get();
+        $location = $request->query('location');
+        $type     = $request->query('type');
+        $auart    = $request->query('auart');
+        $vbeln    = trim((string)$request->query('vbeln'));
 
-    return response()->json(['ok' => true, 'data' => $rows]);
-}
+        $effectiveAuart = $auart;
+        if (!$effectiveAuart && $location && $type) {
+            $effectiveAuart = DB::table('maping')
+                ->where('IV_WERKS', $location)
+                ->when($type === 'export', fn($q) => $q->where('Deskription','like','%Export%')
+                                                    ->where('Deskription','not like','%Replace%')
+                                                    ->where('Deskription','not like','%Local%'))
+                ->when($type === 'lokal',  fn($q) => $q->where('Deskription','like','%Local%'))
+                ->orderBy('IV_AUART')->value('IV_AUART');
+        }
+
+        $rows = DB::table('item_remarks as ir')
+            ->leftJoin('so_yppr079_t1 as t1', function($j){
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+                ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+            })
+            ->selectRaw("
+                TRIM(ir.VBELN) AS VBELN,
+                TRIM(ir.POSNR) AS POSNR,
+                COALESCE(t1.MATNR,'') AS MATNR,
+                COALESCE(t1.MAKTX,'') AS MAKTX,
+                COALESCE(t1.WAERK,'') AS WAERK,
+                COALESCE(t1.TOTPR,0) AS TOTPR,
+                ir.IV_WERKS_PARAM,
+                ir.IV_AUART_PARAM,
+                ir.remark,
+                ir.created_at
+            ")
+            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
+            ->when($location,       fn($q,$v)=>$q->where('ir.IV_WERKS_PARAM',$v))
+            ->when($effectiveAuart, fn($q,$v)=>$q->where('ir.IV_AUART_PARAM',$v))
+            ->when($vbeln !== '',   fn($q)=>$q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)',[$vbeln]))
+            ->orderBy('ir.VBELN')->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
+            ->limit(2000)
+            ->get();
+
+        return response()->json(['ok'=>true,'data'=>$rows]);
+    }
+    public function apiSoBottlenecksDetails(Request $request)
+    {
+        $request->validate([
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string',
+        ]);
+
+        $location = $request->query('location'); // 2000|3000|null
+        $type     = $request->query('type');     // lokal|export|null
+        $auart    = $request->query('auart');    // optional
+
+        // Parser EDATU untuk T2 (dipakai min due_date per SO)
+        $safeEdatuT2 = "COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+
+        // === AUART efektif (SAMAKAN DENGAN KPI DI getSoDashboardData)
+        $effectiveAuart = $auart;
+        if (!$effectiveAuart && $location && $type) {
+            $effectiveAuart = DB::table('maping')
+                ->where('IV_WERKS', $location)
+                ->when($type === 'export', function ($q) {
+                    $q->where('Deskription', 'like', '%Export%')
+                    ->where('Deskription', 'not like', '%Replace%')
+                    ->where('Deskription', 'not like', '%Local%');
+                })
+                ->when($type === 'lokal', function ($q) {
+                    $q->where('Deskription', 'like', '%Local%');
+                })
+                ->orderBy('IV_AUART')
+                ->value('IV_AUART');
+        }
+
+        // === VBELN relevan (SAMAKAN DENGAN KPI): outstanding & sesuai lokasi+AUART efektif
+        $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3')
+            ->when($location,       fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
+            ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
+            ->whereExists(function ($q) {
+                $q->select(DB::raw(1))
+                ->from('so_yppr079_t1 as t1_exists')
+                ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+                ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
+            })
+            ->select('t3.VBELN')
+            ->distinct();
+
+        // === LOGIKA BOTTLENECK (SAMAKAN DENGAN KPI): item outstanding & PACKG > KALAB2
+        $rows = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+            ->whereIn('t1.VBELN', $relevantVbelnsQuery)
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > 0')
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(15,3)) > CAST(t1.KALAB2 AS DECIMAL(15,3))')
+            // (opsional) jaga-jaga filter eksplisit lokasi/AUART bila dikirim langsung:
+            ->when($location,       fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->when($effectiveAuart, fn($q, $v)   => $q->where('t2.IV_AUART_PARAM', $v))
+            // === tetap keluarkan 1 baris per SO dengan due date terawal
+            ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
+            ->selectRaw("
+                t2.VBELN,
+                t2.BSTNK,
+                t2.NAME1,
+                t2.IV_WERKS_PARAM,
+                t2.IV_AUART_PARAM,
+                DATE_FORMAT(MIN({$safeEdatuT2}), '%Y-%m-%d') AS due_date
+            ")
+            ->orderByRaw("MIN({$safeEdatuT2}) ASC")
+            ->limit(2000)
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
     public function apiPoOverdueDetails(Request $request)
     {
         $request->validate([
