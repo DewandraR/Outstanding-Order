@@ -84,8 +84,10 @@ class DashboardController extends Controller
         $rows = DB::table('item_remarks as ir')
             ->leftJoin('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
-                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+                  ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
+            // [BARIS BARU] Tambahkan join ke t2 untuk mendapatkan KUNNR
+            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
             ->selectRaw("
                 TRIM(ir.VBELN) AS VBELN,
                 TRIM(ir.POSNR) AS POSNR,
@@ -96,8 +98,9 @@ class DashboardController extends Controller
                 ir.IV_WERKS_PARAM,
                 ir.IV_AUART_PARAM,
                 ir.remark,
-                ir.created_at
-            ")
+                ir.created_at,
+                COALESCE(t2.KUNNR, '') AS KUNNR 
+            ") // [DIUBAH] Tambahkan KUNNR dari t2 ke select
             ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
             ->when($location,       fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
             ->when($effectiveAuart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
@@ -108,6 +111,7 @@ class DashboardController extends Controller
 
         return response()->json(['ok' => true, 'data' => $rows]);
     }
+    
     public function apiSoBottlenecksDetails(Request $request)
     {
         $request->validate([

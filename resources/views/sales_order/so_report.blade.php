@@ -267,6 +267,44 @@
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            function waitFor(checkFn, {
+                timeout = 12000,
+                interval = 120
+            } = {}) {
+                return new Promise(resolve => {
+                    const start = Date.now();
+                    const t = setInterval(() => {
+                        let ok = false;
+                        try {
+                            ok = !!checkFn();
+                        } catch {
+                            ok = false;
+                        }
+                        if (ok) {
+                            clearInterval(t);
+                            return resolve(true);
+                        }
+                        if (Date.now() - start > timeout) {
+                            clearInterval(t);
+                            return resolve(false);
+                        }
+                    }, interval);
+                });
+            }
+            if (typeof window.CSS === 'undefined') window.CSS = {};
+            if (typeof window.CSS.escape !== 'function') {
+                // minimal polyfill
+                window.CSS.escape = function(sel) {
+                    return String(sel).replace(/([^\w-])/g, '\\$1');
+                };
+            }
+            const stripZeros = (v) => {
+                const s = String(v ?? '').trim();
+                if (!s) return '';
+                const z = s.replace(/^0+/, '');
+                return z.length ? z : '0';
+            };
+
             // -------------------------------------------------------
             // 1) VARIABEL GLOBAL
             // -------------------------------------------------------
@@ -377,34 +415,32 @@
                         el.classList.toggle('active', hasAny);
                     });
             }
-            // ========================================================
 
             // -------------------------------------------------------
             // 3) RENDERERS
             // -------------------------------------------------------
-            // ============== TABEL 2 (SO per customer) ==============
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
-                return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
+                    return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
                 let html = `<h5 class="yz-table-title-nested yz-title-so">
-                  <i class="fas fa-file-invoice me-2"></i>Outstanding SO
-                </h5>
-                <table class="table table-sm mb-0 yz-mini">
-                  <thead class="yz-header-so">
-                    <tr>
-                      <th style="width:40px;" class="text-center">
-                        <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-                      </th>
-                      <th style="width:40px;"></th>
-                      <th class="text-start">SO</th>
-                      <th class="text-center">SO Item Count</th>
-                      <th class="text-center">Req. Deliv. Date</th>
-                      <th class="text-center">Overdue (Days)</th>
-                      <th class="text-center">Outs. Value</th>
-                      <th style="width:28px;"></th>
-                    </tr>
-                  </thead>
-                  <tbody>`;
+      <i class="fas fa-file-invoice me-2"></i>Outstanding SO
+    </h5>
+    <table class="table table-sm mb-0 yz-mini">
+      <thead class="yz-header-so">
+        <tr>
+          <th style="width:40px;" class="text-center">
+            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+          </th>
+          <th style="width:40px;"></th>
+          <th class="text-start">SO</th>
+          <th class="text-center">SO Item Count</th>
+          <th class="text-center">Req. Deliv. Date</th>
+          <th class="text-center">Overdue (Days)</th>
+          <th class="text-center">Outs. Value</th>
+          <th style="width:28px;"></th>
+        </tr>
+      </thead>
+      <tbody>`;
 
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
@@ -412,77 +448,76 @@
                     const hasRemark = Number(r.remark_count || 0) > 0;
 
                     html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-                <td class="text-center">
-                  <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}">
-                </td>
-                <td class="text-center"><span class="yz-caret">▸</span></td>
-                <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-                <td class="text-center">${r.item_count ?? '-'}</td>
-                <td class="text-center">${r.FormattedEdatu || '-'}</td>
-                <td class="text-center">${r.Overdue}</td>
-                <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-                <td class="text-center">
-                  <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" 
-                     title="Ada item yang diberi catatan" 
-                     style="display:${hasRemark ? 'inline-block' : 'none'};"></i>
-                  <span class="so-selected-dot"></span>
-                </td>
-              </tr>
-              <tr id="${rid}" class="yz-nest" style="display:none;">
-                <td colspan="8" class="p-0">
-                  <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-                    <div class="yz-slot-items p-2"></div>
-                  </div>
-                </td>
-              </tr>`;
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}">
+        </td>
+        <td class="text-center"><span class="yz-caret">▸</span></td>
+        <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+        <td class="text-center">${r.item_count ?? '-'}</td>
+        <td class="text-center">${r.FormattedEdatu || '-'}</td>
+        <td class="text-center">${r.Overdue}</td>
+        <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
+        <td class="text-center">
+          <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" 
+             title="Ada item yang diberi catatan" 
+             style="display:${hasRemark ? 'inline-block' : 'none'};"></i>
+          <span class="so-selected-dot"></span>
+        </td>
+      </tr>
+      <tr id="${rid}" class="yz-nest" style="display:none;">
+        <td colspan="8" class="p-0">
+          <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+            <div class="yz-slot-items p-2"></div>
+          </div>
+        </td>
+      </tr>`;
                 });
                 html += `</tbody></table>`;
                 return html;
             }
-            // ============ /END TABEL 2 (SO per customer) ===========
 
             function renderLevel3_Items(rows) {
                 if (!rows?.length)
-                return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
+                    return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
                 let html = `<div class="table-responsive">
-                  <table class="table table-sm table-hover mb-0 yz-mini">
-                    <thead class="yz-header-item">
-                      <tr>
-                        <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-                        <th>Item</th><th>Material FG</th>
-                        <th>Desc FG</th><th>Qty SO</th>
-                        <th>Outs. SO</th><th>Stock Packing</th>
-                        <th>GR PKG</th>
-                        <th>Net Price</th>
-                        <th>Outs. Packg Value</th>
-                        <th>Remark</th>
-                      </tr>
-                    </thead>
-                    <tbody>`;
+      <table class="table table-sm table-hover mb-0 yz-mini">
+        <thead class="yz-header-item">
+          <tr>
+            <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+            <th>Item</th><th>Material FG</th>
+            <th>Desc FG</th><th>Qty SO</th>
+            <th>Outs. SO</th><th>Stock Packing</th>
+            <th>GR PKG</th>
+            <th>Net Price</th>
+            <th>Outs. Packg Value</th>
+            <th>Remark</th>
+          </tr>
+        </thead>
+        <tbody>`;
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
                     const hasRemark = r.remark && r.remark.trim() !== '';
                     const escapedRemark = r.remark ? encodeURIComponent(r.remark) : '';
                     html += `<tr data-item-id="${r.id}"
-                   data-werks="${r.WERKS_KEY}"
-                   data-auart="${r.AUART_KEY}"
-                   data-vbeln="${r.VBELN_KEY}"
-                   data-posnr="${r.POSNR_KEY}">
-                <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked' : ''}></td>
-                <td>${r.POSNR ?? ''}</td>
-                <td>${r.MATNR ?? ''}</td>
-                <td>${r.MAKTX ?? ''}</td>
-                <td>${formatNumber(r.KWMENG)}</td>
-                <td>${formatNumber(r.PACKG)}</td>
-                <td>${formatNumber(r.KALAB2)}</td>
-                <td>${formatNumber(r.MENGE)}</td>
-                <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
-                <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-                <td class="text-center">
-                  <i class="fas fa-pencil-alt remark-icon" data-remark="${escapedRemark}" title="Tambah/Edit Catatan"></i>
-                  <span class="remark-dot" style="display:${hasRemark ? 'inline-block' : 'none'};"></span>
-                </td>
-              </tr>`;
+             data-werks="${r.WERKS_KEY}"
+             data-auart="${r.AUART_KEY}"
+             data-vbeln="${r.VBELN_KEY}"
+             data-posnr="${r.POSNR_KEY}">
+        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked' : ''}></td>
+        <td>${r.POSNR ?? ''}</td>
+        <td>${r.MATNR ?? ''}</td>
+        <td>${r.MAKTX ?? ''}</td>
+        <td>${formatNumber(r.KWMENG)}</td>
+        <td>${formatNumber(r.PACKG)}</td>
+        <td>${formatNumber(r.KALAB2)}</td>
+        <td>${formatNumber(r.MENGE)}</td>
+        <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
+        <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
+        <td class="text-center">
+          <i class="fas fa-pencil-alt remark-icon" data-remark="${escapedRemark}" title="Tambah/Edit Catatan"></i>
+          <span class="remark-dot" style="display:${hasRemark ? 'inline-block' : 'none'};"></span>
+        </td>
+      </tr>`;
                 });
                 html += `</tbody></table></div>`;
                 return html;
@@ -555,7 +590,7 @@
                                         soTbody.classList.remove(
                                             'so-focus-mode');
                                         soRow.classList.remove(
-                                        'is-focused');
+                                            'is-focused');
                                     }
                                 }
                                 soRow.querySelector('.yz-caret')?.classList
@@ -580,7 +615,6 @@
                                     if (!jd.ok) throw new Error(jd.error ||
                                         'Gagal memuat item');
 
-                                    // isi cache & map
                                     jd.data.forEach(x => itemIdToSO.set(
                                         String(x.id), vbeln));
                                     itemsCache.set(vbeln, jd.data);
@@ -590,7 +624,6 @@
                                     applySelectionsToRenderedItems(itemBox);
                                     itemRow.dataset.loaded = '1';
 
-                                    // === update ikon pensil TABEL 2 berdasar cache ===
                                     updateSoRemarkFlagFromCache(vbeln);
                                 } catch (e) {
                                     itemBox.innerHTML =
@@ -618,7 +651,6 @@
                         if (e.target.checked) selectedItems.add(itemId);
                         else selectedItems.delete(itemId);
                     });
-                    // update dot untuk SO yang terkait
                     const anyItem = table.querySelector('.check-item');
                     if (anyItem) {
                         const vbeln = itemIdToSO.get(String(anyItem.dataset.id));
@@ -657,7 +689,6 @@
                             });
                         }
                         updateSODot(vbeln);
-                        // sinkronkan level-3 bila terbuka
                         const nest = document.querySelector(`tr.js-t2row[data-vbeln='${vbeln}']`)
                             ?.nextElementSibling;
                         const box = nest?.querySelector('.yz-slot-items');
@@ -682,7 +713,6 @@
                     updateSODot(vbeln);
                     updateExportButton();
 
-                    // sinkronkan level-3 bila terbuka
                     const nest = document.querySelector(`tr.js-t2row[data-vbeln='${vbeln}']`)
                         ?.nextElementSibling;
                     const box = nest?.querySelector('.yz-slot-items');
@@ -739,18 +769,16 @@
                     if (!response.ok || !result.ok) throw new Error(result.message ||
                         'Gagal menyimpan catatan.');
 
-                    // update dot & dataset remark pada baris item terkait (level 3)
                     const rowSel =
                         `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr='${payload.posnr}']`;
                     const rowEl = document.querySelector(rowSel);
                     const remarkIcon = rowEl?.querySelector('.remark-icon');
                     const remarkDot = rowEl?.querySelector('.remark-dot');
                     if (remarkIcon) remarkIcon.dataset.remark = encodeURIComponent(payload.remark ||
-                    '');
+                        '');
                     if (remarkDot) remarkDot.style.display = (payload.remark.trim() !== '' ?
                         'inline-block' : 'none');
 
-                    // === after save: hitung ulang ikon pensil TABEL 2 utk SO terkait ===
                     recalcSoRemarkFlagFromDom(payload.vbeln);
 
                     remarkFeedback.textContent = 'Catatan berhasil disimpan!';
@@ -776,6 +804,7 @@
                         alert('Pilih setidaknya satu item untuk diekspor.');
                         return;
                     }
+
                     const form = document.createElement('form');
                     form.method = 'POST';
                     form.action = exportUrl;
@@ -818,6 +847,108 @@
                     document.body.removeChild(form);
                 });
             }
-        });
+
+            // -------------------------------------------------------
+            // 5) AUTO-EXPAND SAMPAI TABEL-3 (dari Dashboard)
+            // -------------------------------------------------------
+            (async function autoExpandFromQuery() {
+                // Ambil semua parameter yang relevan dari URL
+                const VBELN = (qs.get('highlight_vbeln') || '').trim();
+                const KUNNR = (qs.get('highlight_kunnr') || '').trim(); // <-- Parameter baru
+                const shouldAuto = qs.get('auto_expand') === '1';
+
+                // [LOGIKA BARU] - Jalan pintas jika KUNNR dan VBELN ada
+                if (VBELN && KUNNR && shouldAuto) {
+                    // 1. Cari baris customer yang benar secara langsung
+                    const customerRow = document.querySelector(
+                        `.yz-kunnr-row[data-kunnr='${CSS.escape(KUNNR)}']`);
+
+                    if (!customerRow) {
+                        console.warn(`Auto-expand failed: Customer row with KUNNR=${KUNNR} not found.`);
+                        return;
+                    }
+
+                    // 2. Klik baris customer untuk memuat SO-nya (jika belum terbuka)
+                    if (!customerRow.classList.contains('is-open')) {
+                        customerRow.click();
+                    }
+
+                    // 3. Tunggu hingga konten (daftar SO) selesai dimuat via AJAX
+                    const wrap = customerRow.nextElementSibling?.querySelector('.yz-nest-wrap');
+                    const loaded = await waitFor(() => wrap && wrap.dataset.loaded === '1', {
+                        timeout: 5000
+                    });
+
+                    if (!loaded) {
+                        console.warn(
+                        `Auto-expand failed: Timed out waiting for SO list of KUNNR=${KUNNR}.`);
+                        return;
+                    }
+
+                    // 4. Setelah daftar SO dimuat, cari baris SO yang spesifik
+                    const soRow = wrap.querySelector(`.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
+
+                    if (!soRow) {
+                        console.warn(
+                            `Auto-expand failed: SO row with VBELN=${VBELN} not found within customer KUNNR=${KUNNR}.`
+                            );
+                        return;
+                    }
+
+                    // 5. Scroll ke baris SO agar terlihat dan beri highlight
+                    soRow.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
+                    });
+                    soRow.classList.add('row-highlighted');
+
+                    // 6. Klik baris SO untuk membuka detail item-nya
+                    if (!soRow.nextElementSibling?.style.display || soRow.nextElementSibling.style
+                        .display === 'none') {
+                        soRow.click();
+                    }
+
+                    // 7. Hapus highlight setelah beberapa saat atau saat diklik lagi
+                    setTimeout(() => soRow.classList.remove('row-highlighted'), 5000);
+                    soRow.addEventListener('click', () => soRow.classList.remove('row-highlighted'), {
+                        once: true
+                    });
+
+                    // Selesai, hentikan eksekusi fungsi
+                    return;
+                }
+
+                // [LOGIKA LAMA SEBAGAI FALLBACK]
+                // Logika ini tetap bisa berguna jika ada link lain yang hanya mengirim VBELN tanpa KUNNR.
+                // Jika Anda yakin semua link akan menyertakan KUNNR, Anda bisa menghapus blok di bawah ini.
+                if (VBELN && shouldAuto && !KUNNR) {
+                    console.warn('Auto-expanding with slow method (KUNNR not provided).');
+                    let soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
+                    if (!soRow) {
+                        const custRows = Array.from(document.querySelectorAll('.yz-kunnr-row'));
+                        for (const crow of custRows) {
+                            const kid = crow.dataset.kid;
+                            const slot = document.getElementById(kid);
+                            const wrap = slot?.querySelector('.yz-nest-wrap');
+                            const alreadyOpen = crow.classList.contains('is-open');
+                            if (!alreadyOpen) crow.click();
+                            await waitFor(() => wrap && wrap.dataset.loaded === '1');
+                            soRow = wrap?.querySelector(`.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
+                            if (soRow) break;
+                            if (!alreadyOpen && crow.classList.contains('is-open')) crow.click();
+                        }
+                    }
+
+                    if (soRow) {
+                        const tgtId = soRow.dataset.tgt;
+                        const itemRow = document.getElementById(tgtId);
+                        const isOpen = itemRow && itemRow.style.display !== 'none';
+                        if (!isOpen) soRow.click();
+                    }
+                }
+
+            })();
+
+        }); // DOMContentLoaded
     </script>
 @endpush

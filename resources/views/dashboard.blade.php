@@ -474,46 +474,46 @@
 
             {{-- 🆕 ROW: Item with Remark --}}
             <div class="row g-4 mb-4">
-                <div class="col-lg-5">
-                    <div class="card yz-card shadow-sm h-100">
+                <div class="col-lg-12">
+                    <div class="card yz-card shadow-sm h-100" id="remark-inline-container">
                         <div class="card-body d-flex flex-column">
                             <div class="d-flex justify-content-between align-items-center">
                                 <h5 class="card-title mb-0">
                                     <i class="fas fa-sticky-note me-2"></i>Item with Remark
                                 </h5>
-                                <button id="btn-open-remark-list" class="btn btn-sm btn-outline-primary">
-                                    Lihat Daftar
-                                </button>
                             </div>
                             <hr class="mt-2">
-                            <div class="chart-container flex-grow-1" style="min-height: 220px;">
-                                <canvas id="chart-remarks"></canvas>
+                            <!-- Tabel akan di-render via JS ke dalam elemen ini -->
+                            <div id="remark-list-box-inline" class="flex-grow-1">
+                                <div class="text-center text-muted py-4">
+                                    <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                                </div>
                             </div>
-                            <div class="small text-muted mt-2" id="remarks-subtitle"></div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {{-- 🆕 TABEL INLINE muncul di bawah donut (bukan modal) --}}
-                <div class="col-lg-7">
-                    <div id="remark-inline-container" class="card yz-card shadow-sm h-100" style="display:none;">
-                        <div class="card-body d-flex flex-column">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0">
-                                    <i class="fas fa-list me-2"></i>
-                                    Daftar Item dengan Remark
-                                </h5>
-                                <button id="btn-close-remark-list" class="btn btn-sm btn-outline-secondary">
-                                    Tutup
-                                </button>
-                            </div>
-                            <hr class="mt-2">
-                            <div id="remark-list-box-inline" class="table-responsive">
-                                <div class="text-center text-muted py-3">Memuat data…</div>
-                            </div>
+            {{-- 🆕 TABEL INLINE muncul di bawah donut (bukan modal) --}}
+            <div class="col-lg-7">
+                <div id="remark-inline-container" class="card yz-card shadow-sm h-100" style="display:none;">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-list me-2"></i>
+                                Daftar Item dengan Remark
+                            </h5>
+                            <button id="btn-close-remark-list" class="btn btn-sm btn-outline-secondary">
+                                Tutup
+                            </button>
+                        </div>
+                        <hr class="mt-2">
+                        <div id="remark-list-box-inline" class="table-responsive">
+                            <div class="text-center text-muted py-3">Memuat data…</div>
                         </div>
                     </div>
                 </div>
+            </div>
             </div>
         @else
             {{-- ==================== DASHBOARD PO ==================== --}}
@@ -714,8 +714,8 @@
 
     <script>
         /* =========================================================
-                   HELPER: Tabel Overview Customer (atribut untuk mobile)
-                   ======================================================== */
+                                   HELPER: atribut untuk tabel Overview Customer (mobile)
+                                   ======================================================== */
         document.addEventListener('DOMContentLoaded', function() {
             const customerRows = document.querySelectorAll('.yz-kunnr-row');
             customerRows.forEach(row => {
@@ -751,10 +751,10 @@
             if (!canvas) return;
             const container = canvas.parentElement;
             if (!container) return;
-            container.innerHTML =
-                `<div class="d-flex align-items-center justify-content-center h-100 p-3 text-muted" style="min-height:300px;">
-        <i class="fas fa-info-circle me-2"></i> Data tidak tersedia untuk filter ini.
-     </div>`;
+            container.innerHTML = `
+    <div class="d-flex align-items-center justify-content-center h-100 p-3 text-muted" style="min-height:300px;">
+      <i class="fas fa-info-circle me-2"></i> Data tidak tersedia untuk filter ini.
+    </div>`;
         };
 
         const formatLocations = (locsString) => {
@@ -774,15 +774,14 @@
             }
             const ctx = document.getElementById(canvasId);
             if (!ctx) return;
+
             const labels = chartData.map(d => {
                 const customerName = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
-                if (d.locations) {
-                    const locationSubtitle = formatLocations(d.locations);
-                    return [customerName, locationSubtitle];
-                }
+                if (d.locations) return [customerName, formatLocations(d.locations)];
                 return customerName;
             });
             const values = chartData.map(d => d[dataKey]);
+
             new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -831,7 +830,7 @@
                         x: {
                             beginAtZero: true,
                             ticks: {
-                                callback: function(value) {
+                                callback: (value) => {
                                     if (Math.floor(value) === value) {
                                         return currency ? formatFullCurrency(value, currency).replace(
                                             /\,00$/, '') : value;
@@ -881,18 +880,18 @@
                     });
 
                     let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
-        <table class="table table-sm mb-0 yz-mini">
-          <thead class="yz-header-so">
-            <tr>
-              <th style="width:40px;text-align:center;"></th>
-              <th style="min-width:150px;text-align:left;">PO</th>
-              <th style="min-width:100px;text-align:left;">SO</th>
-              <th style="min-width:100px;text-align:right;">Outs. Value</th>
-              <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
-              <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
-              <th style="min-width:120px;text-align:center;">Shortage %</th>
-            </tr>
-          </thead><tbody>`;
+      <table class="table table-sm mb-0 yz-mini">
+        <thead class="yz-header-so">
+          <tr>
+            <th style="width:40px;text-align:center;"></th>
+            <th style="min-width:150px;text-align:left;">PO</th>
+            <th style="min-width:100px;text-align:left;">SO</th>
+            <th style="min-width:100px;text-align:right;">Outs. Value</th>
+            <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
+            <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
+            <th style="min-width:120px;text-align:center;">Shortage %</th>
+          </tr>
+        </thead><tbody>`;
 
                     rows.forEach((r, i) => {
                         const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
@@ -1065,31 +1064,59 @@
                     });
                 });
 
-                // highlight hasil pencarian
+                // highlight hasil pencarian dari Search PO
                 const handleSearchHighlight = () => {
+                    // 1. Mengambil parameter dari URL
                     const urlParams = new URLSearchParams(window.location.search);
                     const highlightKunnr = urlParams.get('highlight_kunnr');
                     const highlightVbeln = urlParams.get('highlight_vbeln');
 
+                    // Hanya berjalan jika kedua parameter ada
                     if (highlightKunnr && highlightVbeln) {
+                        // 2. Cari baris customer berdasarkan 'data-kunnr'
                         const customerRow = document.querySelector(`.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
+
                         if (customerRow) {
+                            // 3. Simulasikan klik untuk membuka detail PO customer
                             customerRow.click();
+
                             let attempts = 0,
                                 maxAttempts = 50;
+
+                            // 4. Lakukan pengecekan berkala karena detail SO dimuat secara asynchronous
                             const interval = setInterval(() => {
+                                // Cari baris SO berdasarkan 'data-vbeln'
                                 const soRow = document.querySelector(
                                     `.js-t2row[data-vbeln="${highlightVbeln}"]`);
+
+                                // Jika baris SO sudah ditemukan
                                 if (soRow) {
+                                    // Hentikan pengecekan
                                     clearInterval(interval);
+
+                                    // 5. Tambahkan kelas untuk memberi highlight visual
                                     soRow.classList.add('row-highlighted');
+
+                                    // 6. [MODIFIKASI] Tambahkan listener untuk MENGHAPUS highlight saat diklik
+                                    // Listener ini hanya akan berjalan satu kali saja, lalu otomatis terhapus.
+                                    soRow.addEventListener('click', () => {
+                                        soRow.classList.remove('row-highlighted');
+                                    }, {
+                                        once: true
+                                    });
+
+                                    // 7. Scroll ke baris yang di-highlight agar terlihat oleh pengguna
                                     setTimeout(() => soRow.scrollIntoView({
                                         behavior: 'smooth',
                                         block: 'center'
                                     }), 500);
                                 }
+
+                                // Pengaman agar interval tidak berjalan selamanya
                                 attempts++;
-                                if (attempts > maxAttempts) clearInterval(interval);
+                                if (attempts > maxAttempts) {
+                                    clearInterval(interval);
+                                }
                             }, 100);
                         }
                     }
@@ -1098,7 +1125,7 @@
                 return;
             }
 
-            /* ---------- MODE DASHBOARD (grafik) ---------- */
+            /* ---------- MODE DASHBOARD (grafik & kpi) ---------- */
             const dataHolder = document.getElementById('dashboard-data-holder');
             if (!dataHolder) return;
 
@@ -1174,22 +1201,22 @@
                 </div>
                 <hr class="mt-2">
                 ${(rows && rows.length) ? `
-                                  <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                    <table class="table table-sm table-hover align-middle mb-0">
-                                      <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                        <tr>
-                                          <th class="text-center" style="width:60px;">NO.</th>
-                                          <th class="text-center" style="min-width:120px;">SO</th>
-                                          <th class="text-center" style="min-width:120px;">PO</th>
-                                          <th>Customer</th>
-                                          <th class="text-center" style="min-width:100px;">Plant</th>
-                                          <th class="text-center" style="min-width:140px;">Order Type</th>
-                                          <th class="text-center" style="min-width:120px;">Due Date</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>${body}</tbody>
-                                    </table>
-                                  </div>` :
+                                                                  <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                    <table class="table table-sm table-hover align-middle mb-0">
+                                                                      <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                        <tr>
+                                                                          <th class="text-center" style="width:60px;">NO.</th>
+                                                                          <th class="text-center" style="min-width:120px;">SO</th>
+                                                                          <th class="text-center" style="min-width:120px;">PO</th>
+                                                                          <th>Customer</th>
+                                                                          <th class="text-center" style="min-width:100px;">Plant</th>
+                                                                          <th class="text-center" style="min-width:140px;">Order Type</th>
+                                                                          <th class="text-center" style="min-width:120px;">Due Date</th>
+                                                                        </tr>
+                                                                      </thead>
+                                                                      <tbody>${body}</tbody>
+                                                                    </table>
+                                                                  </div>` :
                   `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada bottleneck.</div>`}
               </div>
             </div>
@@ -1344,221 +1371,128 @@
                     }, topCustomerCurrency);
 
                 /* ========================  🆕 ITEM WITH REMARK (INLINE)  ======================== */
-                (function itemWithRemarkInline() {
-                    const apiRemarkSummary = "{{ route('so.api.remark_summary') }}";
-                    const apiRemarkItems = "{{ route('so.api.remark_items') }}";
-
-                    const donutCanvas = document.getElementById('chart-remarks');
-                    const subtitleEl = document.getElementById('remarks-subtitle');
-                    const openBtn = document.getElementById('btn-open-remark-list');
+                (function itemWithRemarkTableOnly() {
+                    const apiRemarkItems = "{{ route('so.api.remark_items') }}"; // API daftar item remark
                     const inlineCard = document.getElementById('remark-inline-container');
-                    const closeBtn = document.getElementById('btn-close-remark-list');
                     const listBox = document.getElementById('remark-list-box-inline');
+                    if (!inlineCard || !listBox) return;
 
-                    if (!donutCanvas || !subtitleEl || !openBtn || !inlineCard || !listBox || !closeBtn) return;
-
+                    // Ambil filter aktif dari URL dashboard (location/type/auart)
                     const qs = new URLSearchParams(window.location.search);
                     const currentLocation = qs.get('location');
                     const currentType = qs.get('type');
                     const currentAuart = qs.get('auart');
 
-                    let donutChart = null;
-                    const numberFmtID = new Intl.NumberFormat('id-ID');
-
-                    function showInlineCard() {
-                        inlineCard.style.display = '';
-                        inlineCard.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
-                        });
-                    }
-
-                    function hideInlineCard() {
-                        inlineCard.style.display = 'none';
-                        listBox.innerHTML = '<div class="text-center text-muted py-3">Memuat data…</div>';
-                    }
-                    const fmtDateTime = (str) => {
-                        if (!str) return '';
-                        try {
-                            const d = new Date(str);
-                            if (isNaN(d.getTime())) return str;
-                            return d.toLocaleString('id-ID');
-                        } catch {
-                            return str;
-                        }
+                    // helpers
+                    const stripZeros = v => {
+                        const s = String(v ?? '').trim();
+                        if (!s) return '';
+                        const z = s.replace(/^0+/, '');
+                        return z.length ? z : '0';
                     };
-
-                    async function fetchSummary() {
-                        const url = new URL(apiRemarkSummary, window.location.origin);
-                        if (currentLocation) url.searchParams.set('location', currentLocation);
-                        if (currentType) url.searchParams.set('type', currentType);
-                        if (currentAuart) url.searchParams.set('auart', currentAuart);
-                        const res = await fetch(url, {
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        });
-                        const json = await res.json();
-                        if (!json.ok) throw new Error(json.error || 'Gagal memuat ringkasan remark.');
-                        return json.data || {};
-                    }
-
-                    function renderSubtitle(data) {
-                        const totalItems = Number(data.total_item_remarks || 0);
-                        const totalSO = Number(data.total_so_with_remarks || 0);
-                        let topText = '';
-                        const top = Array.isArray(data.top_so) ? data.top_so.slice(0, 3) : [];
-                        if (top.length) {
-                            const s = top.map(r => `${r.VBELN} (${numberFmtID.format(r.item_count)} items)`).join(
-                                ', ');
-                            topText = ` • Top SO: ${s}`;
-                        }
-                        subtitleEl.textContent =
-                            `Total: ${numberFmtID.format(totalItems)} items • ${numberFmtID.format(totalSO)} SO${topText}`;
-                    }
-
-                    function drawDonut(data) {
-                        const values = [
-                            Number(data.total_item_remarks || 0),
-                            Number(data.total_so_with_remarks || 0),
-                        ];
-                        const labels = ['Items with Remark', 'SO with Remark'];
-
-                        if (donutChart) {
-                            donutChart.destroy();
-                            donutChart = null;
-                        }
-                        donutChart = new Chart(donutCanvas, {
-                            type: 'doughnut',
-                            data: {
-                                labels,
-                                datasets: [{
-                                    data: values,
-                                    backgroundColor: ['#3b82f6', '#22c55e'],
-                                    borderColor: ['#ffffff'],
-                                    borderWidth: 2
-                                }]
-                            },
-                            options: {
-                                cutout: '60%',
-                                plugins: {
-                                    legend: {
-                                        display: true,
-                                        position: 'bottom'
-                                    },
-                                    tooltip: {
-                                        callbacks: {
-                                            label: (ctx) => `${ctx.label}: ${numberFmtID.format(ctx.raw)}`
-                                        }
-                                    }
-                                },
-                                onClick: async () => {
-                                    await openList();
-                                } // klik donut -> buka list inline
-                            }
-                        });
-                    }
-
                     const __plantName = w => ({
                         '2000': 'Surabaya',
                         '3000': 'Semarang'
                     } [String(w || '').trim()] || (w ?? ''));
 
-                    const __auartDescMap = (() => {
+                    // Map AUART -> Deskripsi (merge dari mappingData bila ada, plus fallback)
+                    const __auartDesc = (() => {
+                        const base = {
+                            ZOR1: 'KMI Export SBY',
+                            ZOR3: 'KMI Local SBY',
+                            ZRP1: 'KMI Replace SBY',
+                            ZOR2: 'KMI Export SMG',
+                            ZOR4: 'KMI Local SMG',
+                            ZRP2: 'KMI Replace SMG',
+                        };
                         try {
                             const holder = document.getElementById('dashboard-data-holder');
-                            const raw = holder?.dataset?.mappingData || '{}';
-                            const mapping = JSON.parse(raw);
-                            const out = {};
-                            Object.keys(mapping || {}).forEach(werks => {
-                                (mapping[werks] || []).forEach(m => {
-                                    out[String(m.IV_AUART)] = m.Deskription;
+                            const raw = holder?.dataset?.mappingData;
+                            if (raw) {
+                                const mapping = JSON.parse(raw);
+                                Object.keys(mapping || {}).forEach(werks => {
+                                    (mapping[werks] || []).forEach(m => {
+                                        base[String(m.IV_AUART).trim()] = m.Deskription;
+                                    });
                                 });
-                            });
-                            return Object.assign({
-                                ZOR1: 'KMI Export SBY',
-                                ZOR3: 'KMI Local SBY',
-                                ZRP1: 'KMI Replace SBY',
-                                ZOR2: 'KMI Export SMG',
-                                ZOR4: 'KMI Local SMG',
-                                ZRP2: 'KMI Replace SMG',
-                            }, out);
-                        } catch {
-                            return {
-                                ZOR1: 'KMI Export SBY',
-                                ZOR3: 'KMI Local SBY',
-                                ZRP1: 'KMI Replace SBY',
-                                ZOR2: 'KMI Export SMG',
-                                ZOR4: 'KMI Local SMG',
-                                ZRP2: 'KMI Replace SMG',
-                            };
-                        }
+                            }
+                        } catch {}
+                        return base;
                     })();
 
-                    /* ================== TABEL ITEM WITH REMARK (REPLACE YANG LAMA) ================== */
                     function buildTable(rows) {
-                        // helper: hapus leading zero, tetap kembalikan "0" kalau semuanya nol/kosong
-                        const stripZeros = v => {
-                            const s = String(v ?? '').trim();
-                            if (!s) return '';
-                            const z = s.replace(/^0+/, '');
-                            return z.length ? z : '0';
-                        };
-
-                        if (!rows || !rows.length) {
-                            return `<div class="text-center text-muted py-4">
-              <i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.
-            </div>`;
+                        if (!rows?.length) {
+                            return `
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.
+                        </div>`;
                         }
 
                         const body = rows.map((r, i) => {
-                            const posnr = stripZeros(r.POSNR);
-                            const plant = __plantName(r.IV_WERKS_PARAM);
-                            const auart = (r.IV_AUART_PARAM || '').trim();
-                            const auartTx = __auartDescMap[auart] || auart || '-';
+                            const item = stripZeros(r.POSNR);
+                            const werks = (r.IV_WERKS_PARAM || r.WERKS || '').trim();
+                            const auart = String(r.IV_AUART_PARAM || r.AUART || '').trim();
+                            const plant = __plantName(werks);
+                            const otName = __auartDesc[auart] || auart || '-';
+                            const so = (r.VBELN || '').trim();
+
+                            // [DIUBAH] Ambil KUNNR dari data. Asumsikan nama field-nya 'KUNNR'.
+                            // Sesuaikan jika nama field di response API berbeda (misal: r.kunnr, r.customer_id)
+                            const kunnr = (r.KUNNR || '').trim();
+
+                            // URL ke SO Report (langsung highlight dan auto expand)
+                            const url = new URL("{{ route('so.index') }}", window.location.origin);
+                            if (werks) url.searchParams.set('werks', werks);
+                            if (auart) url.searchParams.set('auart', auart);
+                            if (so) url.searchParams.set('highlight_vbeln', so);
+
+                            // [BARIS BARU] Tambahkan KUNNR ke URL
+                            if (kunnr) url.searchParams.set('highlight_kunnr', kunnr);
+
+                            url.searchParams.set('auto_expand', '1');
 
                             return `
-      <tr>
-        <td class="text-center">${i + 1}</td>
-        <td class="text-center">${r.VBELN || '-'}</td>
-        <td class="text-center">${posnr || '-'}</td>
-        <td class="text-center">${plant || '-'}</td>
-        <td class="text-center">${auartTx}</td>
-        <td>${(r.remark || '').replace(/\n/g,'<br>')}</td>
-      </tr>`;
+        <tr class="js-remark-row" data-url="${url.toString()}">
+            <td class="text-center">${i + 1}</td>
+            <td class="text-center">${so || '-'}</td>
+            <td class="text-center">${item || '-'}</td>
+            <td class="text-center">${plant || '-'}</td>
+            <td class="text-center">${otName}</td>
+            <td>${(r.remark || '').replace(/\n/g,'<br>')}</td>
+        </tr>`;
                         }).join('');
 
-                        // ⬇️ wrap tabel dengan container scrollable & tinggi tetap
                         return `
-    <div class="yz-scrollable-table-container" style="max-height:420px;">
-      <table class="table table-striped table-hover table-sm align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th class="text-center" style="width:60px;">No.</th>
-            <th class="text-center" style="min-width:110px;">SO</th>
-            <th class="text-center" style="min-width:90px;">Item</th>
-            <th class="text-center" style="min-width:110px;">Plant</th>
-            <th class="text-center" style="min-width:160px;">Order Type</th>
-            <th style="min-width:220px;" class="text-center">Remark</th>
-          </tr>
-        </thead>
-        <tbody>${body}</tbody>
-      </table>
-    </div>`;
+                    <div class="yz-scrollable-table-container" style="max-height:420px;">
+                        <table class="table table-striped table-hover table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center" style="width:60px;">No.</th>
+                                    <th class="text-center" style="min-width:110px;">SO</th>
+                                    <th class="text-center" style="min-width:90px;">Item</th>
+                                    <th class="text-center" style="min-width:110px;">Plant</th>
+                                    <th class="text-center" style="min-width:160px;">Order Type</th>
+                                    <th class="text-center" style="min-width:220px;">Remark</th>
+                                </tr>
+                            </thead>
+                            <tbody>${body}</tbody>
+                        </table>
+                    </div>
+                    <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
                     }
 
-                    async function openList(vbelnOpt) {
-                        try {
-                            showInlineCard();
-                            listBox.innerHTML = `<div class="d-flex justify-content-center align-items-center py-4 text-muted">
-            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
-          </div>`;
+                    async function loadList() {
+                        inlineCard.style.display = '';
+                        listBox.innerHTML = `
+                    <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                    </div>`;
 
+                        try {
                             const url = new URL(apiRemarkItems, window.location.origin);
                             if (currentLocation) url.searchParams.set('location', currentLocation);
                             if (currentType) url.searchParams.set('type', currentType);
                             if (currentAuart) url.searchParams.set('auart', currentAuart);
-                            if (vbelnOpt) url.searchParams.set('vbeln', vbelnOpt);
 
                             const res = await fetch(url, {
                                 headers: {
@@ -1567,37 +1501,26 @@
                             });
                             const json = await res.json();
                             if (!json.ok) throw new Error(json.error || 'Gagal memuat daftar item.');
-
                             listBox.innerHTML = buildTable(json.data || []);
                         } catch (e) {
-                            listBox.innerHTML =
-                                `<div class="alert alert-danger m-0"><i class="fas fa-exclamation-triangle me-2"></i>${e.message}</div>`;
+                            listBox.innerHTML = `
+                        <div class="alert alert-danger m-0">
+                            <i class="fas fa-exclamation-triangle me-2"></i>${e.message}
+                        </div>`;
                         }
                     }
 
-                    // events
-                    openBtn.addEventListener('click', () => openList());
-                    closeBtn.addEventListener('click', () => hideInlineCard());
+                    // Delegation: klik baris -> pindah ke SO Report
+                    listBox.addEventListener('click', ev => {
+                        const tr = ev.target.closest('.js-remark-row');
+                        if (!tr) return;
+                        const url = tr.dataset.url;
+                        if (url) window.location.href = url;
+                    });
 
-                    // init: summary + donut
-                    (async () => {
-                        try {
-                            const data = await fetchSummary();
-                            renderSubtitle(data);
-                            drawDonut(data);
-                        } catch (e) {
-                            const container = donutCanvas.parentElement;
-                            if (container) {
-                                container.innerHTML = `
-              <div class="d-flex align-items-center justify-content-center p-4 text-danger" style="min-height:220px;">
-                <i class="fas fa-exclamation-triangle me-2"></i>${e.message}
-              </div>`;
-                            }
-                            subtitleEl.textContent = '';
-                        }
-                    })();
+                    // langsung load tabel saat dashboard tampil
+                    loadList();
                 })();
-                /* ====================== END ITEM WITH REMARK ====================== */
 
                 return; // selesai untuk view=SO
             }
@@ -1958,20 +1881,20 @@
               </div>
               <hr class="mt-2">
               ${rows.length ? `
-                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                  <table class="table table-sm table-hover align-middle mb-0">
-                                    <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                        <tr>
-                                            <th class="text-center" style="width:60px;">NO.</th>
-                                            <th class="text-center" style="min-width:120px;">PO</th>
-                                            <th class="text-center" style="min-width:120px;">SO</th>
-                                            <th class="text-center" style="min-width:120px;">EDATU</th>
-                                            <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                        </tr>
-                                        </thead>
-                                    <tbody>${body}</tbody>
-                                  </table>
-                                </div>` :
+                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                  <table class="table table-sm table-hover align-middle mb-0">
+                                                                    <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                        <tr>
+                                                                            <th class="text-center" style="width:60px;">NO.</th>
+                                                                            <th class="text-center" style="min-width:120px;">PO</th>
+                                                                            <th class="text-center" style="min-width:120px;">SO</th>
+                                                                            <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                            <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                        </tr>
+                                                                        </thead>
+                                                                    <tbody>${body}</tbody>
+                                                                  </table>
+                                                                </div>` :
                 `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
               }
             </div>
@@ -2009,24 +1932,24 @@
           </div>
           <hr class="mt-2">
           ${rows && rows.length ? `
-                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                              <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                    <tr>
-                                        <th class="text-center" style="width:60px;">NO.</th>
-                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                        <th class="text-center" style="min-width:120px;">EDATU</th>
-                                        <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                    </tr>
-                                    </thead>
-                                <tbody>${tbody}</tbody>
-                              </table>
-                            </div>
-                          ` : `
-                            <div class="text-muted p-4 text-center">
-                              <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                            </div>`}
+                                                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                              <table class="table table-sm table-hover align-middle mb-0">
+                                                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                    <tr>
+                                                                        <th class="text-center" style="width:60px;">NO.</th>
+                                                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                                                        <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                        <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                    </tr>
+                                                                    </thead>
+                                                                <tbody>${tbody}</tbody>
+                                                              </table>
+                                                            </div>
+                                                          ` : `
+                                                            <div class="text-muted p-4 text-center">
+                                                              <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                            </div>`}
         </div>
       </div>`;
                 document.getElementById('closePoOverdueOverlay')?.addEventListener('click', () => {
@@ -2240,25 +2163,25 @@
           </div>
           <hr class="mt-2">
           ${rows && rows.length ? `
-                            <div class="table-responsive yz-scrollable-table-container">
-                              <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light">
-                                  <tr>
-                                    <th class="text-center" style="width:60px;">NO.</th>
-                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                    <th>CUSTOMER</th>
-                                    <th class="text-center" style="min-width:100px;">PLANT</th>
-                                    <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                    <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                  </tr>
-                                </thead>
-                                <tbody>${table}</tbody>
-                              </table>
-                            </div>` : `
-                            <div class="text-muted p-4 text-center">
-                              <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                            </div>`}
+                                                            <div class="table-responsive yz-scrollable-table-container">
+                                                              <table class="table table-sm table-hover align-middle mb-0">
+                                                                <thead class="table-light">
+                                                                  <tr>
+                                                                    <th class="text-center" style="width:60px;">NO.</th>
+                                                                    <th class="text-center" style="min-width:120px;">PO</th>
+                                                                    <th class="text-center" style="min-width:120px;">SO</th>
+                                                                    <th>CUSTOMER</th>
+                                                                    <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                    <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                    <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                  </tr>
+                                                                </thead>
+                                                                <tbody>${table}</tbody>
+                                                              </table>
+                                                            </div>` : `
+                                                            <div class="text-muted p-4 text-center">
+                                                              <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                            </div>`}
         </div>
       </div>`;
                 document.getElementById('closeSoStatusDetails')?.addEventListener('click', () => {
@@ -2350,22 +2273,22 @@
           </div>
           <hr class="mt-2">
           ${(rows && rows.length) ? `
-                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
-                              <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                  <tr>
-                                    <th class="text-center" style="width:60px;">NO.</th>
-                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                    <th>CUSTOMER</th>
-                                    <th class="text-center" style="min-width:100px;">PLANT</th>
-                                    <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                    <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                  </tr>
-                                </thead>
-                                <tbody>${table}</tbody>
-                              </table>
-                            </div>` :
+                                                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
+                                                              <table class="table table-sm table-hover align-middle mb-0">
+                                                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                                                  <tr>
+                                                                    <th class="text-center" style="width:60px;">NO.</th>
+                                                                    <th class="text-center" style="min-width:120px;">PO</th>
+                                                                    <th class="text-center" style="min-width:120px;">SO</th>
+                                                                    <th>CUSTOMER</th>
+                                                                    <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                    <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                    <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                  </tr>
+                                                                </thead>
+                                                                <tbody>${table}</tbody>
+                                                              </table>
+                                                            </div>` :
             `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
           }
         </div>
