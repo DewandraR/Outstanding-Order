@@ -38,7 +38,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     )->name('dashboard.api.poOverdueDetails');
 
     Route::get('/dashboard/api/so-bottlenecks-details', [DashboardController::class, 'apiSoBottlenecksDetails'])
-    ->name('dashboard.api.soBottlenecksDetails');
+        ->name('dashboard.api.soBottlenecksDetails');
 
     Route::get('/api/so-remark-summary', [DashboardController::class, 'apiSoRemarkSummary'])->name('so.api.remark_summary');
     Route::get('/api/so-remark-items',   [DashboardController::class, 'apiSoRemarkItems'])->name('so.api.remark_items');

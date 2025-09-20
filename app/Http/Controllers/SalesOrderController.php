@@ -149,9 +149,9 @@ class SalesOrderController extends Controller
         $remarksSub = DB::table('item_remarks as ir')
             ->join('so_yppr079_t1 as t1r', function ($j) {
                 $j->on('t1r.IV_WERKS_PARAM', '=', 'ir.IV_WERKS_PARAM')
-                ->on('t1r.IV_AUART_PARAM', '=', 'ir.IV_AUART_PARAM')
-                ->on('t1r.VBELN', '=', 'ir.VBELN')
-                ->on('t1r.POSNR', '=', 'ir.POSNR');
+                    ->on('t1r.IV_AUART_PARAM', '=', 'ir.IV_AUART_PARAM')
+                    ->on('t1r.VBELN', '=', 'ir.VBELN')
+                    ->on('t1r.POSNR', '=', 'ir.POSNR');
             })
             ->where('ir.IV_WERKS_PARAM', $werks)
             ->where('ir.IV_AUART_PARAM', $auart)
@@ -184,13 +184,15 @@ class SalesOrderController extends Controller
         // Hitung overdue seperti sebelumnya
         $today = now()->startOfDay();
         foreach ($rows as $row) {
-            $overdue = 0; $formattedEdatu = '';
+            $overdue = 0;
+            $formattedEdatu = '';
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
                     $edatuDate = \Carbon\Carbon::parse($row->EDATU)->startOfDay();
                     $formattedEdatu = $edatuDate->format('d-m-Y');
                     $overdue = $today->diffInDays($edatuDate, false); // negatif = telat
-                } catch (\Exception $e) { /* ignore */ }
+                } catch (\Exception $e) { /* ignore */
+                }
             }
             $row->Overdue        = $overdue;
             $row->FormattedEdatu = $formattedEdatu;

@@ -25,18 +25,18 @@ class DashboardController extends Controller
         if (!$effectiveAuart && $location && $type) {
             $effectiveAuart = DB::table('maping')
                 ->where('IV_WERKS', $location)
-                ->when($type === 'export', fn($q) => $q->where('Deskription','like','%Export%')
-                                                    ->where('Deskription','not like','%Replace%')
-                                                    ->where('Deskription','not like','%Local%'))
-                ->when($type === 'lokal',  fn($q) => $q->where('Deskription','like','%Local%'))
+                ->when($type === 'export', fn($q) => $q->where('Deskription', 'like', '%Export%')
+                    ->where('Deskription', 'not like', '%Replace%')
+                    ->where('Deskription', 'not like', '%Local%'))
+                ->when($type === 'lokal',  fn($q) => $q->where('Deskription', 'like', '%Local%'))
                 ->orderBy('IV_AUART')->value('IV_AUART');
         }
 
         // Basis remark items
         $base = DB::table('item_remarks')
             ->whereNotNull('remark')->whereRaw('TRIM(remark) <> ""')
-            ->when($location,       fn($q,$v)=>$q->where('IV_WERKS_PARAM',$v))
-            ->when($effectiveAuart, fn($q,$v)=>$q->where('IV_AUART_PARAM',$v));
+            ->when($location,       fn($q, $v) => $q->where('IV_WERKS_PARAM', $v))
+            ->when($effectiveAuart, fn($q, $v) => $q->where('IV_AUART_PARAM', $v));
 
         $totalItemRemarks = (clone $base)->count();
         $totalSoWithRemarks = (clone $base)->distinct()->count('VBELN');
@@ -50,7 +50,7 @@ class DashboardController extends Controller
             'ok' => true,
             'data' => [
                 'total_item_remarks'  => $totalItemRemarks,
-                'total_so_with_remarks'=> $totalSoWithRemarks,
+                'total_so_with_remarks' => $totalSoWithRemarks,
                 'top_so'              => $bySo,
             ]
         ]);
@@ -74,17 +74,17 @@ class DashboardController extends Controller
         if (!$effectiveAuart && $location && $type) {
             $effectiveAuart = DB::table('maping')
                 ->where('IV_WERKS', $location)
-                ->when($type === 'export', fn($q) => $q->where('Deskription','like','%Export%')
-                                                    ->where('Deskription','not like','%Replace%')
-                                                    ->where('Deskription','not like','%Local%'))
-                ->when($type === 'lokal',  fn($q) => $q->where('Deskription','like','%Local%'))
+                ->when($type === 'export', fn($q) => $q->where('Deskription', 'like', '%Export%')
+                    ->where('Deskription', 'not like', '%Replace%')
+                    ->where('Deskription', 'not like', '%Local%'))
+                ->when($type === 'lokal',  fn($q) => $q->where('Deskription', 'like', '%Local%'))
                 ->orderBy('IV_AUART')->value('IV_AUART');
         }
 
         $rows = DB::table('item_remarks as ir')
-            ->leftJoin('so_yppr079_t1 as t1', function($j){
+            ->leftJoin('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
-                ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
             ->selectRaw("
                 TRIM(ir.VBELN) AS VBELN,
@@ -99,14 +99,14 @@ class DashboardController extends Controller
                 ir.created_at
             ")
             ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
-            ->when($location,       fn($q,$v)=>$q->where('ir.IV_WERKS_PARAM',$v))
-            ->when($effectiveAuart, fn($q,$v)=>$q->where('ir.IV_AUART_PARAM',$v))
-            ->when($vbeln !== '',   fn($q)=>$q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)',[$vbeln]))
+            ->when($location,       fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
+            ->when($effectiveAuart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
+            ->when($vbeln !== '',   fn($q) => $q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln]))
             ->orderBy('ir.VBELN')->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
             ->limit(2000)
             ->get();
 
-        return response()->json(['ok'=>true,'data'=>$rows]);
+        return response()->json(['ok' => true, 'data' => $rows]);
     }
     public function apiSoBottlenecksDetails(Request $request)
     {
@@ -133,8 +133,8 @@ class DashboardController extends Controller
                 ->where('IV_WERKS', $location)
                 ->when($type === 'export', function ($q) {
                     $q->where('Deskription', 'like', '%Export%')
-                    ->where('Deskription', 'not like', '%Replace%')
-                    ->where('Deskription', 'not like', '%Local%');
+                        ->where('Deskription', 'not like', '%Replace%')
+                        ->where('Deskription', 'not like', '%Local%');
                 })
                 ->when($type === 'lokal', function ($q) {
                     $q->where('Deskription', 'like', '%Local%');
@@ -149,9 +149,9 @@ class DashboardController extends Controller
             ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
             ->whereExists(function ($q) {
                 $q->select(DB::raw(1))
-                ->from('so_yppr079_t1 as t1_exists')
-                ->whereColumn('t1_exists.VBELN', 't3.VBELN')
-                ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
+                    ->from('so_yppr079_t1 as t1_exists')
+                    ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+                    ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
             })
             ->select('t3.VBELN')
             ->distinct();
@@ -211,10 +211,18 @@ class DashboardController extends Controller
 
         // Filter bucket hari
         switch ($bucket) {
-            case '1_30':  $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 1 AND 30");  break;
-            case '31_60': $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 31 AND 60"); break;
-            case '61_90': $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 61 AND 90"); break;
-            case 'gt_90': $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) > 90");              break;
+            case '1_30':
+                $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 1 AND 30");
+                break;
+            case '31_60':
+                $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 31 AND 60");
+                break;
+            case '61_90':
+                $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) BETWEEN 61 AND 90");
+                break;
+            case 'gt_90':
+                $q->whereRaw("DATEDIFF(CURDATE(), $safeEdatu) > 90");
+                break;
         }
 
         $rows = $q->orderByDesc('OVERDUE_DAYS')
@@ -256,8 +264,8 @@ class DashboardController extends Controller
                 ->where('IV_WERKS', $location)
                 ->when($type === 'export', function ($q) {
                     $q->where('Deskription', 'like', '%Export%')
-                    ->where('Deskription', 'not like', '%Replace%')
-                    ->where('Deskription', 'not like', '%Local%');
+                        ->where('Deskription', 'not like', '%Replace%')
+                        ->where('Deskription', 'not like', '%Local%');
                 })
                 ->when($type === 'lokal', function ($q) {
                     // Ikuti SO Report: untuk "lokal" ambil yang Local (bukan Replace)
@@ -272,22 +280,22 @@ class DashboardController extends Controller
             ->when($type === 'lokal', function ($q) {
                 $q->join('maping as m', function ($j) {
                     $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                        ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
                 })->where('m.Deskription', 'like', '%Local%');
             })
             ->when($type === 'export', function ($q) {
                 $q->join('maping as m', function ($j) {
                     $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                    ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                        ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
                 })->where('m.Deskription', 'like', '%Export%');
             })
             ->when($location,       fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
             ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
             ->whereExists(function ($q) {
                 $q->select(DB::raw(1))
-                ->from('so_yppr079_t1 as t1_exists')
-                ->whereColumn('t1_exists.VBELN', 't3.VBELN')
-                ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
+                    ->from('so_yppr079_t1 as t1_exists')
+                    ->whereColumn('t1_exists.VBELN', 't3.VBELN')
+                    ->whereRaw('CAST(t1_exists.PACKG AS DECIMAL(18,3)) <> 0');
             })
             ->select('t3.VBELN')
             ->distinct();
@@ -898,10 +906,10 @@ class DashboardController extends Controller
                     DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
                     DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
                 )
-                ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-                ->groupBy('m.IV_WERKS', 'm.Deskription')
-                ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
-                ->get();
+                    ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+                    ->groupBy('m.IV_WERKS', 'm.Deskription')
+                    ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
+                    ->get();
 
                 $chartData['so_performance_analysis'] = $performanceQuery;
 
