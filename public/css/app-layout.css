@@ -421,3 +421,50 @@ footer {
     background-color: rgba(0, 0, 0, 0.1);
     box-shadow: none;
 }
+
+.yz-info-icon {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #a0aec0; /* Warna abu-abu yang lebih lembut */
+    opacity: 0.75;
+    cursor: pointer;
+    font-size: 1.1em; /* Sedikit lebih besar dari teks biasa */
+    vertical-align: middle; /* Agar sejajar dengan teks judul */
+    transition: all 0.2s ease-in-out; /* Animasi halus untuk semua perubahan */
+}
+
+/* Efek saat mouse diarahkan ke ikon */
+.yz-info-icon:hover {
+    opacity: 1;
+    color: #2563eb; /* Warna biru primer atau warna lain yang Anda suka */
+    transform: scale(1.2); /* Sedikit membesar saat disentuh */
+}
+
+/* Style untuk popover agar lebih pas (Opsional, tapi direkomendasikan) */
+.popover {
+    border-radius: 0.75rem !important;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    border: none !important;
+}
+
+.popover-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    font-weight: 600;
+}
+
+.yz-kpi-title {
+    display: flex; /* Mengaktifkan Flexbox */
+    align-items: flex-start; /* Meratakan item ke atas (penting untuk text-wrap) */
+    justify-content: flex-start; /* Meratakan item dari kiri */
+    gap: 0.35rem; /* Memberi sedikit jarak antara teks dan ikon */
+}
+
+/* Opsional: pastikan ikon tidak terlalu besar dan warnanya pas */
+.yz-kpi-title .yz-info-icon {
+    flex-shrink: 0; /* Mencegah ikon menyusut */
+    margin-top: 0.1rem; /* Sedikit penyesuaian posisi vertikal agar lebih pas di mata */
+    color: #6c757d; /* Warna abu-abu yang lebih lembut */
+}
+

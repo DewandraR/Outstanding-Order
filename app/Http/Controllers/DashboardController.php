@@ -44,7 +44,7 @@ class DashboardController extends Controller
         // TOP SO by jumlah item remark (opsional untuk tooltip/legend)
         $bySo = (clone $base)
             ->selectRaw('VBELN, COUNT(*) AS item_count')
-            ->groupBy('VBELN')->orderByDesc('item_count')->limit(10)->get();
+            ->groupBy('VBELN')->orderByDesc('item_count')->get();
 
         return response()->json([
             'ok' => true,
@@ -320,15 +320,39 @@ class DashboardController extends Controller
 
         // === Keluarkan list unik per SO (VBELN) plus due date terawal
         $rows = $base
-            ->groupBy('t3.VBELN', 't3.BSTNK', 't3.NAME1', 't3.IV_WERKS_PARAM', 't3.IV_AUART_PARAM')
+            // tambahkan join agar dapat Deskription (nama order type)
+            ->leftJoin('maping as mp', function ($j) {
+                $j->on('t3.IV_AUART_PARAM', '=', 'mp.IV_AUART')
+                    ->on('t3.IV_WERKS_PARAM', '=', 'mp.IV_WERKS');
+            })
+            ->groupBy(
+                't3.VBELN',
+                't3.BSTNK',
+                't3.NAME1',
+                't3.IV_WERKS_PARAM',
+                't3.IV_AUART_PARAM',
+                'mp.Deskription'
+            )
             ->selectRaw("
                 t3.VBELN,
                 t3.BSTNK,
                 t3.NAME1,
                 t3.IV_WERKS_PARAM,
                 t3.IV_AUART_PARAM,
+                mp.Deskription AS order_type_name,
+                CASE WHEN t3.IV_WERKS_PARAM = '2000' THEN 'SBY' ELSE 'SMG' END AS plant_short,
+                CASE
+                    WHEN mp.Deskription IS NULL OR TRIM(mp.Deskription) = '' THEN
+                    CONCAT(COALESCE(t3.IV_AUART_PARAM,''), ' ',
+                            CASE WHEN t3.IV_WERKS_PARAM='2000' THEN 'SBY' ELSE 'SMG' END)
+                    WHEN UPPER(TRIM(mp.Deskription)) REGEXP ' (SBY|SMG)$' THEN
+                    TRIM(mp.Deskription)                   -- deskripsi sudah berakhiran SBY/SMG
+                    ELSE
+                    CONCAT(TRIM(mp.Deskription), ' ',
+                            CASE WHEN t3.IV_WERKS_PARAM='2000' THEN 'SBY' ELSE 'SMG' END)
+                END AS order_type_label,
                 DATE_FORMAT(MIN({$safeEdatu}), '%Y-%m-%d') AS due_date
-            ")
+                ")
             ->orderByRaw("MIN({$safeEdatu}) ASC")
             ->get();
 
@@ -448,12 +472,6 @@ class DashboardController extends Controller
                 ->value('IV_AUART');
         }
 
-        /**
-         * Helper filter type/auart yang konsisten untuk semua query.
-         * - Jika $auart ada → pakai where alias.IV_AUART_PARAM = $auart
-         * - Jika $auart kosong & $type ada → join ke `maping` sesuai alias (t2/t3),
-         *   lalu filter Deskription untuk Lokal/Export (exclude Replace untuk Export).
-         */
         $applyTypeOrAuart = function ($q, string $alias) use ($type, $auart) {
             if (!empty($auart)) {
                 $q->where("{$alias}.IV_AUART_PARAM", $auart);
@@ -636,6 +654,12 @@ class DashboardController extends Controller
             ->get();
 
         // ===== Due this week
+        $joinMaping = function ($q, $alias = 't2') {
+            $q->leftJoin('maping as m', function ($j) use ($alias) {
+                $j->on("$alias.IV_AUART_PARAM", '=', 'm.IV_AUART')
+                    ->on("$alias.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
+            });
+        };
         $dueThisWeekBySo = DB::table('so_yppr079_t2 as t2')
             ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
         $applyTypeOrAuart($dueThisWeekBySo, 't2');
@@ -649,8 +673,7 @@ class DashboardController extends Controller
             CAST(SUM(t2.TOTPR2) AS DECIMAL(18,2)) AS total_value,
             DATE_FORMAT(MIN({$safeEdatuT2}), '%Y-%m-%d') AS due_date
         ")
-            ->orderByDesc('total_value')
-            ->limit(50);
+            ->orderByDesc('total_value');
         $dueThisWeekBySo = $dueThisWeekBySo->get();
 
         $dueThisWeekByCustomer = DB::table('so_yppr079_t2 as t2')

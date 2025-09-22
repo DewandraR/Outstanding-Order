@@ -255,7 +255,10 @@
                             <div class="yz-kpi-icon bg-primary-subtle text-primary"><i class="fas fa-dollar-sign"></i>
                             </div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Outs Value Packing (USD)</p>
+                                <div class="mb-1 text-muted yz-kpi-title"
+                                    data-help-key="so.kpi.total_outstanding_value_usd">
+                                    <span>Outs Value Packing (USD)</span>
+                                </div>
                                 <h4 class="mb-0 fw-bolder" id="kpi-so-val-usd">$0.00</h4>
                             </div>
                         </div>
@@ -267,7 +270,10 @@
                             <div class="yz-kpi-icon bg-success-subtle text-success"><i class="fas fa-money-bill-wave"></i>
                             </div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Outs Value Packing (IDR)</p>
+                                <div class="mb-1 text-muted yz-kpi-title"
+                                    data-help-key="so.kpi.total_outstanding_value_idr">
+                                    <span>Outs Value Packing (IDR)</span>
+                                </div>
                                 <h4 class="mb-0 fw-bolder" id="kpi-so-val-idr">Rp 0</h4>
                             </div>
                         </div>
@@ -280,7 +286,9 @@
                         <div class="card-body d-flex align-items-center">
                             <div class="yz-kpi-icon bg-info-subtle text-info"><i class="fas fa-shipping-fast"></i></div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Value to Packing This Week</p>
+                                <div class="mb-1 text-muted yz-kpi-title" data-help-key="so.kpi.value_to_ship_this_week">
+                                    <span>Value to Packing This Week</span>
+                                </div>
                                 <h5 class="mb-0 fw-bolder" id="kpi-so-ship-week-usd">$0.00</h5>
                                 <h5 class="mb-0 fw-bolder" id="kpi-so-ship-week-idr">Rp 0</h5>
                             </div>
@@ -295,7 +303,9 @@
                             <div class="yz-kpi-icon bg-warning-subtle text-warning"><i
                                     class="fas fa-exclamation-triangle"></i></div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Potential Bottlenecks</p>
+                                <div class="mb-1 text-muted yz-kpi-title" data-help-key="so.kpi.potential_bottlenecks">
+                                    <span>Potential Bottlenecks</span>
+                                </div>
                                 <h4 class="mb-0 fw-bolder"><span id="kpi-so-bottleneck">0</span> <small
                                         id="kpi-so-bottleneck-unit">Items</small></h4>
                             </div>
@@ -323,11 +333,9 @@
                         <div class="col-lg-7">
                             <div class="card shadow-sm h-100 yz-chart-card">
                                 <div class="card-body">
-                                    <h5 class="card-title">
+                                    <h5 class="card-title" data-help-key="so.due_this_week_by_so">
                                         <i class="fas fa-truck-fast me-2"></i>SO Due This Week
-                                        <span class="text-muted small">
-                                            ({{ $rangeStart->format('d M') }} – {{ $rangeEnd->format('d M Y') }})
-                                        </span>
+                                        <span class="text-muted small">(...range tanggal...)</span>
                                     </h5>
                                     <hr class="mt-2">
                                     @if (empty($dueSoRows))
@@ -384,7 +392,8 @@
                         <div class="col-lg-4">
                             <div class="card shadow-sm h-100 yz-chart-card">
                                 <div class="card-body">
-                                    <h5 class="card-title"><i class="fas fa-user-clock me-2"></i>Customers Due This Week
+                                    <h5 class="card-title" data-help-key="so.due_this_week_by_customer">
+                                        <i class="fas fa-user-clock me-2"></i>Customers Due This Week
                                     </h5>
                                     <hr class="mt-2">
                                     @if (empty($dueCustRows))
@@ -434,8 +443,9 @@
                 <div class="col-lg-7">
                     <div class="card shadow-sm h-100 yz-chart-card">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title"><i class="fas fa-chart-column me-2"></i>Value to Pacing vs Overdue by
-                                Location</h5>
+                            <h5 class="card-title" data-help-key="so.value_by_location_status">
+                                <i class="fas fa-chart-column me-2"></i>Value to Pacing vs Overdue by Location
+                            </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
                                 <canvas id="chartValueByLocationStatus"></canvas>
@@ -446,7 +456,9 @@
                 <div class="col-lg-5">
                     <div class="card shadow-sm h-100 yz-chart-card position-relative">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title"><i class="fas fa-clock me-2"></i>SO Fulfillment Urgency</h5>
+                            <h5 class="card-title" data-help-key="so.status_overview">
+                                <i class="fas fa-clock me-2"></i>SO Fulfillment Urgency
+                            </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
                                 <canvas id="chartSoUrgency"></canvas>
@@ -461,8 +473,10 @@
                 <div class="col-12">
                     <div class="card shadow-sm h-100 yz-chart-card">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title text-primary-emphasis"><i class="fas fa-crown me-2"></i>Top 5 Customers
-                                by Value of Overdue Orders Awaiting Packing</h5>
+                            <h5 class="card-title text-primary-emphasis" data-help-key="so.top_overdue_customers_value">
+                                <i class="fas fa-crown me-2"></i>Top 5 Customers by Value of Overdue Orders Awaiting
+                                Packing
+                            </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1" style="min-height: 400px;">
                                 <canvas id="chartTopCustomersValueSO"></canvas>
@@ -478,7 +492,7 @@
                     <div class="card yz-card shadow-sm h-100" id="remark-inline-container">
                         <div class="card-body d-flex flex-column">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0">
+                                <h5 class="card-title" data-help-key="so.items_with_remark">
                                     <i class="fas fa-sticky-note me-2"></i>Item with Remark
                                 </h5>
                             </div>
@@ -525,7 +539,7 @@
                                 <i class="fas fa-dollar-sign"></i>
                             </div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Outs Value Ship (USD)</p>
+                                <p class="mb-1 text-muted" data-help-key="po.kpi.value_usd">Outs Value Ship (USD)</p>
                                 <h4 class="mb-0 fw-bolder" id="kpi-out-usd">$0.00</h4>
                             </div>
                         </div>
@@ -538,7 +552,7 @@
                                 <i class="fas fa-money-bill-wave"></i>
                             </div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Outs Value Ship (IDR)</p>
+                                <p class="mb-1 text-muted" data-help-key="po.kpi.value_idr">Outs Value Ship (IDR)</p>
                                 <h4 class="mb-0 fw-bolder" id="kpi-out-idr">Rp 0</h4>
                             </div>
                         </div>
@@ -551,7 +565,7 @@
                                 <i class="fas fa-file-invoice"></i>
                             </div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Outstanding PO</p>
+                                <p class="mb-1 text-muted" data-help-key="po.kpi.outstanding_po">Outstanding PO</p>
                                 <h4 class="mb-0 fw-bolder" id="kpi-out-so">0</h4>
                             </div>
                         </div>
@@ -564,7 +578,7 @@
                                 <i class="fas fa-business-time"></i>
                             </div>
                             <div class="ms-3">
-                                <p class="mb-1 text-muted">Overdue PO</p>
+                                <p class="mb-1 text-muted" data-help-key="po.kpi.overdue_po">Overdue PO</p>
                                 <h4 class="mb-0 fw-bolder"><span id="kpi-overdue-so">0</span> <small class="text-danger"
                                         id="kpi-overdue-rate">(0%)</small></h4>
                             </div>
@@ -577,7 +591,8 @@
                 <div class="col-lg-7">
                     <div class="card shadow-sm h-100 yz-chart-card">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title"><i class="fas fa-chart-column me-2"></i>Outstanding Value by Location
+                            <h5 class="card-title" data-help-key="po.outstanding_by_location">
+                                <i class="fas fa-chart-column me-2"></i>Outstanding Value by Location
                             </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
@@ -589,7 +604,9 @@
                 <div class="col-lg-5">
                     <div class="card shadow-sm h-100 yz-chart-card position-relative">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title"><i class="fas fa-chart-pie me-2"></i>PO Status Overview</h5>
+                            <h5 class="card-title" data-help-key="po.status_overview">
+                                PO Status Overview
+                            </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
                                 <canvas id="chartSOStatus"></canvas>
@@ -604,8 +621,9 @@
                 <div class="col-lg-6">
                     <div class="card shadow-sm h-100 yz-chart-card">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title text-primary-emphasis"><i class="fas fa-crown me-2"></i>Top 4 Customer
-                                with the most Outstanding value</h5>
+                            <h5 class="card-title text-primary-emphasis" data-help-key="po.top_customers_value_usd">
+                                <i class="fas fa-crown me-2"></i>Top 4 Customer with the most Outstanding value
+                            </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
                                 <canvas id="chartTopCustomersValue"></canvas>
@@ -616,8 +634,9 @@
                 <div class="col-lg-6">
                     <div class="card shadow-sm h-100 yz-chart-card">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title text-danger-emphasis"><i
-                                    class="fas fa-triangle-exclamation me-2"></i>Top 4 Customers with Most Overdue PO</h5>
+                            <h5 class="card-title text-danger-emphasis" data-help-key="po.top_customers_overdue">
+                                <i class="fas fa-triangle-exclamation me-2"></i>Top 4 Customers with Most Overdue PO
+                            </h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
                                 <canvas id="chartTopOverdueCustomers"></canvas>
@@ -633,7 +652,7 @@
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
-                                    <h5 class="card-title mb-0">
+                                    <h5 class="card-title mb-0" data-help-key="po.performance_details">
                                         <i class="fas fa-tasks me-2"></i>Outstanding PO & Performance Details by Type
                                     </h5>
                                 </div>
@@ -673,7 +692,7 @@
                 <div class="col-12">
                     <div class="card shadow-sm yz-chart-card">
                         <div class="card-body">
-                            <h5 class="card-title text-info-emphasis">
+                            <h5 class="card-title text-info-emphasis" data-help-key="po.small_qty_by_customer">
                                 <i class="fas fa-chart-line me-2"></i>Small Quantity (≤5) Outstanding Items by Customer
                             </h5>
                             <hr class="mt-2">
@@ -714,8 +733,8 @@
 
     <script>
         /* =========================================================
-                                       HELPER: atribut untuk tabel Overview Customer (mobile)
-                                       ======================================================== */
+                                                                                                                                                       HELPER: atribut untuk tabel Overview Customer (mobile)
+                                                                                                                                                       ======================================================== */
         document.addEventListener('DOMContentLoaded', function() {
             const customerRows = document.querySelectorAll('.yz-kunnr-row');
             customerRows.forEach(row => {
@@ -1201,22 +1220,22 @@
                 </div>
                 <hr class="mt-2">
                 ${(rows && rows.length) ? `
-                                                                      <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                        <table class="table table-sm table-hover align-middle mb-0">
-                                                                          <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                            <tr>
-                                                                              <th class="text-center" style="width:60px;">NO.</th>
-                                                                              <th class="text-center" style="min-width:120px;">SO</th>
-                                                                              <th class="text-center" style="min-width:120px;">PO</th>
-                                                                              <th>Customer</th>
-                                                                              <th class="text-center" style="min-width:100px;">Plant</th>
-                                                                              <th class="text-center" style="min-width:140px;">Order Type</th>
-                                                                              <th class="text-center" style="min-width:120px;">Due Date</th>
-                                                                            </tr>
-                                                                          </thead>
-                                                                          <tbody>${body}</tbody>
-                                                                        </table>
-                                                                      </div>` :
+                                                                                                                                                                                      <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                                                                                        <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                          <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                                                                            <tr>
+                                                                                                                                                                                              <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                              <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                              <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                              <th>Customer</th>
+                                                                                                                                                                                              <th class="text-center" style="min-width:100px;">Plant</th>
+                                                                                                                                                                                              <th class="text-center" style="min-width:140px;">Order Type</th>
+                                                                                                                                                                                              <th class="text-center" style="min-width:120px;">Due Date</th>
+                                                                                                                                                                                            </tr>
+                                                                                                                                                                                          </thead>
+                                                                                                                                                                                          <tbody>${body}</tbody>
+                                                                                                                                                                                        </table>
+                                                                                                                                                                                      </div>` :
                   `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada bottleneck.</div>`}
               </div>
             </div>
@@ -1881,20 +1900,20 @@
               </div>
               <hr class="mt-2">
               ${rows.length ? `
-                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                      <table class="table table-sm table-hover align-middle mb-0">
-                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                            <tr>
-                                                                                <th class="text-center" style="width:60px;">NO.</th>
-                                                                                <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                <th class="text-center" style="min-width:120px;">EDATU</th>
-                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                            </tr>
-                                                                            </thead>
-                                                                        <tbody>${body}</tbody>
-                                                                      </table>
-                                                                    </div>` :
+                                                                                                                                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                                                                                      <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                                                                            <tr>
+                                                                                                                                                                                                <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                                                                                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                                                                                                                            </tr>
+                                                                                                                                                                                            </thead>
+                                                                                                                                                                                        <tbody>${body}</tbody>
+                                                                                                                                                                                      </table>
+                                                                                                                                                                                    </div>` :
                 `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
               }
             </div>
@@ -1932,24 +1951,24 @@
           </div>
           <hr class="mt-2">
           ${rows && rows.length ? `
-                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                  <table class="table table-sm table-hover align-middle mb-0">
-                                                                    <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                        <tr>
-                                                                            <th class="text-center" style="width:60px;">NO.</th>
-                                                                            <th class="text-center" style="min-width:120px;">PO</th>
-                                                                            <th class="text-center" style="min-width:120px;">SO</th>
-                                                                            <th class="text-center" style="min-width:120px;">EDATU</th>
-                                                                            <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                        </tr>
-                                                                        </thead>
-                                                                    <tbody>${tbody}</tbody>
-                                                                  </table>
-                                                                </div>
-                                                              ` : `
-                                                                <div class="text-muted p-4 text-center">
-                                                                  <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                </div>`}
+                                                                                                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                                                                                  <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                    <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                                                                        <tr>
+                                                                                                                                                                                            <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                                                                                                                                            <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                                                                                                                        </tr>
+                                                                                                                                                                                        </thead>
+                                                                                                                                                                                    <tbody>${tbody}</tbody>
+                                                                                                                                                                                  </table>
+                                                                                                                                                                                </div>
+                                                                                                                                                                              ` : `
+                                                                                                                                                                                <div class="text-muted p-4 text-center">
+                                                                                                                                                                                  <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                                                                                                                                </div>`}
         </div>
       </div>`;
                 document.getElementById('closePoOverdueOverlay')?.addEventListener('click', () => {
@@ -2163,25 +2182,25 @@
           </div>
           <hr class="mt-2">
           ${rows && rows.length ? `
-                                                                <div class="table-responsive yz-scrollable-table-container">
-                                                                  <table class="table table-sm table-hover align-middle mb-0">
-                                                                    <thead class="table-light">
-                                                                      <tr>
-                                                                        <th class="text-center" style="width:60px;">NO.</th>
-                                                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                                                        <th>CUSTOMER</th>
-                                                                        <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                                      </tr>
-                                                                    </thead>
-                                                                    <tbody>${table}</tbody>
-                                                                  </table>
-                                                                </div>` : `
-                                                                <div class="text-muted p-4 text-center">
-                                                                  <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                </div>`}
+                                                                                                                                                                                <div class="table-responsive yz-scrollable-table-container">
+                                                                                                                                                                                  <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                    <thead class="table-light">
+                                                                                                                                                                                      <tr>
+                                                                                                                                                                                        <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                        <th>CUSTOMER</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                                                                                                                                      </tr>
+                                                                                                                                                                                    </thead>
+                                                                                                                                                                                    <tbody>${table}</tbody>
+                                                                                                                                                                                  </table>
+                                                                                                                                                                                </div>` : `
+                                                                                                                                                                                <div class="text-muted p-4 text-center">
+                                                                                                                                                                                  <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                                                                                                                                </div>`}
         </div>
       </div>`;
                 document.getElementById('closeSoStatusDetails')?.addEventListener('click', () => {
@@ -2250,6 +2269,33 @@
                 }
             }
 
+            const formatOrderTypeLabel = (row) => {
+                // 1) pakai label dari backend kalau ada
+                const preset = (row.order_type_label || '').trim();
+                if (preset) return preset;
+
+                // 2) ambil deskripsi dari mapping (atau fallback)
+                const desc = (auartMap[row.IV_AUART_PARAM] || row.order_type_name || '').trim();
+
+                // 3) short plant
+                const plantShort =
+                    row.plant_short ||
+                    (row.IV_WERKS_PARAM === '2000' ? 'SBY' :
+                        row.IV_WERKS_PARAM === '3000' ? 'SMG' : '');
+
+                // 4) fallback terakhir jika deskripsi kosong
+                if (!desc) return [row.IV_AUART_PARAM || '', plantShort || ''].join(' ').trim();
+
+                // 5) HINDARI duplikasi: kalau desc sudah diakhiri SBY/SMG, jangan append lagi
+                const normalized = desc.replace(/\s+/g, ' ').trim().toUpperCase();
+                if (normalized.endsWith(' SBY') || normalized.endsWith(' SMG') || !plantShort) {
+                    return desc; // sudah ada suffix plant, biarkan apa adanya
+                }
+
+                // 6) kalau belum ada, tambahkan sekali
+                return `${desc} ${plantShort}`.trim();
+            };
+
             function renderSoUrgencyTable(rows, labelText) {
                 const container = document.getElementById('so-urgency-details');
                 if (!container) return;
@@ -2261,7 +2307,15 @@
         <td class="text-center">${r.VBELN}</td>
         <td>${r.NAME1 ?? ''}</td>
         <td class="text-center">${({ '2000':'Surabaya','3000':'Semarang' })[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
-        <td class="text-center">${({})[r.IV_AUART_PARAM] || r.IV_AUART_PARAM}</td>
+        <td class="text-center">${
+  (() => {
+    if (r.order_type_label && String(r.order_type_label).trim()) return r.order_type_label;
+    const desc  = auartMap[r.IV_AUART_PARAM] || r.order_type_name || '';
+    const short = r.plant_short || (r.IV_WERKS_PARAM === '2000' ? 'SBY'
+                   : r.IV_WERKS_PARAM === '3000' ? 'SMG' : '');
+    return desc ? `${desc}${short ? ' ' + short : ''}`.trim() : (r.IV_AUART_PARAM || '');
+  })()
+}</td>
         <td class="text-center">${formatDate(r.due_date) || '-'}</td>
       </tr>`).join('');
                 container.innerHTML = `
@@ -2273,22 +2327,22 @@
           </div>
           <hr class="mt-2">
           ${(rows && rows.length) ? `
-                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
-                                                                  <table class="table table-sm table-hover align-middle mb-0">
-                                                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                                                      <tr>
-                                                                        <th class="text-center" style="width:60px;">NO.</th>
-                                                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                                                        <th>CUSTOMER</th>
-                                                                        <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                                      </tr>
-                                                                    </thead>
-                                                                    <tbody>${table}</tbody>
-                                                                  </table>
-                                                                </div>` :
+                                                                                                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
+                                                                                                                                                                                  <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                                                                                                                                                                      <tr>
+                                                                                                                                                                                        <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                        <th>CUSTOMER</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                                                                                                                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                                                                                                                                      </tr>
+                                                                                                                                                                                    </thead>
+                                                                                                                                                                                    <tbody>${table}</tbody>
+                                                                                                                                                                                  </table>
+                                                                                                                                                                                </div>` :
             `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
           }
         </div>
