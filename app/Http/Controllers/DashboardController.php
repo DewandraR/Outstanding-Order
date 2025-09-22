@@ -84,7 +84,7 @@ class DashboardController extends Controller
         $rows = DB::table('item_remarks as ir')
             ->leftJoin('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
-                  ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
             // [BARIS BARU] Tambahkan join ke t2 untuk mendapatkan KUNNR
             ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
@@ -111,7 +111,7 @@ class DashboardController extends Controller
 
         return response()->json(['ok' => true, 'data' => $rows]);
     }
-    
+
     public function apiSoBottlenecksDetails(Request $request)
     {
         $request->validate([
@@ -476,7 +476,7 @@ class DashboardController extends Controller
             ->whereRaw("{$safeEdatu} < ?", [$today])
             ->distinct()->count('VBELN');
 
-        // ======= KPI VALUE (SALIN PERSIS LOGIKA SO REPORT: overdue only, TOTPR, PACKG != 0, filter WERKS & AUART) =======
+        // ======= KPI VALUE: TOTAL outstanding (bukan hanya overdue) =======
         $reportAgg = DB::table('so_yppr079_t2 as t2')
             ->join(
                 'so_yppr079_t1 as t1',
@@ -484,10 +484,10 @@ class DashboardController extends Controller
                 '=',
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
             )
-            ->when($location,     fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-            ->when($effectiveAuart, fn($q, $v) => $q->where('t2.IV_AUART_PARAM', $v))
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')         // sama seperti report
-            ->whereRaw("{$safeEdatuT2} < CURDATE()")                   // overdue only
+            ->when($location,       fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->when($effectiveAuart, fn($q, $v)   => $q->where('t2.IV_AUART_PARAM', $v))
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')   // outstanding saja
+            // ❌ tidak ada filter overdue di sini
             ->selectRaw("
             TRIM(t1.WAERK) as cur,
             CAST(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))) AS DECIMAL(18,2)) as amt
@@ -528,19 +528,52 @@ class DashboardController extends Controller
                 ->distinct()->count('t1.VBELN'),
         ];
 
-        // ===== Panel lainnya (tetap) =====
-        $chartData['value_by_location_status'] = DB::table('so_yppr079_t1 as t1')
-            ->join('so_yppr079_t3 as t3', 't3.VBELN', '=', 't1.VBELN')
-            ->select(
-                DB::raw("CASE WHEN t3.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END as location"),
-                DB::raw("SUM(CASE WHEN {$safeEdatu} >= CURDATE() THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) as on_time_value"),
-                DB::raw("SUM(CASE WHEN {$safeEdatu} <  CURDATE() THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) as overdue_value")
+        // ===== Value to Packing vs Overdue by Location (match SO Report) =====
+        $byLocBase = DB::table('so_yppr079_t2 as t2')
+            ->join(
+                'so_yppr079_t1 as t1',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
             )
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
-            ->whereIn('t1.VBELN', (clone $relevantVbelnsQuery))
-            ->groupBy('location')
-            ->get();
+            ->when($location,       fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->when($effectiveAuart, fn($q, $v)   => $q->where('t2.IV_AUART_PARAM', $v))
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0'); // outstanding only
 
+        // Total outstanding per lokasi (semua: overdue + on time)
+        $totalByLoc = (clone $byLocBase)
+            ->selectRaw("
+            CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END AS location,
+            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
+        ")
+            ->groupBy('location')
+            ->get()
+            ->keyBy('location');
+
+        // Overdue per lokasi (EDATU < today)
+        $overdueByLoc = (clone $byLocBase)
+            ->whereRaw("{$safeEdatuT2} < CURDATE()")
+            ->selectRaw("
+            CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END AS location,
+            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS overdue_value
+        ")
+            ->groupBy('location')
+            ->get()
+            ->keyBy('location');
+
+        // Compose final rows: on_time = total - overdue
+        $locations = ['Surabaya', 'Semarang'];
+        $chartData['value_by_location_status'] = collect($locations)->map(function ($loc) use ($totalByLoc, $overdueByLoc) {
+            $total   = (float) ($totalByLoc[$loc]->total_value     ?? 0);
+            $overdue = (float) ($overdueByLoc[$loc]->overdue_value ?? 0);
+            return (object)[
+                'location'      => $loc,
+                'on_time_value' => max($total - $overdue, 0),
+                'overdue_value' => $overdue,
+            ];
+        });
+
+        // ===== Panel lainnya (tetap) =====
         $agingQuery = DB::table('so_yppr079_t3 as t3')
             ->whereIn('t3.VBELN', (clone $relevantVbelnsQuery));
         $chartData['aging_analysis'] = [
@@ -575,10 +608,10 @@ class DashboardController extends Controller
             ->whereRaw("{$safeEdatuT2} < CURDATE()") // overdue only
             ->groupBy('t2.NAME1', 't1.WAERK')
             ->selectRaw("
-        t2.NAME1,
-        t1.WAERK,
-        CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
-    ")
+            t2.NAME1,
+            t1.WAERK,
+            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
+        ")
             ->havingRaw('SUM(t1.TOTPR) > 0')
             ->orderByDesc('total_value');
 
@@ -770,26 +803,23 @@ class DashboardController extends Controller
                  * - pecah per currency dari t2.WAERK
                  * ===========================
                  */
-                $kpiOverdueValue = (clone $baseQuery)
+                $kpiTotalValue = (clone $baseQuery)
                     ->leftJoin(
                         'so_yppr079_t1 as t1',
                         DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
                         '=',
                         DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
                     )
-                    ->whereRaw("{$safeEdatu} < CURDATE()")
                     ->selectRaw("
-                    CAST(SUM(CASE WHEN t2.WAERK = 'USD' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS usd,
-                    CAST(SUM(CASE WHEN t2.WAERK = 'IDR' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS idr
-                ")
+                        CAST(SUM(CASE WHEN t2.WAERK = 'USD' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS usd,
+                        CAST(SUM(CASE WHEN t2.WAERK = 'IDR' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS idr
+                    ")
                     ->first();
 
                 $chartData['kpi'] = [
-                    // ✅ match total di Report PO
-                    'total_outstanding_value_usd' => (float) ($kpiOverdueValue->usd ?? 0),
-                    'total_outstanding_value_idr' => (float) ($kpiOverdueValue->idr ?? 0),
+                    'total_outstanding_value_usd' => (float) ($kpiTotalValue->usd ?? 0),
+                    'total_outstanding_value_idr' => (float) ($kpiTotalValue->idr ?? 0),
 
-                    // KPI lain (count SO) tetap
                     'total_outstanding_so' => (clone $baseQuery)->distinct()->count('t2.VBELN'),
                     'total_overdue_so'     => (clone $baseQuery)->whereRaw("{$safeEdatu} < ?", [$today])->distinct()->count('t2.VBELN'),
                 ];
@@ -811,7 +841,7 @@ class DashboardController extends Controller
                 ];
 
                 // Outstanding by Location (semua outstanding, bukan hanya telat)
-                $chartData['outstanding_by_location'] = DB::table('so_yppr079_t2 as t2')
+                $chartData['outstanding_by_location'] = (clone $baseQuery)
                     ->join(
                         'so_yppr079_t1 as t1',
                         DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
@@ -824,7 +854,7 @@ class DashboardController extends Controller
                         DB::raw('SUM(t1.TOTPR) as total_value'),
                         DB::raw('COUNT(DISTINCT t2.VBELN) as so_count')
                     )
-                    ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+                    // ->when($location, ...) tidak diperlukan lagi karena sudah ada di dalam $baseQuery
                     ->groupBy('location', 'currency')
                     ->get();
 
