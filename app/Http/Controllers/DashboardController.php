@@ -583,7 +583,7 @@ class DashboardController extends Controller
             'on_time'         => (clone $agingQuery)->whereRaw("{$safeEdatu} > DATE_ADD(CURDATE(), INTERVAL 7 DAY)")->distinct()->count('t3.VBELN'),
         ];
 
-        $topOverdueBase = DB::table('so_yppr079_t2 as t2')
+        $topCustomerBase = DB::table('so_yppr079_t2 as t2')
             ->join('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
             })
@@ -605,23 +605,22 @@ class DashboardController extends Controller
             ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
             ->when($auart,    fn($q, $v)   => $q->where('t2.IV_AUART_PARAM', $v))
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            ->whereRaw("{$safeEdatuT2} < CURDATE()") // overdue only
             ->groupBy('t2.NAME1', 't1.WAERK')
             ->selectRaw("
-            t2.NAME1,
-            t1.WAERK,
-            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
-        ")
+        t2.NAME1,
+        t1.WAERK,
+        CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
+    ")
             ->havingRaw('SUM(t1.TOTPR) > 0')
             ->orderByDesc('total_value');
 
         // Pecah per mata uang & batasi 5 teratas
-        $chartData['top_customers_value_usd'] = (clone $topOverdueBase)
+        $chartData['top_customers_value_usd'] = (clone $topCustomerBase)
             ->where('t1.WAERK', 'USD')
             ->limit(5)
             ->get();
 
-        $chartData['top_customers_value_idr'] = (clone $topOverdueBase)
+        $chartData['top_customers_value_idr'] = (clone $topCustomerBase)
             ->where('t1.WAERK', 'IDR')
             ->limit(5)
             ->get();
