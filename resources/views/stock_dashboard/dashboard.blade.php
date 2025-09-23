@@ -76,8 +76,11 @@
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-primary-subtle text-primary"><i class="fas fa-coins"></i></div>
+                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
-                        <p class="mb-1 text-muted" data-help-key="stock.kpi.inventory_whfg_value">Inventory WHFG</p>
+                        <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.inventory_whfg_value">
+                            <span>Inventory&nbsp;WHFG</span>
+                        </div>
                         <h5 class="mb-0 fw-bolder">{{ $fmtUsd($kpi['whfg_total_value_usd'] ?? null) }}</h5>
                     </div>
                 </div>
@@ -88,8 +91,11 @@
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-info-subtle text-info"><i class="fas fa-boxes-stacked"></i></div>
+                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
-                        <p class="mb-1 text-muted" data-help-key="stock.kpi.whfg_stock_qty">WHFG Stock</p>
+                        <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.whfg_stock_qty">
+                            <span>WHFG&nbsp;Stock</span>
+                        </div>
                         <h3 class="mb-0 fw-bolder">{{ $fmtNum($kpi['whfg_qty'] ?? 0) }}</h3>
                     </div>
                 </div>
@@ -100,8 +106,11 @@
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-warning-subtle text-warning"><i class="fas fa-sack-dollar"></i></div>
+                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
-                        <p class="mb-1 text-muted" data-help-key="stock.kpi.inventory_fg_value">Inventory FG</p>
+                        <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.inventory_fg_value">
+                            <span>Inventory&nbsp;FG</span>
+                        </div>
                         <h5 class="mb-0 fw-bolder">{{ $fmtUsd($kpi['fg_total_value_usd'] ?? null) }}</h5>
                     </div>
                 </div>
@@ -112,8 +121,11 @@
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-success-subtle text-success"><i class="fas fa-cubes"></i></div>
+                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
-                        <p class="mb-1 text-muted" data-help-key="stock.kpi.packing_stock_qty">Packing Stock</p>
+                        <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.packing_stock_qty">
+                            <span>Packing&nbsp;Stock</span>
+                        </div>
                         <h3 class="mb-0 fw-bolder">{{ $fmtNum($kpi['fg_qty'] ?? 0) }}</h3>
                     </div>
                 </div>

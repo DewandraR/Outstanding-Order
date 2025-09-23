@@ -149,8 +149,24 @@ class DashboardController extends Controller
 
         // === VBELN relevan (SAMAKAN DENGAN KPI): outstanding & sesuai lokasi+AUART efektif
         $relevantVbelnsQuery = DB::table('so_yppr079_t3 as t3')
-            ->when($location,       fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
-            ->when($effectiveAuart, fn($q, $v)   => $q->where('t3.IV_AUART_PARAM', $v))
+            // [TAMBAHKAN BLOK INI] untuk menangani filter 'type' (lokal/export)
+            ->when($type === 'lokal', function ($q) {
+                $q->join('maping as m', function ($j) {
+                    $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Local%');
+            })
+            ->when($type === 'export', function ($q) {
+                $q->join('maping as m', function ($j) {
+                    $j->on('t3.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('t3.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Export%')
+                    ->where('m.Deskription', 'not like', '%Replace%')
+                    ->where('m.Deskription', 'not like', '%Local%');
+            })
+            // [AKHIR BLOK TAMBAHAN]
+            ->when($location, fn($q, $loc) => $q->where('t3.IV_WERKS_PARAM', $loc))
+            ->when($effectiveAuart, fn($q, $v) => $q->where('t3.IV_AUART_PARAM', $v))
             ->whereExists(function ($q) {
                 $q->select(DB::raw(1))
                     ->from('so_yppr079_t1 as t1_exists')
@@ -583,35 +599,49 @@ class DashboardController extends Controller
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0');
         $applyTypeOrAuart($byLocBase, 't2');
 
-        // Total outstanding per lokasi (semua: overdue + on time)
+        // Total outstanding per lokasi (pecah currency)
         $totalByLoc = (clone $byLocBase)
             ->selectRaw("
-            CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END AS location,
-            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
-        ")
+        CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END AS location,
+        CAST(SUM(CASE WHEN t1.WAERK='IDR' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS total_idr,
+        CAST(SUM(CASE WHEN t1.WAERK='USD' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS total_usd
+    ")
             ->groupBy('location')
             ->get()
             ->keyBy('location');
 
-        // Overdue per lokasi
+        // Overdue per lokasi (pecah currency)
         $overdueByLoc = (clone $byLocBase)
             ->whereRaw("{$safeEdatuT2} < CURDATE()")
             ->selectRaw("
-            CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END AS location,
-            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS overdue_value
-        ")
+        CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END AS location,
+        CAST(SUM(CASE WHEN t1.WAERK='IDR' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS overdue_idr,
+        CAST(SUM(CASE WHEN t1.WAERK='USD' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS overdue_usd
+    ")
             ->groupBy('location')
             ->get()
             ->keyBy('location');
 
         $locations = ['Surabaya', 'Semarang'];
         $chartData['value_by_location_status'] = collect($locations)->map(function ($loc) use ($totalByLoc, $overdueByLoc) {
-            $total   = (float) ($totalByLoc[$loc]->total_value     ?? 0);
-            $overdue = (float) ($overdueByLoc[$loc]->overdue_value ?? 0);
+            $t_idr = (float) ($totalByLoc[$loc]->total_idr ?? 0);
+            $t_usd = (float) ($totalByLoc[$loc]->total_usd ?? 0);
+            $o_idr = (float) ($overdueByLoc[$loc]->overdue_idr ?? 0);
+            $o_usd = (float) ($overdueByLoc[$loc]->overdue_usd ?? 0);
+
+            $on_idr = max($t_idr - $o_idr, 0);
+            $on_usd = max($t_usd - $o_usd, 0);
+
             return (object)[
-                'location'      => $loc,
-                'on_time_value' => max($total - $overdue, 0),
-                'overdue_value' => $overdue,
+                'location' => $loc,
+
+                // Nilai gabungan untuk tinggi bar (boleh dipakai agar grafik tidak berubah)
+                'on_time_value' => $on_idr + $on_usd,
+                'overdue_value' => $o_idr + $o_usd,
+
+                // Breakdown untuk tooltip
+                'on_time_breakdown' => ['idr' => $on_idr, 'usd' => $on_usd],
+                'overdue_breakdown' => ['idr' => $o_idr, 'usd' => $o_usd],
             ];
         });
 
