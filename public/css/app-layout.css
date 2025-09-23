@@ -468,3 +468,6 @@ footer {
     color: #6c757d; /* Warna abu-abu yang lebih lembut */
 }
 
+.popover-body {
+    text-align: justify;
+}
