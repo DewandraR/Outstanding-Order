@@ -470,4 +470,5 @@ footer {
 
 .popover-body {
     text-align: justify;
+    hyphens: auto; /* Izinkan browser memenggal kata secara otomatis */
 }

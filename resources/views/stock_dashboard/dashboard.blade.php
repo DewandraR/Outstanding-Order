@@ -76,7 +76,6 @@
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-primary-subtle text-primary"><i class="fas fa-coins"></i></div>
-                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.inventory_whfg_value">
                             <span>Inventory&nbsp;WHFG</span>
@@ -86,12 +85,10 @@
                 </div>
             </div>
         </div>
-
         <div class="col-md-6 col-xl-3">
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-info-subtle text-info"><i class="fas fa-boxes-stacked"></i></div>
-                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.whfg_stock_qty">
                             <span>WHFG&nbsp;Stock</span>
@@ -101,12 +98,10 @@
                 </div>
             </div>
         </div>
-
         <div class="col-md-6 col-xl-3">
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-warning-subtle text-warning"><i class="fas fa-sack-dollar"></i></div>
-                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.inventory_fg_value">
                             <span>Inventory&nbsp;FG</span>
@@ -116,12 +111,10 @@
                 </div>
             </div>
         </div>
-
         <div class="col-md-6 col-xl-3">
             <div class="card kpi-card h-100 shadow-sm">
                 <div class="card-body d-flex align-items-center">
                     <div class="kpi-icon bg-success-subtle text-success"><i class="fas fa-cubes"></i></div>
-                    {{-- [DIUBAH] Menerapkan struktur untuk alignment ikon & teks --}}
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.packing_stock_qty">
                             <span>Packing&nbsp;Stock</span>
