@@ -665,10 +665,12 @@ class DashboardController extends Controller
             ->whereRaw("{$safeEdatuT2} < CURDATE()")
             ->groupBy('t2.NAME1', 't1.WAERK')
             ->selectRaw("
-            t2.NAME1,
-            t1.WAERK,
-            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value
-        ")
+        t2.NAME1,
+        t1.WAERK,
+        CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) AS total_value,
+        CAST(SUM(CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS sby_value,
+        CAST(SUM(CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS smg_value
+    ")
             ->havingRaw('SUM(t1.TOTPR) > 0')
             ->orderByDesc('total_value');
         $applyTypeOrAuart($topOverdueBase, 't2');
