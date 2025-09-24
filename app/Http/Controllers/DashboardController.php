@@ -70,41 +70,48 @@ class DashboardController extends Controller
         $auart    = $request->query('auart');
         $vbeln    = trim((string)$request->query('vbeln'));
 
-        $effectiveAuart = $auart;
-        if (!$effectiveAuart && $location && $type) {
-            $effectiveAuart = DB::table('maping')
-                ->where('IV_WERKS', $location)
-                ->when($type === 'export', fn($q) => $q->where('Deskription', 'like', '%Export%')
-                    ->where('Deskription', 'not like', '%Replace%')
-                    ->where('Deskription', 'not like', '%Local%'))
-                ->when($type === 'lokal',  fn($q) => $q->where('Deskription', 'like', '%Local%'))
-                ->orderBy('IV_AUART')->value('IV_AUART');
-        }
+        // [LOGIKA LAMA DIHAPUS] Blok 'effectiveAuart' yang bergantung pada $location dihapus.
+        // Filter akan diterapkan langsung di query utama di bawah ini.
 
         $rows = DB::table('item_remarks as ir')
             ->leftJoin('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
                     ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
-            // [BARIS BARU] Tambahkan join ke t2 untuk mendapatkan KUNNR
             ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
             ->selectRaw("
-                TRIM(ir.VBELN) AS VBELN,
-                TRIM(ir.POSNR) AS POSNR,
-                COALESCE(t1.MATNR,'') AS MATNR,
-                COALESCE(t1.MAKTX,'') AS MAKTX,
-                COALESCE(t1.WAERK,'') AS WAERK,
-                COALESCE(t1.TOTPR,0) AS TOTPR,
-                ir.IV_WERKS_PARAM,
-                ir.IV_AUART_PARAM,
-                ir.remark,
-                ir.created_at,
-                COALESCE(t2.KUNNR, '') AS KUNNR 
-            ") // [DIUBAH] Tambahkan KUNNR dari t2 ke select
+            TRIM(ir.VBELN) AS VBELN,
+            TRIM(ir.POSNR) AS POSNR,
+            COALESCE(t1.MATNR,'') AS MATNR,
+            COALESCE(t1.MAKTX,'') AS MAKTX,
+            COALESCE(t1.WAERK,'') AS WAERK,
+            COALESCE(t1.TOTPR,0) AS TOTPR,
+            ir.IV_WERKS_PARAM,
+            ir.IV_AUART_PARAM,
+            ir.remark,
+            ir.created_at,
+            COALESCE(t2.KUNNR, '') AS KUNNR 
+        ")
             ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
-            ->when($location,       fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
-            ->when($effectiveAuart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
-            ->when($vbeln !== '',   fn($q) => $q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln]))
+            ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
+            ->when($auart,    fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v)) // Filter by auart tetap berfungsi
+            ->when($vbeln !== '', fn($q) => $q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln]))
+
+            // [DIUBAH] Tambahkan logika filter untuk 'type' (lokal/export) di sini
+            ->when($type, function ($query, $typeValue) {
+                $query->join('maping as m', function ($join) {
+                    $join->on('ir.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                        ->on('ir.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                });
+                if ($typeValue === 'lokal') {
+                    $query->where('m.Deskription', 'like', '%Local%');
+                } elseif ($typeValue === 'export') {
+                    $query->where('m.Deskription', 'like', '%Export%')
+                        ->where('m.Deskription', 'not like', '%Replace%')
+                        ->where('m.Deskription', 'not like', '%Local%');
+                }
+            })
+
             ->orderBy('ir.VBELN')->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
             ->limit(2000)
             ->get();
