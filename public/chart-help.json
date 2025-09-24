@@ -8,8 +8,8 @@
         },
         "outstanding_by_location": "<b>Outstanding Value by Location</b><br>Per&shy;ban&shy;dingan nilai pesanan yang belum selesai di tiap pabrik (Semarang vs Surabaya). Semakin tinggi batang&shy;nya, semakin besar nilai yang belum selesai.",
         "status_overview": "<b>PO Status Overview</b><br>Cincin ini membagi pesanan menjadi:<ul><li><b>Overdue</b>: sudah lewat tanggal kirim</li><li><b>Due This Week</b>: tenggat minggu ini</li><li><b>On Time</b>: tenggat masih lama (lebih dari 7 hari)</li></ul>",
-        "top_customers_value_usd": "<b>Top 4 Customers by Outstanding Value (USD)</b><br>Empat pe&shy;langgan dengan nilai pesanan belum selesai ter&shy;besar (dalam dolar).",
-        "top_customers_value_idr": "<b>Top 4 Customers by Outstanding Value (IDR)</b><br>Empat pe&shy;langgan dengan nilai pesanan belum selesai ter&shy;besar (dalam rupiah).",
+        "top_customers_value_usd": "<b>Top 4 Customers by Outstanding Value</b><br>Empat pe&shy;langgan dengan nilai pesanan belum selesai ter&shy;besar.",
+        "top_customers_value_idr": "<b>Top 4 Customers by Outstanding Value</b><br>Empat pe&shy;langgan dengan nilai pesanan belum selesai ter&shy;besar.",
         "top_customers_overdue": "<b>Top 4 Customers with Most Overdue PO</b><br>Empat pe&shy;langgan dengan jumlah pesanan ter&shy;lambat ter&shy;banyak.",
         "performance_details": "<b>Outstanding PO & Performance Details by Type</b><br>Tabel ringkas per jenis pesanan: berapa total pesanan, berapa nilai&shy;nya, berapa yang ter&shy;lambat, dan sebaran ke&shy;ter&shy;lambatan (1–30, 31–60, 61–90, dan lebih dari 90 hari).",
         "small_qty_by_customer": "<b>Small Quantity (≤5) Outstanding Items by Customer</b><br>Daftar pe&shy;langgan yang punya banyak item kecil (sisa ≤ 5 unit) yang belum selesai. Grafik ini mem&shy;bantu men&shy;cari item-item sepele yang bisa cepat di&shy;beres&shy;kan."
@@ -30,10 +30,10 @@
     },
     "stock": {
         "kpi": {
-            "inventory_whfg_value": "<b>Inventory WHFG (Value)</b><br>Total nilai valuasi (dalam USD) dari seluruh item yang ter&shy;catat sebagai stok di Gudang Barang Jadi (WHFG). Angka ini di&shy;hitung dari kuantitas (`KALAB`) di&shy;kalikan dengan harga per unitnya (`NETPR`).",
-            "whfg_stock_qty": "<b>WHFG Stock (Quantity)</b><br>Jumlah total unit (kuantitas fisik) dari semua item yang ter&shy;sedia di Gudang Barang Jadi (WHFG). Ini adalah agregat dari kolom `KALAB` di seluruh data yang relevan.",
-            "inventory_fg_value": "<b>Inventory FG (Value)</b><br>Total nilai valuasi (dalam USD) dari seluruh item yang berada di area Packing. Nilai ini me&shy;repre&shy;sentasikan barang yang telah di&shy;alokasikan dan siap untuk proses packing akhir, di&shy;hitung dari `KALAB2` * `NETPR`.",
-            "packing_stock_qty": "<b>Packing Stock (Quantity)</b><br>Jumlah total unit (kuantitas fisik) dari semua item yang ter&shy;sedia di area Packing (`KALAB2`). Angka ini me&shy;rupa&shy;kan agregat dari kolom `KALAB2`, me&shy;nunjuk&shy;kan volume barang yang me&shy;nunggu untuk di&shy;kemas."
+            "inventory_whfg_value": "<b>Inventory WHFG (Value)</b><br>Total nilai valuasi dari seluruh item yang ter&shy;catat sebagai stok di Gudang Barang Jadi (WHFG). Angka ini di&shy;hitung dari kuantitas WHFG di&shy;kalikan dengan harga per unitnya.",
+            "whfg_stock_qty": "<b>WHFG Stock (Quantity)</b><br>Jumlah total unit (kuantitas fisik) dari semua item yang ter&shy;sedia di Gudang Barang Jadi (WHFG). Ini adalah agregat dari kolom WHFG di seluruh data yang relevan.",
+            "inventory_fg_value": "<b>Inventory FG (Value)</b><br>Total nilai valuasi dari seluruh item yang berada di area Packing. Nilai ini me&shy;repre&shy;sentasikan barang yang telah di&shy;alokasikan dan siap untuk proses packing akhir, di&shy;hitung dari FG dikalikan Net Price.",
+            "packing_stock_qty": "<b>Packing Stock (Quantity)</b><br>Jumlah total unit (kuantitas fisik) dari semua item yang ter&shy;sedia di area Packing FG. Angka ini me&shy;rupa&shy;kan agregat dari kolom FG, me&shy;nunjuk&shy;kan volume barang yang me&shy;nunggu untuk di&shy;kemas."
         },
         "charts": {
             "most_stock_customers": "<b>Most Stock Customers (ALL)</b><br>Visualisasi ini me&shy;nyorot customer mana yang memiliki alokasi stok ter&shy;besar, baik di Gudang (WHFG) maupun di area Packing (FG). Setiap bar me&shy;wakili total kuantitas stok untuk satu customer. Arahkan kursor ke bar untuk melihat rincian stok per lokasi (Semarang vs. Surabaya).<br><br><ul><li><b>Grafik WHFG Qty:</b> Mem&shy;bantu meng&shy;identifikasi stok yang sudah lama ter&shy;simpan di gudang untuk customer ter&shy;tentu.</li><li><b>Grafik Stock Packing Qty:</b> Me&shy;nunjuk&shy;kan customer mana yang pesan&shy;annya paling banyak me&shy;numpuk di area packing, yang mungkin me&shy;merlukan per&shy;cepatan proses.</li></ul>"
