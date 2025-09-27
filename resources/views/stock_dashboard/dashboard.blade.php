@@ -45,6 +45,9 @@
     <script>
         window.__STOCK_DASH__ = @json($dashboardData, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
     </script>
+    @php
+        use Illuminate\Support\Facades\Crypt;
+    @endphp
 
     {{-- HEADER & FILTER --}}
     <div class="d-flex flex-column flex-lg-row justify-content-lg-between align-items-lg-center mb-4 gap-3">
@@ -54,12 +57,24 @@
         </div>
         <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
             <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                <li class="nav-item"><a class="nav-link {{ !$selectedLocation ? 'active' : '' }}"
-                        href="{{ route('stock.dashboard') }}">All Location</a></li>
-                <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}"
-                        href="{{ route('stock.dashboard', ['location' => '3000']) }}">Semarang</a></li>
-                <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}"
-                        href="{{ route('stock.dashboard', ['location' => '2000']) }}">Surabaya</a></li>
+                <li class="nav-item">
+                    <a class="nav-link {{ !$selectedLocation ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">All
+                        Location</a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link {{ $selectedLocation === '3000' ? 'active' : '' }}"
+                        href="{{ route('stock.dashboard', ['q' => Crypt::encrypt(['location' => '3000'])]) }}">
+                        Semarang
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link {{ $selectedLocation === '2000' ? 'active' : '' }}"
+                        href="{{ route('stock.dashboard', ['q' => Crypt::encrypt(['location' => '2000'])]) }}">
+                        Surabaya
+                    </a>
+                </li>
             </ul>
         </div>
     </div>

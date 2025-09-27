@@ -8,15 +8,43 @@ use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\SoItemsExport;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Contracts\Encryption\DecryptException;
 
 class SalesOrderController extends Controller
 {
+    // use Illuminate\Http\Request;
+    // use Illuminate\Support\Facades\Crypt;
+
+    public function redirector(Request $request)
+    {
+        $payload = $request->input('payload'); // string JSON dari JS
+        $data = is_string($payload) ? json_decode($payload, true) : (array) $payload;
+        abort_unless(is_array($data), 400, 'Invalid payload');
+
+        // bersihkan field kosong
+        $clean = array_filter($data, fn($v) => !is_null($v) && $v !== '');
+
+        // redirect ke halaman utama SO dengan parameter terenkripsi
+        return redirect()->route('so.index', ['q' => Crypt::encrypt($clean)]);
+    }
+
     /**
      * Halaman Outstanding SO (report by customer) — TANPA paginate.
      */
     public function index(Request $request)
     {
-        // Jika plant dipilih tapi auart belum, arahkan ke default (prioritas deskripsi mengandung 'export')
+        // 1) Terima q terenkripsi lalu merge ke query
+        if ($request->filled('q')) {
+            try {
+                $data = Crypt::decrypt($request->query('q'));
+                $request->merge($data);
+            } catch (DecryptException $e) {
+                abort(404);
+            }
+        }
+
+        // 2) Jika pilih plant tapi belum ada auart → redirect ke default (pakai q terenkripsi)
         if ($request->filled('werks') && !$request->filled('auart')) {
             $mapping = DB::table('maping')
                 ->select('IV_WERKS', 'IV_AUART', 'Deskription')
@@ -29,15 +57,18 @@ class SalesOrderController extends Controller
             }) ?? $mapping->first();
 
             if ($defaultType) {
-                $params = array_merge($request->query(), ['auart' => $defaultType->IV_AUART]);
-                return redirect()->route('so.index', $params);
+                $payload = array_filter($request->except('q'), fn($v) => !is_null($v) && $v !== '');
+                $payload['auart'] = trim($defaultType->IV_AUART);
+
+                return redirect()->route('so.index', ['q' => Crypt::encrypt($payload)]);
             }
         }
 
+        // 3) Baca filter utama
         $werks = $request->query('werks');
         $auart = $request->query('auart');
 
-        // Mapping untuk pills (group by WERKS)
+        // 4) Data untuk pills (SO Type per plant)
         $mapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
@@ -47,80 +78,95 @@ class SalesOrderController extends Controller
 
         $rows = collect();
         $selectedDescription = '';
-        $pageTotals = collect();   // total per currency (halaman=semua karena no paginate)
-        $grandTotals = collect();  // sama dengan pageTotals (disediakan untuk kompatibilitas Blade)
+        $pageTotals = collect();
+        $grandTotals = collect();
 
         if ($werks && $auart) {
-            // Deskripsi SO Type terpilih (untuk judul dsb.)
+            // Deskripsi tipe terpilih
             $selectedMapping = DB::table('maping')
                 ->where('IV_WERKS', $werks)
                 ->where('IV_AUART', $auart)
                 ->first();
             $selectedDescription = $selectedMapping->Deskription ?? '';
 
-            // Parsing tanggal EDATU yang aman
+            // Parser tanggal aman
             $safeEdatu = "COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-            )";
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
 
             $safeEdatuInner = "COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-            )";
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
 
-            // Subquery total value hanya dari SO yang telat (per customer)
+            // Total value overdue per customer (hanya PACKG ≠ 0)
             $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
-                ->join('so_yppr079_t1 as t1', 't1.VBELN', '=', 't2_inner.VBELN')
-                ->select('t2_inner.KUNNR', DB::raw('SUM(t1.TOTPR) AS TOTAL_OVERDUE_VALUE'))
+                ->join('so_yppr079_t1 as t1', function ($j) {
+                    $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
+                })
+                ->select(
+                    't2_inner.KUNNR',
+                    DB::raw('CAST(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE')
+                )
                 ->where('t2_inner.IV_WERKS_PARAM', $werks)
                 ->where('t2_inner.IV_AUART_PARAM', $auart)
-                ->where('t1.PACKG', '!=', 0)
-                ->whereRaw("{$safeEdatuInner} < CURDATE()")
+                ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')                // hanya outstanding
+                ->whereRaw("{$safeEdatuInner} < CURDATE()")                       // hanya overdue
                 ->groupBy('t2_inner.KUNNR');
 
-            // Base query (tanpa paginate)
-            $rowsQuery = DB::table('so_yppr079_t2 as t2')
-                ->leftJoinSub($overdueValueSubquery, 'overdue_values', function ($join) {
-                    $join->on('t2.KUNNR', '=', 'overdue_values.KUNNR');
-                })
+            // Overview Customer (tanpa paginate)
+            $rows = DB::table('so_yppr079_t2 as t2')
+                ->leftJoinSub(
+                    $overdueValueSubquery,
+                    'overdue_values',
+                    fn($join) =>
+                    $join->on('t2.KUNNR', '=', 'overdue_values.KUNNR')
+                )
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
                     DB::raw('MAX(t2.WAERK) AS WAERK'),
                     DB::raw('COALESCE(MAX(overdue_values.TOTAL_OVERDUE_VALUE), 0) AS TOTAL_VALUE'),
-                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as SO_LATE_COUNT"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT"),
                     DB::raw("
-                        ROUND(
-                            (COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) / COUNT(DISTINCT t2.VBELN)) * 100, 2
-                        ) as LATE_PCT
-                    ")
+                    ROUND(
+                        (COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END)
+                         / NULLIF(COUNT(DISTINCT t2.VBELN),0)) * 100, 2
+                    ) AS LATE_PCT
+                ")
                 )
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->where('t2.IV_AUART_PARAM', $auart)
-                ->whereExists(function ($query) {
-                    $query->select(DB::raw(1))
+                ->whereExists(function ($q) {
+                    $q->select(DB::raw(1))
                         ->from('so_yppr079_t1 as t1_check')
                         ->whereColumn('t1_check.VBELN', 't2.VBELN')
                         ->where('t1_check.PACKG', '!=', 0);
                 })
-                ->where(function ($query) {
-                    $query->whereNotNull('t2.NAME1')->where('t2.NAME1', '!=', '');
-                })
+                ->whereNotNull('t2.NAME1')
+                ->where('t2.NAME1', '!=', '')
                 ->groupBy('t2.KUNNR')
-                ->orderBy('NAME1', 'asc');
+                ->orderBy('NAME1', 'asc')
+                ->get();
 
-            // Ambil semua baris
-            $rows = $rowsQuery->get();
-
-            // Total per currency (karena tidak paginate -> ini sekaligus grand total)
-            $pageTotals = $rows
-                ->groupBy('WAERK')
-                ->map(fn($g) => $g->sum('TOTAL_VALUE'));
-
+            // Total per mata uang (juga grand total karena no paginate)
+            $pageTotals = $rows->groupBy('WAERK')->map(fn($g) => $g->sum('TOTAL_VALUE'));
             $grandTotals = $pageTotals;
         }
 
+        // 5) Data highlight untuk auto-expand sampai tabel-3
+        $highlight = [
+            'kunnr' => trim((string)$request->query('highlight_kunnr', '')),
+            'vbeln' => trim((string)$request->query('highlight_vbeln', '')),
+            'posnr' => trim((string)$request->query('highlight_posnr', '')), // opsional
+        ];
+        $autoExpand = $request->boolean(
+            'auto',
+            !empty($highlight['kunnr']) && !empty($highlight['vbeln'])
+        );
+
+        // 6) Kirim ke view
         return view('sales_order.so_report', [
             'mapping'             => $mapping,
             'rows'                => $rows,
@@ -128,6 +174,9 @@ class SalesOrderController extends Controller
             'selectedDescription' => $selectedDescription,
             'pageTotals'          => $pageTotals,
             'grandTotals'         => $grandTotals,
+            // ⬇️ penting untuk auto-expand
+            'highlight'           => $highlight,
+            'autoExpand'          => $autoExpand,
         ]);
     }
 
@@ -238,7 +287,8 @@ class SalesOrderController extends Controller
                 't1.TOTPR',
                 't1.NETWR',
                 't1.WAERK',
-                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
+                DB::raw("TRIM(LEADING '0' FROM TRIM(t1.POSNR)) as POSNR"),
+                DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_KEY"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
                 // kunci natural untuk FE
                 't1.IV_WERKS_PARAM as WERKS_KEY',
@@ -382,6 +432,15 @@ class SalesOrderController extends Controller
 
     public function exportCustomerSummary(Request $request)
     {
+        if ($request->filled('q')) {
+            try {
+                $data = Crypt::decrypt($request->query('q'));
+                // jadikan seperti query biasa agar Blade/JS gampang pakai
+                $request->merge($data);
+            } catch (DecryptException $e) {
+                abort(404);
+            }
+        }
         $request->validate([
             'werks' => 'required|string',
             'auart' => 'required|string',
@@ -407,11 +466,16 @@ class SalesOrderController extends Controller
 
         // Total value OVERDUE per customer
         $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
-            ->join('so_yppr079_t1 as t1', 't1.VBELN', '=', 't2_inner.VBELN')
-            ->select('t2_inner.KUNNR', DB::raw('SUM(t1.TOTPR) AS TOTAL_OVERDUE_VALUE'))
+            ->join('so_yppr079_t1 as t1', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
+            })
+            ->select(
+                't2_inner.KUNNR',
+                DB::raw('CAST(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE')
+            )
             ->where('t2_inner.IV_WERKS_PARAM', $werks)
             ->where('t2_inner.IV_AUART_PARAM', $auart)
-            ->where('t1.PACKG', '!=', 0)
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw("{$safeEdatuInner} < CURDATE()")
             ->groupBy('t2_inner.KUNNR');
 

@@ -5,34 +5,39 @@
 @section('content')
 
     @php
-        // Variabel PHP untuk state halaman
+        // State pilihan dari controller
         $selectedWerks = $selected['werks'] ?? null;
-        // <-- penting: hilangkan spasi tersembunyi pada nilai terpilih
         $selectedAuart = trim((string) ($selected['auart'] ?? ''));
         $typesForPlant = collect($mapping[$selectedWerks] ?? []);
+
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
     @endphp
 
+    {{-- Root state (dipakai JS – bukan query string) --}}
+    <div id="so-root" data-werks="{{ $selectedWerks ?? '' }}" data-auart="{{ $selectedAuart }}"
+        data-hkunnr="{{ request('highlight_kunnr', '') }}" data-hvbeln="{{ request('highlight_vbeln', '') }}"
+        data-hposnr="{{ request('highlight_posnr', '') }}" data-auto  ="{{ request('auto', '1') ? '1' : '0' }}"
+        style="display:none"></div>
+
     {{-- =========================================================
-     HEADER: Pills di kiri, Tombol Export di kanan
-   ========================================================= --}}
+   HEADER: Pills (SO Type) & Export Overview
+========================================================= --}}
     <div class="card yz-card shadow-sm mb-3 overflow-visible">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
 
-            {{-- KIRI: daftar pills (SO Type) --}}
+            {{-- Kiri: pills SO Type --}}
             <div class="py-1">
                 @if ($selectedWerks && $typesForPlant->count())
                     <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
                         @foreach ($typesForPlant as $t)
                             @php
-                                // <-- penting: pastikan setiap kode AUART dari DB juga di-trim
                                 $auartCode = trim((string) $t->IV_AUART);
                                 $isActive = $selectedAuart === $auartCode;
                             @endphp
                             <li class="nav-item mb-2 me-2">
-                                <a class="nav-link pill-green {{ $isActive ? 'active' : '' }}"
-                                    href="{{ route('so.index', ['werks' => $selectedWerks, 'auart' => $auartCode]) }}">
+                                <a href="javascript:void(0)" class="nav-link pill-green {{ $isActive ? 'active' : '' }}"
+                                    onclick="applySoFilter({werks:'{{ $selectedWerks }}', auart:'{{ $auartCode }}'})">
                                     {{ $t->Deskription }}
                                 </a>
                             </li>
@@ -44,7 +49,7 @@
                 @endif
             </div>
 
-            {{-- KANAN: tombol export dropdown (muncul kalau ada item terpilih) --}}
+            {{-- Kanan: Export Items (dropdown) + Export Overview PDF --}}
             <div class="py-1 d-flex align-items-center">
                 <div class="dropdown" id="export-dropdown-container" style="display:none;">
                     <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn" data-bs-toggle="dropdown"
@@ -60,10 +65,10 @@
                     </ul>
                 </div>
 
-                {{-- Export Overview PDF --}}
                 @if ($selectedWerks && $selectedAuart)
-                    <a href="{{ route('so.export.summary', ['werks' => $selectedWerks, 'auart' => $selectedAuart]) }}"
-                        target="_blank" class="btn btn-outline-success ms-2">
+                    @php $q = urlencode(Crypt::encrypt(['werks' => $selectedWerks, 'auart' => $selectedAuart])); @endphp
+                    <a href="{{ route('so.export.summary') }}?q={{ $q }}" target="_blank"
+                        class="btn btn-outline-success ms-2">
                         <i class="fas fa-file-pdf me-2"></i> Export Overview PDF
                     </a>
                 @endif
@@ -72,7 +77,7 @@
         </div>
     </div>
 
-    {{-- Info jika plant dipilih tapi auart belum --}}
+    {{-- Info jika auart belum dipilih --}}
     @if ($selectedWerks && empty($selectedAuart))
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-2"></i>
@@ -81,8 +86,8 @@
     @endif
 
     {{-- =========================================================
-     TABEL UTAMA (muncul hanya kalau plant + auart terpilih)
-   ========================================================= --}}
+   TABEL LEVEL-1 (Overview Customer)
+========================================================= --}}
     @if ($rows)
         <div class="card yz-card shadow-sm">
             <div class="card-body p-0 p-md-2">
@@ -96,9 +101,9 @@
                             <tr>
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
-                                <th style="min-width:120px; text-align:center;">Overdue SO</th>
-                                <th style="min-width:150px; text-align:center;">Overdue Rate</th>
-                                <th style="min-width:150px; text-align:center;">Outs. Value</th>
+                                <th class="text-center" style="min-width:120px;">Overdue SO</th>
+                                <th class="text-center" style="min-width:150px;">Overdue Rate</th>
+                                <th class="text-center" style="min-width:150px;">Outs. Value</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -106,10 +111,12 @@
                                 @php $kid = 'krow_'.$r->KUNNR.'_'.$loop->index; @endphp
                                 <tr class="yz-kunnr-row" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}"
                                     title="Klik untuk melihat detail SO">
-                                    <td class="sticky-col-mobile-disabled"><span class="kunnr-caret"><i
-                                                class="fas fa-chevron-right"></i></span></td>
-                                    <td class="sticky-col-mobile-disabled text-start"><span
-                                            class="fw-bold">{{ $r->NAME1 }}</span></td>
+                                    <td class="sticky-col-mobile-disabled">
+                                        <span class="kunnr-caret"><i class="fas fa-chevron-right"></i></span>
+                                    </td>
+                                    <td class="sticky-col-mobile-disabled text-start">
+                                        <span class="fw-bold">{{ $r->NAME1 }}</span>
+                                    </td>
                                     <td class="text-center">{{ $r->SO_LATE_COUNT }}</td>
                                     <td class="text-center">
                                         {{ is_null($r->LATE_PCT) ? '—' : number_format($r->LATE_PCT, 2, '.', '') . '%' }}
@@ -148,6 +155,7 @@
                                 </tr>
                             @endforelse
                         </tbody>
+
                         @php
                             $formatTotals = function ($totals) {
                                 if (!$totals || count($totals) === 0) {
@@ -175,20 +183,13 @@
                         </tfoot>
                     </table>
                 </div>
-
-                {{-- (opsional) pagination bawaan --}}
-                @if (method_exists($rows, 'links'))
-                    <div class="p-3">
-                        {{ $rows->links() }}
-                    </div>
-                @endif
             </div>
         </div>
     @endif
 
     {{-- =========================================================
-     MODAL REMARK
-   ========================================================= --}}
+   MODAL REMARK
+========================================================= --}}
     <div class="modal fade" id="remarkModal" tabindex="-1" aria-labelledby="remarkModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -251,7 +252,6 @@
             border-top: 2px solid #cfe9dd;
         }
 
-        /* Ikon pensil pada TABEL 2 (SO) jika ada item yang diberi remark) */
         .so-remark-flag {
             color: #6c757d;
             margin-right: 6px;
@@ -260,13 +260,68 @@
 
         .so-remark-flag.active {
             color: #0d6efd;
+            display: inline-block;
+        }
+
+        /* highlight saat auto-scroll */
+        .row-highlighted {
+            animation: flashRow 1.2s ease-in-out 3;
+        }
+
+        @keyframes flashRow {
+            0% {
+                background: #fff8d6;
+            }
+
+            50% {
+                background: #ffe89a;
+            }
+
+            100% {
+                background: transparent;
+            }
+        }
+
+        /* caret rotasi untuk expand */
+        .yz-caret {
+            display: inline-block;
+            transition: transform .18s ease;
+            user-select: none;
+        }
+
+        .yz-caret.rot {
+            transform: rotate(90deg);
         }
     </style>
 @endpush
 
 @push('scripts')
     <script>
+        // ==== Redirector helper: kirim payload terenkripsi via server ====
+        function applySoFilter(params) {
+            // params contoh: {werks:'2000', auart:'ZEXP'}
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{{ route('so.redirector') }}";
+
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden';
+            csrf.name = '_token';
+            csrf.value = "{{ csrf_token() }}";
+            form.appendChild(csrf);
+
+            const payload = document.createElement('input');
+            payload.type = 'hidden';
+            payload.name = 'payload';
+            payload.value = JSON.stringify(params);
+            form.appendChild(payload);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            // ------- utils -------
             function waitFor(checkFn, {
                 timeout = 12000,
                 interval = 120
@@ -277,7 +332,7 @@
                         let ok = false;
                         try {
                             ok = !!checkFn();
-                        } catch {
+                        } catch (e) {
                             ok = false;
                         }
                         if (ok) {
@@ -293,30 +348,24 @@
             }
             if (typeof window.CSS === 'undefined') window.CSS = {};
             if (typeof window.CSS.escape !== 'function') {
-                // minimal polyfill
                 window.CSS.escape = function(sel) {
                     return String(sel).replace(/([^\w-])/g, '\\$1');
                 };
             }
-            const stripZeros = (v) => {
-                const s = String(v ?? '').trim();
-                if (!s) return '';
-                const z = s.replace(/^0+/, '');
-                return z.length ? z : '0';
-            };
 
-            // -------------------------------------------------------
-            // 1) VARIABEL GLOBAL
-            // -------------------------------------------------------
+            // ------- constants & state -------
             const apiSoByCustomer = "{{ route('so.api.by_customer') }}";
             const apiItemsBySo = "{{ route('so.api.by_items') }}";
             const exportUrl = "{{ route('so.export') }}";
             const saveRemarkUrl = "{{ route('so.api.save_remark') }}";
             const csrfToken = "{{ csrf_token() }}";
 
-            const qs = new URLSearchParams(window.location.search);
-            const WERKS = (qs.get('werks') || '').trim();
-            const AUART = (qs.get('auart') || '').trim();
+            const __root = document.getElementById('so-root');
+            const WERKS = (__root?.dataset.werks || '').trim();
+            const AUART = (__root?.dataset.auart || '').trim();
+            const KUNNR_HL = (__root?.dataset.hkunnr || '').trim();
+            const VBELN_HL = (__root?.dataset.hvbeln || '').trim();
+            const AUTO = (__root?.dataset.auto || '0') === '1';
 
             const exportDropdownContainer = document.getElementById('export-dropdown-container');
             const selectedCountSpan = document.getElementById('selected-count');
@@ -328,20 +377,16 @@
             const saveRemarkBtn = document.getElementById('save-remark-btn');
             const remarkFeedback = document.getElementById('remark-feedback');
 
-            // cache item per SO
+            // cache
             const itemsCache = new Map(); // vbeln -> array items
             const itemIdToSO = new Map(); // itemId -> vbeln
 
-            // -------------------------------------------------------
-            // 2) HELPERS
-            // -------------------------------------------------------
+            // ------- helpers -------
             function updateExportButton() {
-                if (!exportDropdownContainer || !selectedCountSpan) return;
                 const count = selectedItems.size;
                 selectedCountSpan.textContent = count;
                 exportDropdownContainer.style.display = count > 0 ? 'block' : 'none';
             }
-
             const formatCurrency = (value, currency, decimals = 2) => {
                 const n = parseFloat(value);
                 if (!Number.isFinite(n)) return '';
@@ -353,7 +398,6 @@
                 if (currency === 'USD') return `$${n.toLocaleString('en-US', opt)}`;
                 return `${currency} ${n.toLocaleString('id-ID', opt)}`;
             };
-
             const formatNumber = (num, decimals = 0) => {
                 const n = parseFloat(num);
                 if (!Number.isFinite(n)) return '';
@@ -389,7 +433,6 @@
                 });
             }
 
-            // ===== Helper khusus TABEL 2 (SO) untuk ikon pensil =====
             function updateSoRemarkFlagFromCache(vbeln) {
                 const items = itemsCache.get(vbeln) || [];
                 const hasAny = items.some(it => (it.remark || '').trim() !== '');
@@ -416,61 +459,53 @@
                     });
             }
 
-            // -------------------------------------------------------
-            // 3) RENDERERS
-            // -------------------------------------------------------
+            // ------- RENDERERS -------
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
-                let html = `<h5 class="yz-table-title-nested yz-title-so">
-      <i class="fas fa-file-invoice me-2"></i>Outstanding SO
-    </h5>
-    <table class="table table-sm mb-0 yz-mini">
-      <thead class="yz-header-so">
-        <tr>
-          <th style="width:40px;" class="text-center">
-            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-          </th>
-          <th style="width:40px;"></th>
-          <th class="text-start">SO</th>
-          <th class="text-center">SO Item Count</th>
-          <th class="text-center">Req. Deliv. Date</th>
-          <th class="text-center">Overdue (Days)</th>
-          <th class="text-center">Outs. Value</th>
-          <th style="width:28px;"></th>
-        </tr>
-      </thead>
-      <tbody>`;
-
+                let html = `
+      <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
+      <table class="table table-sm mb-0 yz-mini">
+        <thead class="yz-header-so">
+          <tr>
+            <th style="width:40px;" class="text-center">
+              <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+            </th>
+            <th style="width:40px;"></th>
+            <th class="text-start">SO</th>
+            <th class="text-center">SO Item Count</th>
+            <th class="text-center">Req. Deliv. Date</th>
+            <th class="text-center">Overdue (Days)</th>
+            <th class="text-center">Outs. Value</th>
+            <th style="width:28px;"></th>
+          </tr>
+        </thead>
+        <tbody>`;
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const rowHighlightClass = r.Overdue < 0 ? 'yz-row-highlight-negative' : '';
                     const hasRemark = Number(r.remark_count || 0) > 0;
-
-                    html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-        <td class="text-center">
-          <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}">
-        </td>
-        <td class="text-center"><span class="yz-caret">▸</span></td>
-        <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-        <td class="text-center">${r.item_count ?? '-'}</td>
-        <td class="text-center">${r.FormattedEdatu || '-'}</td>
-        <td class="text-center">${r.Overdue}</td>
-        <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-        <td class="text-center">
-          <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" 
-             title="Ada item yang diberi catatan" 
-             style="display:${hasRemark ? 'inline-block' : 'none'};"></i>
-          <span class="so-selected-dot"></span>
-        </td>
-      </tr>
-      <tr id="${rid}" class="yz-nest" style="display:none;">
-        <td colspan="8" class="p-0">
-          <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-            <div class="yz-slot-items p-2"></div>
-          </div>
-        </td>
-      </tr>`;
+                    html += `
+        <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+          <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
+          <td class="text-center"><span class="yz-caret">▸</span></td>
+          <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+          <td class="text-center">${r.item_count ?? '-'}</td>
+          <td class="text-center">${r.FormattedEdatu || '-'}</td>
+          <td class="text-center">${r.Overdue}</td>
+          <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
+          <td class="text-center">
+            <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" title="Ada item yang diberi catatan" style="display:${hasRemark ? 'inline-block':'none'};"></i>
+            <span class="so-selected-dot"></span>
+          </td>
+        </tr>
+        <tr id="${rid}" class="yz-nest" style="display:none;">
+          <td colspan="8" class="p-0">
+            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+              <div class="yz-slot-items p-2"></div>
+            </div>
+          </td>
+        </tr>`;
                 });
                 html += `</tbody></table>`;
                 return html;
@@ -484,59 +519,55 @@
         <thead class="yz-header-item">
           <tr>
             <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-            <th>Item</th><th>Material FG</th>
-            <th>Desc FG</th><th>Qty SO</th>
-            <th>Outs. SO</th><th>Stock Packing</th>
-            <th>GR PKG</th>
-            <th>Net Price</th>
-            <th>Outs. Packg Value</th>
-            <th>Remark</th>
+            <th>Item</th><th>Material FG</th><th>Desc FG</th>
+            <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
+            <th>GR PKG</th><th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
           </tr>
         </thead>
         <tbody>`;
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
                     const hasRemark = r.remark && r.remark.trim() !== '';
-                    const escapedRemark = r.remark ? encodeURIComponent(r.remark) : '';
-                    html += `<tr data-item-id="${r.id}"
-             data-werks="${r.WERKS_KEY}"
-             data-auart="${r.AUART_KEY}"
-             data-vbeln="${r.VBELN_KEY}"
-             data-posnr="${r.POSNR_KEY}">
-        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked' : ''}></td>
-        <td>${r.POSNR ?? ''}</td>
-        <td>${r.MATNR ?? ''}</td>
-        <td>${r.MAKTX ?? ''}</td>
-        <td>${formatNumber(r.KWMENG)}</td>
-        <td>${formatNumber(r.PACKG)}</td>
-        <td>${formatNumber(r.KALAB2)}</td>
-        <td>${formatNumber(r.MENGE)}</td>
-        <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
-        <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-        <td class="text-center">
-          <i class="fas fa-pencil-alt remark-icon" data-remark="${escapedRemark}" title="Tambah/Edit Catatan"></i>
-          <span class="remark-dot" style="display:${hasRemark ? 'inline-block' : 'none'};"></span>
-        </td>
-      </tr>`;
+                    const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
+                    html += `
+        <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+            data-item-id="${r.id}"
+            data-werks="${r.WERKS_KEY}"
+            data-auart="${r.AUART_KEY}"
+            data-vbeln="${r.VBELN_KEY}"
+            data-posnr="${r.POSNR_KEY}">
+          <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
+          <td>${r.POSNR ?? ''}</td>
+          <td>${r.MATNR ?? ''}</td>
+          <td>${r.MAKTX ?? ''}</td>
+          <td>${formatNumber(r.KWMENG)}</td>
+          <td>${formatNumber(r.PACKG)}</td>
+          <td>${formatNumber(r.KALAB2)}</td>
+          <td>${formatNumber(r.MENGE)}</td>
+          <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
+          <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
+          <td class="text-center">
+            <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
+            <span class="remark-dot" style="display:${hasRemark ? 'inline-block':'none'};"></span>
+          </td>
+        </tr>`;
                 });
                 html += `</tbody></table></div>`;
                 return html;
             }
 
-            // -------------------------------------------------------
-            // 4) EVENT LISTENERS
-            // -------------------------------------------------------
-            // Klik baris customer (level 1) -> load Level 2
+            // ------- EVENTS -------
+            // Expand Level-1 (customer) -> load T2
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
                 row.addEventListener('click', async () => {
                     const kunnr = row.dataset.kunnr;
                     const kid = row.dataset.kid;
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
-                    const isOpen = row.classList.contains('is-open');
+                    const open = row.classList.contains('is-open');
                     const tbody = row.closest('tbody');
 
-                    if (!isOpen) {
+                    if (!open) {
                         tbody.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
                     } else {
@@ -545,7 +576,7 @@
                     }
 
                     row.classList.toggle('is-open');
-                    if (isOpen) {
+                    if (open) {
                         slot.style.display = 'none';
                         return;
                     }
@@ -554,8 +585,8 @@
                     if (wrap.dataset.loaded === '1') return;
 
                     try {
-                        wrap.innerHTML =
-                            `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse"><div class="spinner-border spinner-border-sm me-2"></div>Memuat data…</div>`;
+                        wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+            <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…</div>`;
                         const url = new URL(apiSoByCustomer);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
@@ -567,7 +598,7 @@
                         wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
                         wrap.dataset.loaded = '1';
 
-                        // Listener untuk baris SO (expand level 3)
+                        // Klik baris SO -> expand T3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
                                 ev.stopPropagation();
@@ -601,10 +632,11 @@
                                     return;
                                 }
                                 itemRow.style.display = '';
+
                                 if (itemRow.dataset.loaded === '1') return;
 
-                                itemBox.innerHTML =
-                                    `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse"><div class="spinner-border spinner-border-sm me-2"></div>Memuat item…</div>`;
+                                itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…</div>`;
                                 try {
                                     const u = new URL(apiItemsBySo);
                                     u.searchParams.set('vbeln', vbeln);
@@ -638,18 +670,17 @@
                 });
             });
 
-            // CHANGE EVENTS (dibuat async agar bisa pakai await)
+            // CHANGE EVENTS (pilih item/SO)
             document.body.addEventListener('change', async function(e) {
-                // Level 3: pilih semua item di tabel item
                 if (e.target.classList.contains('check-all-items')) {
                     const table = e.target.closest('table');
                     if (!table) return;
                     const itemCheckboxes = table.querySelectorAll('.check-item');
                     itemCheckboxes.forEach(checkbox => {
                         checkbox.checked = e.target.checked;
-                        const itemId = checkbox.dataset.id;
-                        if (e.target.checked) selectedItems.add(itemId);
-                        else selectedItems.delete(itemId);
+                        const id = checkbox.dataset.id;
+                        if (e.target.checked) selectedItems.add(id);
+                        else selectedItems.delete(id);
                     });
                     const anyItem = table.querySelector('.check-item');
                     if (anyItem) {
@@ -660,23 +691,21 @@
                     return;
                 }
 
-                // Level 3: pilih 1 item
                 if (e.target.classList.contains('check-item')) {
-                    const itemId = e.target.dataset.id;
-                    if (e.target.checked) selectedItems.add(itemId);
-                    else selectedItems.delete(itemId);
-                    const vbeln = itemIdToSO.get(String(itemId));
+                    const id = e.target.dataset.id;
+                    if (e.target.checked) selectedItems.add(id);
+                    else selectedItems.delete(id);
+                    const vbeln = itemIdToSO.get(String(id));
                     if (vbeln) updateSODot(vbeln);
                     updateExportButton();
                     return;
                 }
 
-                // Level 2: header pilih semua SO
                 if (e.target.classList.contains('check-all-sos')) {
                     const tbody = e.target.closest('table')?.querySelector('tbody');
                     if (!tbody) return;
-                    const allSOChk = tbody.querySelectorAll('.check-so');
-                    for (const chk of allSOChk) {
+                    const allSO = tbody.querySelectorAll('.check-so');
+                    for (const chk of allSO) {
                         chk.checked = e.target.checked;
                         const vbeln = chk.dataset.vbeln;
                         if (e.target.checked) {
@@ -699,7 +728,6 @@
                     return;
                 }
 
-                // Level 2: pilih 1 SO
                 if (e.target.classList.contains('check-so')) {
                     const vbeln = e.target.dataset.vbeln;
                     if (e.target.checked) {
@@ -722,10 +750,9 @@
                 }
             });
 
-            // Klik ikon remark (level 3)
+            // Klik ikon remark (Level-3)
             document.body.addEventListener('click', function(e) {
                 if (!e.target.classList.contains('remark-icon')) return;
-
                 const rowEl = e.target.closest('tr');
                 const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
 
@@ -756,7 +783,7 @@
                 this.innerHTML =
                     `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Menyimpan...`;
                 try {
-                    const response = await fetch(saveRemarkUrl, {
+                    const response = await fetch("{{ route('so.api.save_remark') }}", {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -772,21 +799,19 @@
                     const rowSel =
                         `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr='${payload.posnr}']`;
                     const rowEl = document.querySelector(rowSel);
-                    const remarkIcon = rowEl?.querySelector('.remark-icon');
-                    const remarkDot = rowEl?.querySelector('.remark-dot');
-                    if (remarkIcon) remarkIcon.dataset.remark = encodeURIComponent(payload.remark ||
-                        '');
-                    if (remarkDot) remarkDot.style.display = (payload.remark.trim() !== '' ?
-                        'inline-block' : 'none');
+                    const ic = rowEl?.querySelector('.remark-icon');
+                    const dot = rowEl?.querySelector('.remark-dot');
+                    if (ic) ic.dataset.remark = encodeURIComponent(payload.remark || '');
+                    if (dot) dot.style.display = (payload.remark.trim() !== '' ? 'inline-block' :
+                        'none');
 
                     recalcSoRemarkFlagFromDom(payload.vbeln);
 
                     remarkFeedback.textContent = 'Catatan berhasil disimpan!';
                     remarkFeedback.className = 'small mt-2 text-success';
                     setTimeout(() => remarkModal.hide(), 800);
-                } catch (error) {
-                    console.error(error);
-                    remarkFeedback.textContent = error.message;
+                } catch (err) {
+                    remarkFeedback.textContent = err.message;
                     remarkFeedback.className = 'small mt-2 text-danger';
                 } finally {
                     this.disabled = false;
@@ -794,7 +819,7 @@
                 }
             });
 
-            // Export handler
+            // Export Items
             if (exportDropdownContainer) {
                 exportDropdownContainer.addEventListener('click', function(e) {
                     if (!e.target.classList.contains('export-option')) return;
@@ -848,107 +873,133 @@
                 });
             }
 
-            // -------------------------------------------------------
-            // 5) AUTO-EXPAND SAMPAI TABEL-3 (dari Dashboard)
-            // -------------------------------------------------------
-            (async function autoExpandFromQuery() {
-                // Ambil semua parameter yang relevan dari URL
-                const VBELN = (qs.get('highlight_vbeln') || '').trim();
-                const KUNNR = (qs.get('highlight_kunnr') || '').trim(); // <-- Parameter baru
-                const shouldAuto = qs.get('auto_expand') === '1';
+            // ------- AUTO-EXPAND & AUTO-SCROLL SAMPAI ITEM (Level-3) -------
+            (async function autoExpandFromRoot() {
+                const VBELN = VBELN_HL;
+                const KUNNR = KUNNR_HL;
+                const POSNR = (__root?.dataset.hposnr || '').trim(); // boleh "10" / "000160"
+                const shouldAuto = AUTO;
 
-                // [LOGIKA BARU] - Jalan pintas jika KUNNR dan VBELN ada
-                if (VBELN && KUNNR && shouldAuto) {
-                    // 1. Cari baris customer yang benar secara langsung
+                // normalisasi POSNR ke 6 digit (match data-posnr T3)
+                const POSNR6 = POSNR ? String(POSNR).replace(/\D/g, '').padStart(6, '0') : '';
+
+                const scrollAndFlash = (el) => {
+                    if (!el) return;
+                    try {
+                        el.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center'
+                        });
+                        el.classList.add('row-highlighted');
+                        setTimeout(() => el.classList.remove('row-highlighted'), 3000);
+                    } catch {}
+                };
+
+                // cari item row dengan normalisasi (tahan jika ada spasi/format lain)
+                const findItemRow = (box, vbeln, pos6) => {
+                    const rows = box?.querySelectorAll(`tr[data-vbeln='${CSS.escape(vbeln)}']`) || [];
+                    for (const tr of rows) {
+                        const raw = (tr.dataset.posnr || '').trim();
+                        const norm = raw.replace(/\D/g, '').padStart(6, '0');
+                        if (norm === pos6) return tr;
+                    }
+                    return null;
+                };
+
+                if (!(shouldAuto && (VBELN || KUNNR))) return;
+
+                // -- jalur utama: KUNNR & VBELN ada
+                const openToSO = async (customerRow) => {
+                    if (!customerRow.classList.contains('is-open')) customerRow.click();
+                    const wrap = customerRow.nextElementSibling?.querySelector('.yz-nest-wrap');
+                    const okT2 = await waitFor(() => wrap && wrap.dataset.loaded === '1', {
+                        timeout: 7000
+                    });
+                    if (!okT2) return {
+                        wrap: null,
+                        soRow: null,
+                        itemsBox: null
+                    };
+
+                    const soRow = wrap.querySelector(
+                        `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
+                    if (!soRow) return {
+                        wrap,
+                        soRow: null,
+                        itemsBox: null
+                    };
+
+                    const itemNest = soRow.nextElementSibling;
+                    const itemsBox = itemNest?.querySelector('.yz-slot-items');
+                    const opened = itemNest && itemNest.style.display !== 'none';
+                    if (!opened) soRow.click();
+
+                    const okT3 = await waitFor(() => itemNest && itemNest.dataset.loaded === '1', {
+                        timeout: 7000
+                    });
+                    if (!okT3) return {
+                        wrap,
+                        soRow,
+                        itemsBox: null
+                    };
+
+                    return {
+                        wrap,
+                        soRow,
+                        itemsBox
+                    };
+                };
+
+                if (VBELN && KUNNR) {
                     const customerRow = document.querySelector(
                         `.yz-kunnr-row[data-kunnr='${CSS.escape(KUNNR)}']`);
+                    if (!customerRow) return;
 
-                    if (!customerRow) {
-                        console.warn(`Auto-expand failed: Customer row with KUNNR=${KUNNR} not found.`);
-                        return;
-                    }
+                    const {
+                        soRow,
+                        itemsBox
+                    } = await openToSO(customerRow);
+                    if (!soRow) return;
 
-                    // 2. Klik baris customer untuk memuat SO-nya (jika belum terbuka)
-                    if (!customerRow.classList.contains('is-open')) {
-                        customerRow.click();
-                    }
+                    const target = (POSNR6 && findItemRow(itemsBox, VBELN, POSNR6)) ||
+                        Array.from(itemsBox?.querySelectorAll('tr') || []).find(tr => {
+                            const ic = tr.querySelector('.remark-icon');
+                            return ic && decodeURIComponent(ic.dataset.remark || '').trim() !== '';
+                        });
 
-                    // 3. Tunggu hingga konten (daftar SO) selesai dimuat via AJAX
-                    const wrap = customerRow.nextElementSibling?.querySelector('.yz-nest-wrap');
-                    const loaded = await waitFor(() => wrap && wrap.dataset.loaded === '1', {
-                        timeout: 5000
-                    });
-
-                    if (!loaded) {
-                        console.warn(
-                        `Auto-expand failed: Timed out waiting for SO list of KUNNR=${KUNNR}.`);
-                        return;
-                    }
-
-                    // 4. Setelah daftar SO dimuat, cari baris SO yang spesifik
-                    const soRow = wrap.querySelector(`.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
-
-                    if (!soRow) {
-                        console.warn(
-                            `Auto-expand failed: SO row with VBELN=${VBELN} not found within customer KUNNR=${KUNNR}.`
-                            );
-                        return;
-                    }
-
-                    // 5. Scroll ke baris SO agar terlihat dan beri highlight
-                    soRow.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'center'
-                    });
-                    soRow.classList.add('row-highlighted');
-
-                    // 6. Klik baris SO untuk membuka detail item-nya
-                    if (!soRow.nextElementSibling?.style.display || soRow.nextElementSibling.style
-                        .display === 'none') {
-                        soRow.click();
-                    }
-
-                    // 7. Hapus highlight setelah beberapa saat atau saat diklik lagi
-                    setTimeout(() => soRow.classList.remove('row-highlighted'), 5000);
-                    soRow.addEventListener('click', () => soRow.classList.remove('row-highlighted'), {
-                        once: true
-                    });
-
-                    // Selesai, hentikan eksekusi fungsi
+                    scrollAndFlash(target || soRow);
                     return;
                 }
 
-                // [LOGIKA LAMA SEBAGAI FALLBACK]
-                // Logika ini tetap bisa berguna jika ada link lain yang hanya mengirim VBELN tanpa KUNNR.
-                // Jika Anda yakin semua link akan menyertakan KUNNR, Anda bisa menghapus blok di bawah ini.
-                if (VBELN && shouldAuto && !KUNNR) {
-                    console.warn('Auto-expanding with slow method (KUNNR not provided).');
-                    let soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
-                    if (!soRow) {
-                        const custRows = Array.from(document.querySelectorAll('.yz-kunnr-row'));
-                        for (const crow of custRows) {
-                            const kid = crow.dataset.kid;
-                            const slot = document.getElementById(kid);
-                            const wrap = slot?.querySelector('.yz-nest-wrap');
-                            const alreadyOpen = crow.classList.contains('is-open');
-                            if (!alreadyOpen) crow.click();
-                            await waitFor(() => wrap && wrap.dataset.loaded === '1');
-                            soRow = wrap?.querySelector(`.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
-                            if (soRow) break;
-                            if (!alreadyOpen && crow.classList.contains('is-open')) crow.click();
+                // -- fallback: cuma VBELN
+                if (VBELN && !KUNNR) {
+                    let foundSoRow = null,
+                        foundItemsBox = null;
+                    const custRows = Array.from(document.querySelectorAll('.yz-kunnr-row'));
+                    for (const crow of custRows) {
+                        const {
+                            wrap,
+                            soRow,
+                            itemsBox
+                        } = await openToSO(crow);
+                        if (soRow) {
+                            foundSoRow = soRow;
+                            foundItemsBox = itemsBox;
+                            break;
                         }
+                        // tutup kembali jika sebelumnya tertutup
                     }
+                    if (!foundSoRow) return;
 
-                    if (soRow) {
-                        const tgtId = soRow.dataset.tgt;
-                        const itemRow = document.getElementById(tgtId);
-                        const isOpen = itemRow && itemRow.style.display !== 'none';
-                        if (!isOpen) soRow.click();
-                    }
+                    const target = (POSNR6 && findItemRow(foundItemsBox, VBELN, POSNR6)) ||
+                        Array.from(foundItemsBox?.querySelectorAll('tr') || []).find(tr => {
+                            const ic = tr.querySelector('.remark-icon');
+                            return ic && decodeURIComponent(ic.dataset.remark || '').trim() !== '';
+                        });
+
+                    scrollAndFlash(target || foundSoRow);
                 }
-
             })();
-
-        }); // DOMContentLoaded
+        });
     </script>
 @endpush

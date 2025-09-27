@@ -19,7 +19,7 @@
             "total_outstanding_value_usd": "<b>Outs Value Packing (USD)</b><br>Total nilai pesanan yang me&shy;nunggu di&shy;packing namun belum selesai, dalam dolar.",
             "total_outstanding_value_idr": "<b>Outs Value Packing (IDR)</b><br>Total nilai pesanan yang me&shy;nunggu di&shy;packing namun belum selesai, dalam rupiah.",
             "value_to_ship_this_week": "<b>Value to Packing This Week</b><br>Per&shy;kiraan nilai pesanan yang jadwal&shy;nya jatuh <u>minggu ini</u>.",
-            "potential_bottlenecks": "<b>Potential Bottlenecks</b><br>Per&shy;kiraan jumlah item yang ber&shy;potensi meng&shy;hambat (misal&shy;nya karena ke&shy;butuhan lebih besar dari ke&shy;ter&shy;sediaan se&shy;karang)."
+            "potential_bottlenecks": "<b>Potential Bottlenecks</b><br>Per&shy;kiraan jumlah SO item yang ber&shy;potensi meng&shy;hambat (misal&shy;nya karena ke&shy;butuhan lebih besar dari ke&shy;ter&shy;sediaan se&shy;karang) Dalam 7 Hari Kedepan."
         },
         "value_by_location_status": "<b>Value to Packing vs Overdue by Location</b><br>Grafik batang ber&shy;tumpuk yang mem&shy;ban&shy;ding&shy;kan nilai total item yang siap di&shy;packing per plant, di&shy;seg&shy;men&shy;tasikan ber&shy;dasarkan status&shy;nya: <b>On Time</b> (belum melewati <i>due date</i>) dan <b>Overdue</b> (sudah melewati <i>due date</i>).",
         "status_overview": "<b>SO Fulfillment Urgency</b><br>Cincin ini me&shy;nunjuk&shy;kan urgensi pesanan:<ul><li><b>Overdue &gt; 30 hari</b></li><li><b>Overdue 1–30 hari</b></li><li><b>Due This Week</b>: jatuh tempo minggu ini</li><li><b>On Time</b>: tenggat masih aman</li></ul>",

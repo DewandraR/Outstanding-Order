@@ -6,12 +6,24 @@
 
     @php
         // Ambil nilai dari controller / query
-        $werks = $selected['werks'] ?? request('werks');
-        $auart = $selected['auart'] ?? request('auart');
-        $show = filled($werks) && filled($auart); // Tampilkan TABLE kalau WERKS & AUART terpilih
-        $onlyWerksSelected = filled($werks) && empty($auart); // Hanya plant dipilih (belum pilih AUART)
+        $werks = $selected['werks'] ?? null;
+        $auart = $selected['auart'] ?? null;
+        $show = filled($werks) && filled($auart);
+        $onlyWerksSelected = filled($werks) && empty($auart);
+
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$werks] ?? $werks;
+
+        // Nilai state global (dipakai tombol/pill)
+        $curView = $view ?? 'po'; // 'po' | 'so'
+        $curLoc = $selectedLocation ?? null; // '2000' | '3000' | null
+        $curType = $selectedType ?? null; // 'lokal' | 'export' | null
+
+        // Helper pembentuk URL terenkripsi ke /dashboard
+        $encDash = function (array $params) use ($curView) {
+            $payload = array_filter(array_merge(['view' => $curView], $params), fn($v) => !is_null($v) && $v !== '');
+            return route('dashboard', ['q' => \Crypt::encrypt($payload)]);
+        };
     @endphp
 
     {{-- Anchor untuk JS agar tahu sedang mode TABLE atau bukan --}}
@@ -19,13 +31,14 @@
         style="display:none"></div>
 
     {{-- =========================================================
-     HEADER: PILIH TYPE (SELALU tampil jika plant dipilih)
-     ========================================================= --}}
+        HEADER: PILIH TYPE (SELALU tampil jika plant dipilih)
+    ========================================================= --}}
     @if (filled($werks))
         @php
             $typesForPlant = collect($mapping[$werks] ?? []);
-            $selectedAuart = trim((string) ($auart ?? '')); // penting: buang spasi tersembunyi
+            $selectedAuart = trim((string) ($auart ?? '')); // buang spasi tersembunyi
         @endphp
+
         <div class="card yz-card shadow-sm mb-3">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
                 <div class="py-1 w-100">
@@ -35,14 +48,7 @@
                                 @php
                                     $auartCode = trim((string) $t->IV_AUART);
                                     $isActive = $selectedAuart === $auartCode;
-                                    $pillUrl = route(
-                                        'dashboard',
-                                        array_merge(request()->query(), [
-                                            'werks' => $werks,
-                                            'auart' => $auartCode,
-                                            'compact' => 1,
-                                        ]),
-                                    );
+                                    $pillUrl = $encDash(['werks' => $werks, 'auart' => $auartCode, 'compact' => 1]);
                                 @endphp
                                 <li class="nav-item mb-2 me-2">
                                     <a class="nav-link pill-green {{ $isActive ? 'active' : '' }}"
@@ -61,8 +67,8 @@
     @endif
 
     {{-- =========================================================
-     A. MODE TABEL (LAPORAN PO) – muncul kalau WERKS & AUART terpilih
-     ========================================================= --}}
+        A. MODE TABEL (LAPORAN PO) – muncul kalau WERKS & AUART terpilih
+    ========================================================= --}}
     @if ($show && $compact)
         <div class="card yz-card shadow-sm mb-3">
             <div class="card-body p-0 p-md-2">
@@ -81,7 +87,7 @@
                         $totalsByCurr[$cur] = ($totalsByCurr[$cur] ?? 0) + $val;
                     }
 
-                    // helper format (biar sama persis dengan tampilan Value per baris)
+                    // helper format (sama dengan tampilan Value per baris)
                     $formatTotal = function ($val, $cur) {
                         if ($cur === 'IDR') {
                             return 'Rp ' . number_format($val, 2, ',', '.');
@@ -92,6 +98,7 @@
                         return ($cur ? $cur . ' ' : '') . number_format($val, 2, ',', '.');
                     };
                 @endphp
+
                 <div class="table-responsive yz-table px-md-3">
                     <table class="table table-hover mb-0 align-middle yz-grid">
                         <thead class="yz-header-customer">
@@ -139,8 +146,9 @@
                                         <div class="yz-nest-wrap">
                                             <div
                                                 class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                                <div class="spinner-border spinner-border-sm me-2" role="status"><span
-                                                        class="visually-hidden">Loading...</span></div>
+                                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                                    <span class="visually-hidden">Loading...</span>
+                                                </div>
                                                 Memuat data…
                                             </div>
                                         </div>
@@ -162,9 +170,7 @@
                                     <th></th>
                                     <th class="text-start">Total ({{ $cur ?: 'N/A' }})</th>
                                     <th class="text-center" colspan="2">—</th>
-                                    <th class="text-end">
-                                        {{ $formatTotal($sum, $cur) }}
-                                    </th>
+                                    <th class="text-end">{{ $formatTotal($sum, $cur) }}</th>
                                 </tr>
                             @endforeach
                         </tfoot>
@@ -174,8 +180,8 @@
         </div>
 
         {{-- =========================================================
-     B. HANYA Plant dipilih → minta user pilih AUART
-     ========================================================= --}}
+        B. HANYA Plant dipilih → minta user pilih AUART
+    ========================================================= --}}
     @elseif($onlyWerksSelected)
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-2"></i>
@@ -183,12 +189,13 @@
         </div>
 
         {{-- =========================================================
-     C. MODE DASHBOARD (grafik PO / SO)
-     ========================================================= --}}
+        C. MODE DASHBOARD (grafik PO / SO)
+    ========================================================= --}}
     @else
         <div id="dashboard-data-holder" data-chart-data='@json($chartData)'
             data-mapping-data='@json($mapping)' data-selected-type='{{ $selectedType }}'
-            style="display: none;">
+            data-current-view='{{ $view }}' data-current-location='{{ $selectedLocation ?? '' }}'
+            data-current-auart='{{ $auart ?? '' }}' style="display:none;">
         </div>
 
         <div class="d-flex flex-column flex-lg-row justify-content-lg-between align-items-lg-center mb-3 gap-3">
@@ -201,45 +208,70 @@
                     <p class="text-muted mb-0">Displaying Outstanding Value Data</p>
                 @endif
             </div>
+
             <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
-                {{-- Filter Plant (WERKS) --}}
-                <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-                    <li class="nav-item"><a class="nav-link {{ !$selectedLocation ? 'active' : '' }}"
-                            href="{{ route('dashboard', array_merge(request()->query(), ['location' => null, 'view' => $view])) }}">All
-                            Plant</a></li>
-                    <li class="nav-item"><a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}"
-                            href="{{ route('dashboard', array_merge(request()->query(), ['location' => '3000', 'view' => $view])) }}">Semarang</a>
+
+                {{-- Filter Plant (location/werks) – terenkripsi --}}
+                <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
+                    <li class="nav-item">
+                        <a class="nav-link {{ !$selectedLocation ? 'active' : '' }}"
+                            href="{{ $encDash(['location' => null, 'type' => $curType]) }}">
+                            All Plant
+                        </a>
                     </li>
-                    <li class="nav-item"><a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}"
-                            href="{{ route('dashboard', array_merge(request()->query(), ['location' => '2000', 'view' => $view])) }}">Surabaya</a>
+                    <li class="nav-item">
+                        <a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}"
+                            href="{{ $encDash(['location' => '3000', 'type' => $curType]) }}">
+                            Semarang
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}"
+                            href="{{ $encDash(['location' => '2000', 'type' => $curType]) }}">
+                            Surabaya
+                        </a>
                     </li>
                 </ul>
 
-                {{-- Filter Work Center (AUART) --}}
+                {{-- Filter Work Center (AUART) – juga terenkripsi --}}
                 @if (!empty($availableAuart) && $availableAuart->count() > 1)
-                    <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-                        <li class="nav-item"><a class="nav-link {{ !request('auart') ? 'active' : '' }}"
-                                href="{{ route('dashboard', array_merge(request()->query(), ['auart' => null, 'view' => $view])) }}">All
-                                Work Center</a></li>
+                    <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
+                        <li class="nav-item">
+                            <a class="nav-link {{ !$auart ? 'active' : '' }}"
+                                href="{{ $encDash(['location' => $curLoc, 'type' => $curType, 'auart' => null]) }}">
+                                All Work Center
+                            </a>
+                        </li>
                         @foreach ($availableAuart as $wc)
-                            <li class="nav-item"><a
-                                    class="nav-link {{ request('auart') == $wc->IV_AUART ? 'active' : '' }}"
-                                    href="{{ route('dashboard', array_merge(request()->query(), ['auart' => $wc->IV_AUART, 'view' => $view])) }}">{{ $wc->Deskription }}</a>
+                            <li class="nav-item">
+                                <a class="nav-link {{ $auart == $wc->IV_AUART ? 'active' : '' }}"
+                                    href="{{ $encDash(['location' => $curLoc, 'type' => $curType, 'auart' => $wc->IV_AUART]) }}">
+                                    {{ $wc->Deskription }}
+                                </a>
                             </li>
                         @endforeach
                     </ul>
                 @endif
 
-                {{-- Filter Tipe (Export/Lokal) --}}
-                <ul class="nav nav-pills shadow-sm p-1" style="border-radius: 0.75rem;">
-                    <li class="nav-item"><a class="nav-link {{ !$selectedType ? 'active' : '' }}"
-                            href="{{ route('dashboard', array_merge(request()->query(), ['type' => null, 'view' => $view])) }}">All
-                            Type</a></li>
-                    <li class="nav-item"><a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}"
-                            href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'export', 'view' => $view])) }}">Export</a>
+                {{-- Filter Tipe (Export/Lokal) – terenkripsi --}}
+                <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
+                    <li class="nav-item">
+                        <a class="nav-link {{ !$selectedType ? 'active' : '' }}"
+                            href="{{ $encDash(['location' => $curLoc, 'type' => null]) }}">
+                            All Type
+                        </a>
                     </li>
-                    <li class="nav-item"><a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}"
-                            href="{{ route('dashboard', array_merge(request()->query(), ['type' => 'lokal', 'view' => $view])) }}">Lokal</a>
+                    <li class="nav-item">
+                        <a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}"
+                            href="{{ $encDash(['location' => $curLoc, 'type' => 'export']) }}">
+                            Export
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}"
+                            href="{{ $encDash(['location' => $curLoc, 'type' => 'lokal']) }}">
+                            Lokal
+                        </a>
                     </li>
                 </ul>
             </div>
@@ -280,7 +312,6 @@
                     </div>
                 </div>
                 <div class="col-sm-6 col-xl-3">
-                    {{-- [DIUBAH] Menambahkan ID dan style cursor --}}
                     <div id="toggle-due-tables-card" class="card yz-kpi-card card-highlight-info h-100 shadow-sm"
                         style="cursor: pointer;" title="Klik untuk menampilkan/menyembunyikan detail SO Due This Week">
                         <div class="card-body d-flex align-items-center">
@@ -296,7 +327,6 @@
                     </div>
                 </div>
                 <div class="col-sm-6 col-xl-3">
-                    {{-- [DIUBAH] tambahkan id untuk klik bottleneck --}}
                     <div id="toggle-bottlenecks-card" class="card yz-kpi-card card-highlight-warning h-100 shadow-sm"
                         style="cursor: pointer;" title="Klik untuk melihat Potential Bottlenecks">
                         <div class="card-body d-flex align-items-center">
@@ -314,7 +344,7 @@
                 </div>
             </div>
 
-            {{-- [DIUBAH] Membungkus tabel agar bisa disembunyikan/ditampilkan --}}
+            {{-- DUE THIS WEEK TABLES --}}
             <div id="due-this-week-tables" style="display: none;">
                 @if (!empty($chartData['due_this_week']))
                     @php
@@ -323,19 +353,21 @@
                         $rangeEnd = $rangeEndEx->copy()->subDay(); // tampil s.d. Minggu
                         $dueSoRows = $chartData['due_this_week']['by_so'] ?? [];
                         $dueCustRows = $chartData['due_this_week']['by_customer'] ?? [];
-
-                        // -- PERSIAPAN DATA HELPER (DIPINDAHKAN KE SINI) --
                         $plantNames = ['2000' => 'SBY', '3000' => 'SMG'];
                         $auartDescriptions = collect($mapping)->flatten()->keyBy('IV_AUART');
                     @endphp
+
                     <div class="row g-4 mb-4">
-                        {{-- KIRI: daftar SO jatuh tempo minggu ini --}}
+                        {{-- KIRI: SO jatuh tempo minggu ini --}}
                         <div class="col-lg-7">
                             <div class="card shadow-sm h-100 yz-chart-card">
                                 <div class="card-body">
                                     <h5 class="card-title" data-help-key="so.due_this_week_by_so">
                                         <i class="fas fa-truck-fast me-2"></i>SO Due This Week
-                                        <span class="text-muted small">(...range tanggal...)</span>
+                                        <span class="text-muted small">
+                                            ({{ $rangeStart->translatedFormat('d M Y') }} –
+                                            {{ $rangeEnd->translatedFormat('d M Y') }})
+                                        </span>
                                     </h5>
                                     <hr class="mt-2">
                                     @if (empty($dueSoRows))
@@ -343,9 +375,9 @@
                                             <i class="fas fa-info-circle me-2"></i>Tidak ada SO jatuh tempo minggu ini.
                                         </div>
                                     @else
-                                        <div class="table-responsive">
+                                        <div class="table-responsive yz-scrollable-table-container">
                                             <table class="table table-sm table-hover align-middle mb-0">
-                                                <thead class="table-light">
+                                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                                                     <tr>
                                                         <th class="text-center">SO</th>
                                                         <th class="text-center">PO</th>
@@ -388,8 +420,9 @@
                                 </div>
                             </div>
                         </div>
+
                         {{-- KANAN: ringkasan per customer --}}
-                        <div class="col-lg-4">
+                        <div class="col-lg-5">
                             <div class="card shadow-sm h-100 yz-chart-card">
                                 <div class="card-body">
                                     <h5 class="card-title" data-help-key="so.due_this_week_by_customer">
@@ -402,9 +435,9 @@
                                             ini.
                                         </div>
                                     @else
-                                        <div class="table-responsive">
+                                        <div class="table-responsive yz-scrollable-table-container">
                                             <table class="table table-sm table-hover align-middle mb-0">
-                                                <thead class="table-light">
+                                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
                                                     <tr>
                                                         <th>Customer</th>
                                                         <th class="text-end">Total Value</th>
@@ -434,9 +467,7 @@
                     </div>
                 @endif
             </div>
-            {{-- ============ AKHIR BLOK: SO Due This Week ============ --}}
 
-            {{-- 🆕 Container tabel Potential Bottlenecks (hidden default) --}}
             <div id="bottlenecks-tables" style="display:none;"></div>
 
             <div class="row g-4 mb-4">
@@ -486,7 +517,7 @@
                 </div>
             </div>
 
-            {{-- 🆕 ROW: Item with Remark --}}
+            {{-- Items with Remark --}}
             <div class="row g-4 mb-4">
                 <div class="col-lg-12">
                     <div class="card yz-card shadow-sm h-100" id="remark-inline-container">
@@ -497,7 +528,6 @@
                                 </h5>
                             </div>
                             <hr class="mt-2">
-                            <!-- Tabel akan di-render via JS ke dalam elemen ini -->
                             <div id="remark-list-box-inline" class="flex-grow-1">
                                 <div class="text-center text-muted py-4">
                                     <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
@@ -506,28 +536,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-
-            {{-- 🆕 TABEL INLINE muncul di bawah donut (bukan modal) --}}
-            <div class="col-lg-7">
-                <div id="remark-inline-container" class="card yz-card shadow-sm h-100" style="display:none;">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">
-                                <i class="fas fa-list me-2"></i>
-                                Daftar Item dengan Remark
-                            </h5>
-                            <button id="btn-close-remark-list" class="btn btn-sm btn-outline-secondary">
-                                Tutup
-                            </button>
-                        </div>
-                        <hr class="mt-2">
-                        <div id="remark-list-box-inline" class="table-responsive">
-                            <div class="text-center text-muted py-3">Memuat data…</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
             </div>
         @else
             {{-- ==================== DASHBOARD PO ==================== --}}
@@ -587,14 +595,17 @@
                                 <div class="mb-1 text-muted yz-kpi-title" data-help-key="po.kpi.overdue_po">
                                     <span>Overdue&nbsp;PO</span>
                                 </div>
-                                <h4 class="mb-0 fw-bolder"><span id="kpi-overdue-so">0</span> <small class="text-danger"
-                                        id="kpi-overdue-rate">(0%)</small></h4>
+                                <h4 class="mb-0 fw-bolder">
+                                    <span id="kpi-overdue-so">0</span>
+                                    <small class="text-danger" id="kpi-overdue-rate">(0%)</small>
+                                </h4>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            {{-- Outstanding by Location + PO Status --}}
             <div class="row g-4 mb-4">
                 <div class="col-lg-7">
                     <div class="card shadow-sm h-100 yz-chart-card">
@@ -612,9 +623,7 @@
                 <div class="col-lg-5">
                     <div class="card shadow-sm h-100 yz-chart-card position-relative">
                         <div class="card-body d-flex flex-column">
-                            <h5 class="card-title" data-help-key="po.status_overview">
-                                PO Status Overview
-                            </h5>
+                            <h5 class="card-title" data-help-key="po.status_overview">PO Status Overview</h5>
                             <hr class="mt-2">
                             <div class="chart-container flex-grow-1">
                                 <canvas id="chartSOStatus"></canvas>
@@ -625,6 +634,7 @@
                 </div>
             </div>
 
+            {{-- Top customers (USD & IDR) + Top overdue customers --}}
             <div class="row g-4 mb-4">
                 <div class="col-lg-6">
                     <div class="card shadow-sm h-100 yz-chart-card">
@@ -654,6 +664,7 @@
                 </div>
             </div>
 
+            {{-- Performance details by Type --}}
             <div class="row g-4 mb-4">
                 <div class="col-12">
                     <div class="card shadow-sm yz-chart-card position-relative">
@@ -696,6 +707,7 @@
                 </div>
             </div>
 
+            {{-- Small quantity (≤5) --}}
             <div class="row g-4">
                 <div class="col-12">
                     <div class="card shadow-sm yz-chart-card">
@@ -740,9 +752,24 @@
     <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
 
     <script>
-        /* =========================================================
-                                                                                                                                                                                                                                                           HELPER: atribut untuk tabel Overview Customer (mobile)
-                                                                                                                                                                                                                                                           ======================================================== */
+        document.addEventListener('DOMContentLoaded', function() {
+            // TRUE kalau user sedang filter Lokal / Export
+            const typeSelected = {!! json_encode((bool) $selectedType) !!};
+
+            if (!typeSelected) return;
+
+            // 1) Sembunyikan semua currency toggle
+            //    Prefer: cari elemen dengan class standar Anda (yz-currency-toggle).
+            document.querySelectorAll('.yz-currency-toggle').forEach(el => el.remove());
+
+            // 2) Fallback: kalau tidak pakai class, deteksi otomatis tombol USD/IDR
+            const maybeGroups = document.querySelectorAll('.btn-group, .nav, .nav-pills');
+            maybeGroups.forEach(g => {
+                const labels = Array.from(g.querySelectorAll('a,button')).map(b => (b.textContent || '')
+                    .trim().toUpperCase());
+                if (labels.includes('USD') && labels.includes('IDR')) g.remove();
+            });
+        });
         document.addEventListener('DOMContentLoaded', function() {
             const customerRows = document.querySelectorAll('.yz-kunnr-row');
             customerRows.forEach(row => {
@@ -1147,60 +1174,58 @@
 
                 // highlight hasil pencarian dari Search PO
                 const handleSearchHighlight = () => {
-                    // 1. Mengambil parameter dari URL
                     const urlParams = new URLSearchParams(window.location.search);
-                    const highlightKunnr = urlParams.get('highlight_kunnr');
-                    const highlightVbeln = urlParams.get('highlight_vbeln');
+                    const encryptedPayload = urlParams.get('q');
+                    if (!encryptedPayload) return;
 
-                    // Hanya berjalan jika kedua parameter ada
-                    if (highlightKunnr && highlightVbeln) {
-                        // 2. Cari baris customer berdasarkan 'data-kunnr'
-                        const customerRow = document.querySelector(`.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
+                    fetch("{{ route('dashboard.api.decrypt_payload') }}", {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute(
+                                    'content')
+                            },
+                            body: JSON.stringify({
+                                q: encryptedPayload
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(result => {
+                            if (!result.ok || !result.data) return;
 
-                        if (customerRow) {
-                            // 3. Simulasikan klik untuk membuka detail PO customer
-                            customerRow.click();
+                            const params = result.data;
+                            const highlightKunnr = params.highlight_kunnr;
+                            const highlightVbeln = params.highlight_vbeln;
 
-                            let attempts = 0,
-                                maxAttempts = 50;
-
-                            // 4. Lakukan pengecekan berkala karena detail SO dimuat secara asynchronous
-                            const interval = setInterval(() => {
-                                // Cari baris SO berdasarkan 'data-vbeln'
-                                const soRow = document.querySelector(
-                                    `.js-t2row[data-vbeln="${highlightVbeln}"]`);
-
-                                // Jika baris SO sudah ditemukan
-                                if (soRow) {
-                                    // Hentikan pengecekan
-                                    clearInterval(interval);
-
-                                    // 5. Tambahkan kelas untuk memberi highlight visual
-                                    soRow.classList.add('row-highlighted');
-
-                                    // 6. [MODIFIKASI] Tambahkan listener untuk MENGHAPUS highlight saat diklik
-                                    // Listener ini hanya akan berjalan satu kali saja, lalu otomatis terhapus.
-                                    soRow.addEventListener('click', () => {
-                                        soRow.classList.remove('row-highlighted');
-                                    }, {
-                                        once: true
-                                    });
-
-                                    // 7. Scroll ke baris yang di-highlight agar terlihat oleh pengguna
-                                    setTimeout(() => soRow.scrollIntoView({
-                                        behavior: 'smooth',
-                                        block: 'center'
-                                    }), 500);
+                            if (highlightKunnr && highlightVbeln) {
+                                const customerRow = document.querySelector(
+                                    `.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
+                                if (customerRow) {
+                                    customerRow.click();
+                                    let attempts = 0,
+                                        maxAttempts = 50;
+                                    const interval = setInterval(() => {
+                                        const soRow = document.querySelector(
+                                            `.js-t2row[data-vbeln="${highlightVbeln}"]`);
+                                        if (soRow) {
+                                            clearInterval(interval);
+                                            soRow.classList.add('row-highlighted');
+                                            soRow.addEventListener('click', () => {
+                                                soRow.classList.remove('row-highlighted');
+                                            }, {
+                                                once: true
+                                            });
+                                            setTimeout(() => soRow.scrollIntoView({
+                                                behavior: 'smooth',
+                                                block: 'center'
+                                            }), 500);
+                                        }
+                                        attempts++;
+                                        if (attempts > maxAttempts) clearInterval(interval);
+                                    }, 100);
                                 }
-
-                                // Pengaman agar interval tidak berjalan selamanya
-                                attempts++;
-                                if (attempts > maxAttempts) {
-                                    clearInterval(interval);
-                                }
-                            }, 100);
-                        }
-                    }
+                            }
+                        }).catch(console.error);
                 };
                 handleSearchHighlight();
                 return;
@@ -1211,6 +1236,12 @@
             if (!dataHolder) return;
 
             const mappingData = JSON.parse(dataHolder.dataset.mappingData || '{}');
+            const currentView = (dataHolder.dataset.currentView || 'po').toLowerCase();
+            const filterState = {
+                location: dataHolder.dataset.currentLocation || null,
+                type: dataHolder.dataset.selectedType || null,
+                auart: dataHolder.dataset.currentAuart || null,
+            };
             const plantMap = {
                 '2000': 'Surabaya',
                 '3000': 'Semarang'
@@ -1223,8 +1254,6 @@
                     });
                 }
             }
-
-            const currentView = new URLSearchParams(window.location.search).get('view');
             const chartData = JSON.parse(dataHolder.dataset.chartData);
             const selectedType = dataHolder.dataset.selectedType;
             if (!chartData || !chartData.kpi) {
@@ -1310,52 +1339,73 @@
                 const bottleneckBox = document.getElementById('bottlenecks-tables');
                 const apiSoBottlenecks = "{{ route('dashboard.api.soBottlenecksDetails') }}";
 
-                function renderBottlenecksTable(rows) {
+                function renderBottlenecksTable(rows, windowInfo) { // <== Terima argumen windowInfo
                     const mappingData = JSON.parse(document.getElementById('dashboard-data-holder').dataset
                         .mappingData || '{}');
                     const auartMap2 = {};
                     for (const w in mappingData)(mappingData[w] || []).forEach(m => auartMap2[m.IV_AUART] = m
                         .Deskription);
                     const fmt = s => (!s ? '' : s.split('-').reverse().join('-'));
+
+                    // Buat teks rentang tanggal
+                    let dateRangeText = '';
+                    if (windowInfo && windowInfo.start && windowInfo.end) {
+                        const startDate = new Date(windowInfo.start + 'T00:00:00').toLocaleDateString('id-ID', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                        });
+                        const endDate = new Date(windowInfo.end + 'T00:00:00').toLocaleDateString('id-ID', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                        });
+                        dateRangeText = `(${startDate} – ${endDate})`;
+                    }
+
                     const body = (rows || []).map((r, i) => `
         <tr>
-          <td class="text-center">${i+1}</td>
-          <td class="text-center">${r.VBELN}</td>
-          <td class="text-center">${r.BSTNK ?? '-'}</td>
-          <td>${r.NAME1 ?? ''}</td>
-          <td class="text-center">${({ '2000':'Surabaya','3000':'Semarang' })[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
-          <td class="text-center">${auartMap2[r.IV_AUART_PARAM] || r.IV_AUART_PARAM}</td>
-          <td class="text-center">${fmt(r.due_date) || '-'}</td>
+            <td class="text-center">${i+1}</td>
+            <td class="text-center">${r.VBELN}</td>
+            <td class="text-center">${r.BSTNK ?? '-'}</td>
+            <td>${r.NAME1 ?? ''}</td>
+            <td class="text-center">${({ '2000':'Surabaya','3000':'Semarang' })[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
+            <td class="text-center">${auartMap2[r.IV_AUART_PARAM] || r.IV_AUART_PARAM}</td>
+            <td class="text-center">${fmt(r.due_date) || '-'}</td>
         </tr>
-      `).join('');
+    `).join('');
+
                     bottleneckBox.innerHTML = `
         <div class="row g-4 mb-4">
-          <div class="col-lg-12">
-            <div class="card shadow-sm h-100 yz-chart-card">
-              <div class="card-body d-flex flex-column">
-                <div class="d-flex justify-content-between align-items-center">
-                  <h5 class="card-title"><i class="fas fa-exclamation-triangle me-2"></i>Potential Bottlenecks (SO Level)</h5>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="close-bottlenecks"><i class="fas fa-times"></i></button>
-                </div>
+            <div class="col-lg-12">
+                <div class="card shadow-sm h-100 yz-chart-card">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">
+                                <span><i class="fas fa-exclamation-triangle me-2"></i>Potential Bottlenecks (SO Level)</span>
+                                <span class="text-muted small ms-2">${dateRangeText}</span>
+                            </h5>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="close-bottlenecks"><i class="fas fa-times"></i></button>
+                        </div>
                 <hr class="mt-2">
                 ${(rows && rows.length) ? `
-                                                      <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                        <table class="table table-sm table-hover align-middle mb-0">
-                                                          <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                            <tr>
-                                                              <th class="text-center" style="width:60px;">NO.</th>
-                                                              <th class="text-center" style="min-width:120px;">SO</th>
-                                                              <th class="text-center" style="min-width:120px;">PO</th>
-                                                              <th>Customer</th>
-                                                              <th class="text-center" style="min-width:100px;">Plant</th>
-                                                              <th class="text-center" style="min-width:140px;">Order Type</th>
-                                                              <th class="text-center" style="min-width:120px;">Due Date</th>
-                                                            </tr>
-                                                          </thead>
-                                                          <tbody>${body}</tbody>
-                                                        </table>
-                                                      </div>` :
-                  `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada bottleneck.</div>`}
+                                                                                                                                                                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                                                                                                                                                    <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                                                                                                                                            <tr>
+                                                                                                                                                                                                                                                                <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                                                                                                <th>Customer</th>
+                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:100px;">Plant</th>
+                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:140px;">Order Type</th>
+                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">Due Date</th>
+                                                                                                                                                                                                                                                            </tr>
+                                                                                                                                                                                                                                                        </thead>
+                                                                                                                                                                                                                                                        <tbody>${body}</tbody>
+                                                                                                                                                                                                                                                    </table>
+                                                                                                                                                                                                                                                </div>` :
+              `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada Potensial bottleneck (dalam 7 hari ke depan).</div>`}
               </div>
             </div>
           </div>
@@ -1366,6 +1416,7 @@
 
                 if (bottleneckCard && bottleneckBox) {
                     bottleneckCard.addEventListener('click', async () => {
+                        const api = new URL(apiSoBottlenecks, window.location.origin);
                         const isHidden = bottleneckBox.style.display === 'none';
                         if (!isHidden) {
                             bottleneckBox.style.display = 'none';
@@ -1379,17 +1430,15 @@
             </div>
           </div>`;
 
-                        const qs = new URLSearchParams(window.location.search);
-                        const api = new URL(apiSoBottlenecks, window.location.origin);
-                        if (qs.get('location')) api.searchParams.set('location', qs.get('location'));
-                        if (qs.get('type')) api.searchParams.set('type', qs.get('type'));
-                        if (qs.get('auart')) api.searchParams.set('auart', qs.get('auart'));
+                        if (filterState.location) api.searchParams.set('location', filterState.location);
+                        if (filterState.type) api.searchParams.set('type', filterState.type);
+                        if (filterState.auart) api.searchParams.set('auart', filterState.auart);
 
                         try {
                             const res = await fetch(api);
                             const json = await res.json();
                             if (!json.ok) throw new Error(json.error || 'Gagal mengambil data.');
-                            renderBottlenecksTable(json.data || []);
+                            renderBottlenecksTable(json.data || [], json.window_info);
                         } catch (e) {
                             bottleneckBox.innerHTML = `
             <div class="alert alert-danger m-3">
@@ -1399,81 +1448,169 @@
                     });
                 }
 
-                const soTotals = (chartData.so_report_totals || {});
-                document.getElementById('kpi-so-val-usd').textContent = formatFullCurrency(Number(soTotals.usd || 0),
-                    'USD');
-                document.getElementById('kpi-so-val-idr').textContent = formatFullCurrency(Number(soTotals.idr || 0),
-                    'IDR');
+                const sumSoTotals = (rows) => {
+                    let usd = 0,
+                        idr = 0;
+                    (rows || []).forEach(r => {
+                        const ot = r.on_time_breakdown || {};
+                        const od = r.overdue_breakdown || {};
+                        usd += Number(ot.usd || 0) + Number(od.usd || 0);
+                        idr += Number(ot.idr || 0) + Number(od.idr || 0);
+                    });
+                    return {
+                        usd,
+                        idr
+                    };
+                };
+
+                const {
+                    usd: soUsdTotal,
+                    idr: soIdrTotal
+                } = sumSoTotals(chartData.value_by_location_status || []);
+                document.getElementById('kpi-so-val-usd').textContent = formatFullCurrency(soUsdTotal, 'USD');
+                document.getElementById('kpi-so-val-idr').textContent = formatFullCurrency(soIdrTotal, 'IDR');
                 document.getElementById('kpi-so-ship-week-usd').textContent = formatFullCurrency(chartData.kpi
                     .value_to_ship_this_week_usd, 'USD');
                 document.getElementById('kpi-so-ship-week-idr').textContent = formatFullCurrency(chartData.kpi
                     .value_to_ship_this_week_idr, 'IDR');
                 document.getElementById('kpi-so-bottleneck').textContent = chartData.kpi.potential_bottlenecks;
 
-                const ctxLocationStatus = document.getElementById('chartValueByLocationStatus');
-                if (ctxLocationStatus) {
-                    const currencyForSoTooltip = selectedType === 'lokal' ? 'IDR' : 'USD'; // untuk fallback tooltip
-                    const locationData = chartData.value_by_location_status || [];
-                    if (locationData.length === 0) {
-                        showNoDataMessage('chartValueByLocationStatus');
-                    } else {
-                        const labels = ['Semarang', 'Surabaya'];
-                        const findRow = (loc) => locationData.find(d => d.location === loc) || {};
+                let soValByLocChart = null;
 
-                        const onTime = labels.map(loc => (findRow(loc).on_time_value ?? 0));
-                        const overdue = labels.map(loc => (findRow(loc).overdue_value ?? 0));
+                // Ambil data per currency dari breakdown
+                function buildSoLocationSeries(rows, currency) {
+                    const labels = ['Semarang', 'Surabaya'];
+                    const curKey = currency === 'IDR' ? 'idr' : 'usd';
+                    const findRow = (loc) => (rows || []).find(d => d.location === loc) || {};
+                    const num = (v) => Number(v || 0);
 
-                        new Chart(ctxLocationStatus, {
-                            type: 'bar',
-                            data: {
-                                labels,
-                                datasets: [{
-                                        label: 'On Time',
-                                        data: onTime,
-                                        backgroundColor: 'rgba(75, 192, 192, 0.7)'
-                                    },
-                                    {
-                                        label: 'Overdue',
-                                        data: overdue,
-                                        backgroundColor: 'rgba(255, 99, 132, 0.7)'
-                                    }
-                                ]
-                            },
-                            options: {
-                                scales: {
-                                    x: {
-                                        stacked: true
-                                    },
-                                    y: {
-                                        stacked: true,
-                                        beginAtZero: true
-                                    }
+                    const onTime = labels.map(loc => num((findRow(loc).on_time_breakdown || {})[curKey]));
+                    const overdue = labels.map(loc => num((findRow(loc).overdue_breakdown || {})[curKey]));
+
+                    return {
+                        labels,
+                        onTime,
+                        overdue
+                    };
+                }
+
+                function renderSoValueByLocationStatus(currency) {
+                    const canvasId = 'chartValueByLocationStatus';
+                    const ctx = document.getElementById(canvasId);
+                    if (!ctx) return;
+
+                    const rows = chartData.value_by_location_status || [];
+                    const {
+                        labels,
+                        onTime,
+                        overdue
+                    } = buildSoLocationSeries(rows, currency);
+
+                    const total = [...onTime, ...overdue].reduce((a, b) => a + b, 0);
+                    if (total === 0) {
+                        showNoDataMessage(canvasId);
+                        return;
+                    }
+
+                    // update judul card -> tambah suffix (USD/IDR)
+                    setTitleCurrencySuffixByCanvas(canvasId, currency);
+
+                    // destroy chart lama
+                    if (soValByLocChart) {
+                        try {
+                            soValByLocChart.destroy();
+                        } catch (e) {}
+                    }
+
+                    soValByLocChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels,
+                            datasets: [{
+                                    label: 'On Time',
+                                    data: onTime,
+                                    backgroundColor: 'rgba(75, 192, 192, 0.7)'
                                 },
-                                plugins: {
-                                    tooltip: {
-                                        callbacks: {
-                                            label: (ctx) => {
-                                                const loc = ctx.label;
-                                                const row = findRow(loc);
-                                                const isOnTime = ctx.dataset.label === 'On Time';
-                                                const b = isOnTime ? (row.on_time_breakdown || {}) : (row
-                                                    .overdue_breakdown || {});
-                                                const parts = [];
-                                                if ((b.idr ?? 0) !== 0) parts.push(formatFullCurrency(
-                                                    Number(b.idr || 0), 'IDR'));
-                                                if ((b.usd ?? 0) !== 0) parts.push(formatFullCurrency(
-                                                    Number(b.usd || 0), 'USD'));
-                                                const text = parts.length ? parts.join(' | ') :
-                                                    formatFullCurrency(Number(ctx.raw) || 0,
-                                                        currencyForSoTooltip);
-                                                return `${ctx.dataset.label}: ${text}`;
-                                            }
-                                        }
+                                {
+                                    label: 'Overdue',
+                                    data: overdue,
+                                    backgroundColor: 'rgba(255, 99, 132, 0.7)'
+                                }
+                            ]
+                        },
+                        options: {
+                            scales: {
+                                x: {
+                                    stacked: true
+                                },
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true
+                                }
+                            },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: (ctx) =>
+                                            `${ctx.dataset.label}: ${formatFullCurrency(ctx.raw || 0, currency)}`
                                     }
                                 }
                             }
+                        }
+                    });
+                }
+
+                function rerenderSoCurrencyDependentCharts() {
+                    renderSoTopCustomers(currentSoCurrency);
+                    renderSoValueByLocationStatus(currentSoCurrency);
+                }
+
+                // Toggle USD/IDR khusus card "Value to Pacing vs Overdue by Location"
+                function mountSoLocationCurrencyToggle() {
+                    if (!enableSoCurrencyToggle) return; // kalau user pilih Lokal/Export -> jangan munculkan toggle
+
+                    const chartCanvas = document.getElementById('chartValueByLocationStatus');
+                    if (!chartCanvas) return;
+
+                    const card = chartCanvas.closest('.card');
+                    const cardBody = card?.querySelector('.card-body');
+                    if (!cardBody) return;
+
+                    const toolbar = document.createElement('div');
+                    toolbar.className = 'yz-card-toolbar';
+                    toolbar.innerHTML = `
+    <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
+      <button type="button" data-cur="USD" class="btn ${currentSoCurrency==='USD' ? 'btn-primary' : 'btn-outline-primary'}">USD</button>
+      <button type="button" data-cur="IDR" class="btn ${currentSoCurrency==='IDR' ? 'btn-success' : 'btn-outline-success'}">IDR</button>
+    </div>`;
+                    card.style.position = 'relative';
+                    cardBody.appendChild(toolbar);
+
+                    toolbar.addEventListener('click', (e) => {
+                        const btn = e.target.closest('button[data-cur]');
+                        if (!btn) return;
+                        const next = btn.dataset.cur;
+                        if (next === currentSoCurrency) return;
+
+                        currentSoCurrency = next;
+                        try {
+                            localStorage.setItem('soTopCustomerCurrency', currentSoCurrency);
+                        } catch {}
+
+                        // Sinkronkan semua tombol toggle USD/IDR di halaman SO
+                        document.querySelectorAll('.yz-currency-toggle button[data-cur]').forEach(b => {
+                            const isUSD = b.dataset.cur === 'USD';
+                            const isIDR = b.dataset.cur === 'IDR';
+                            b.classList.toggle('btn-primary', isUSD && currentSoCurrency === 'USD');
+                            b.classList.toggle('btn-outline-primary', isUSD && currentSoCurrency !==
+                                'USD');
+                            b.classList.toggle('btn-success', isIDR && currentSoCurrency === 'IDR');
+                            b.classList.toggle('btn-outline-success', isIDR && currentSoCurrency !==
+                                'IDR');
                         });
-                    }
+
+                        rerenderSoCurrencyDependentCharts();
+                    });
                 }
 
                 const ctxSoUrgency = document.getElementById('chartSoUrgency');
@@ -1603,46 +1740,46 @@
                     // Tambahkan event listener
                     toolbar.addEventListener('click', (e) => {
                         const btn = e.target.closest('button[data-cur]');
-                        if (!btn || btn.dataset.cur === currentSoCurrency) return;
+                        if (!btn) return;
+                        const next = btn.dataset.cur;
+                        if (next === currentSoCurrency) return;
 
-                        currentSoCurrency = btn.dataset.cur;
+                        currentSoCurrency = next;
                         try {
                             localStorage.setItem('soTopCustomerCurrency', currentSoCurrency);
-                        } catch (e) {}
+                        } catch {}
 
-                        renderSoTopCustomers(currentSoCurrency);
-
-                        toolbar.querySelectorAll('button').forEach(b => {
-                            const isActive = b.dataset.cur === currentSoCurrency;
-                            if (b.dataset.cur === 'USD') {
-                                b.classList.toggle('btn-primary', isActive);
-                                b.classList.toggle('btn-outline-primary', !isActive);
-                            } else {
-                                b.classList.toggle('btn-success', isActive);
-                                b.classList.toggle('btn-outline-success', !isActive);
-                            }
+                        // Update tampilan SEMUA toggle USD/IDR di halaman
+                        document.querySelectorAll('.yz-currency-toggle button[data-cur]').forEach(b => {
+                            const isUSD = b.dataset.cur === 'USD';
+                            const isIDR = b.dataset.cur === 'IDR';
+                            b.classList.toggle('btn-primary', isUSD && currentSoCurrency === 'USD');
+                            b.classList.toggle('btn-outline-primary', isUSD && currentSoCurrency !==
+                                'USD');
+                            b.classList.toggle('btn-success', isIDR && currentSoCurrency === 'IDR');
+                            b.classList.toggle('btn-outline-success', isIDR && currentSoCurrency !==
+                                'IDR');
                         });
+
+                        // Render ulang kedua chart yang tergantung currency
+                        rerenderSoCurrencyDependentCharts();
                     });
                 }
 
                 // 4. Panggil fungsi inisialisasi untuk chart Top Customers SO
                 mountSoCurrencyToggle();
                 renderSoTopCustomers(currentSoCurrency);
+                mountSoLocationCurrencyToggle(); // pasang toggle di chart lokasi
+                renderSoValueByLocationStatus(currentSoCurrency);
 
-                /* ========================  🆕 ITEM WITH REMARK (INLINE)  ======================== */
+                /* ========================  ITEM WITH REMARK (INLINE)  ======================== */
                 (function itemWithRemarkTableOnly() {
-                    const apiRemarkItems = "{{ route('so.api.remark_items') }}"; // API daftar item remark
-                    const inlineCard = document.getElementById('remark-inline-container');
+                    const apiRemarkItems = "{{ route('so.api.remark_items') }}";
                     const listBox = document.getElementById('remark-list-box-inline');
-                    if (!inlineCard || !listBox) return;
-
-                    // Ambil filter aktif dari URL dashboard (location/type/auart)
-                    const qs = new URLSearchParams(window.location.search);
-                    const currentLocation = qs.get('location');
-                    const currentType = qs.get('type');
-                    const currentAuart = qs.get('auart');
-
-                    // helpers
+                    if (!listBox) return;
+                    const currentLocation = filterState.location;
+                    const currentType = filterState.type;
+                    const currentAuart = filterState.auart;
                     const stripZeros = v => {
                         const s = String(v ?? '').trim();
                         if (!s) return '';
@@ -1653,8 +1790,6 @@
                         '2000': 'Surabaya',
                         '3000': 'Semarang'
                     } [String(w || '').trim()] || (w ?? ''));
-
-                    // Map AUART -> Deskripsi (merge dari mappingData bila ada, plus fallback)
                     const __auartDesc = (() => {
                         const base = {
                             ZOR1: 'KMI Export SBY',
@@ -1681,10 +1816,7 @@
 
                     function buildTable(rows) {
                         if (!rows?.length) {
-                            return `
-                        <div class="text-center text-muted py-4">
-                            <i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.
-                        </div>`;
+                            return `<div class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.</div>`;
                         }
 
                         const body = rows.map((r, i) => {
@@ -1694,58 +1826,58 @@
                             const plant = __plantName(werks);
                             const otName = __auartDesc[auart] || auart || '-';
                             const so = (r.VBELN || '').trim();
-
-                            // [DIUBAH] Ambil KUNNR dari data. Asumsikan nama field-nya 'KUNNR'.
-                            // Sesuaikan jika nama field di response API berbeda (misal: r.kunnr, r.customer_id)
                             const kunnr = (r.KUNNR || '').trim();
 
-                            // URL ke SO Report (langsung highlight dan auto expand)
-                            const url = new URL("{{ route('so.index') }}", window.location.origin);
-                            if (werks) url.searchParams.set('werks', werks);
-                            if (auart) url.searchParams.set('auart', auart);
-                            if (so) url.searchParams.set('highlight_vbeln', so);
+                            // [PERBAIKAN] Siapkan data untuk dikirim via POST, bukan membuat URL di sini
+                            const postData = {
+                                redirect_to: 'so.index',
+                                werks: werks,
+                                auart: auart,
+                                compact: 1,
+                                highlight_kunnr: kunnr,
+                                highlight_vbeln: so,
+                                highlight_posnr: item, // <<< TAMBAH INI
+                                auto_expand: '1'
+                            };
 
-                            // [BARIS BARU] Tambahkan KUNNR ke URL
-                            if (kunnr) url.searchParams.set('highlight_kunnr', kunnr);
-
-                            url.searchParams.set('auto_expand', '1');
-
+                            // [PERBAIKAN] Hapus `data-url` dan ganti dengan `data-payload` yang berisi data JSON yang aman
                             return `
-        <tr class="js-remark-row" data-url="${url.toString()}">
-            <td class="text-center">${i + 1}</td>
-            <td class="text-center">${so || '-'}</td>
-            <td class="text-center">${item || '-'}</td>
-            <td class="text-center">${plant || '-'}</td>
-            <td class="text-center">${otName}</td>
-            <td>${(r.remark || '').replace(/\n/g,'<br>')}</td>
-        </tr>`;
+<tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat detail SO">
+    <td class="text-center">${i + 1}</td>
+    <td class="text-center">${so || '-'}</td>
+    <td class="text-center">${item || '-'}</td>
+    <td class="text-center">${plant || '-'}</td>
+    <td class="text-center">${otName}</td>
+    <td>${(r.remark || '').replace(/\n/g,'<br>')}</td>
+</tr>`;
                         }).join('');
 
                         return `
-                    <div class="yz-scrollable-table-container" style="max-height:420px;">
-                        <table class="table table-striped table-hover table-sm align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th class="text-center" style="width:60px;">No.</th>
-                                    <th class="text-center" style="min-width:110px;">SO</th>
-                                    <th class="text-center" style="min-width:90px;">Item</th>
-                                    <th class="text-center" style="min-width:110px;">Plant</th>
-                                    <th class="text-center" style="min-width:160px;">Order Type</th>
-                                    <th class="text-center" style="min-width:220px;">Remark</th>
-                                </tr>
-                            </thead>
-                            <tbody>${body}</tbody>
-                        </table>
-                    </div>
-                    <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
+        <div class="yz-scrollable-table-container" style="max-height:420px;">
+            <table class="table table-striped table-hover table-sm align-middle mb-0">
+                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                    <tr>
+                        <th class="text-center" style="width:60px;">No.</th>
+                        <th class="text-center" style="min-width:110px;">SO</th>
+                        <th class="text-center" style="min-width:90px;">Item</th>
+                        <th class="text-center" style="min-width:110px;">Plant</th>
+                        <th class="text-center" style="min-width:160px;">Order Type</th>
+                        <th style="min-width:220px;">Remark</th>
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>
+        <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
                     }
 
                     async function loadList() {
+                        const inlineCard = document.getElementById('remark-inline-container');
                         inlineCard.style.display = '';
                         listBox.innerHTML = `
-                    <div class="d-flex justify-content-center align-items-center py-4 text-muted">
-                        <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
-                    </div>`;
+        <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+        </div>`;
 
                         try {
                             const url = new URL(apiRemarkItems, window.location.origin);
@@ -1763,21 +1895,48 @@
                             listBox.innerHTML = buildTable(json.data || []);
                         } catch (e) {
                             listBox.innerHTML = `
-                        <div class="alert alert-danger m-0">
-                            <i class="fas fa-exclamation-triangle me-2"></i>${e.message}
-                        </div>`;
+            <div class="alert alert-danger m-0">
+                <i class="fas fa-exclamation-triangle me-2"></i>${e.message}
+            </div>`;
                         }
                     }
 
-                    // Delegation: klik baris -> pindah ke SO Report
-                    listBox.addEventListener('click', ev => {
+                    // [PERBAIKAN] Logika klik sekarang mengirim data via form POST yang aman
+                    listBox.addEventListener('click', (ev) => {
                         const tr = ev.target.closest('.js-remark-row');
-                        if (!tr) return;
-                        const url = tr.dataset.url;
-                        if (url) window.location.href = url;
+                        if (!tr || !tr.dataset.payload) return;
+
+                        const rowData = JSON.parse(tr.dataset.payload);
+
+                        // Gunakan rowData apa adanya, lalu tambahkan field kontrol
+                        const postData = {
+                            ...rowData,
+                            redirect_to: 'so.index', // laporan SO
+                            compact: 1,
+                            auto_expand: '1'
+                        };
+
+                        const form = document.createElement('form');
+                        form.method = 'POST';
+                        form.action = "{{ route('dashboard.redirector') }}";
+
+                        const csrf = document.createElement('input');
+                        csrf.type = 'hidden';
+                        csrf.name = '_token';
+                        csrf.value = document.querySelector('meta[name="csrf-token"]').getAttribute(
+                            'content');
+                        form.appendChild(csrf);
+
+                        const payload = document.createElement('input');
+                        payload.type = 'hidden';
+                        payload.name = 'payload';
+                        payload.value = JSON.stringify(postData);
+                        form.appendChild(payload);
+
+                        document.body.appendChild(form);
+                        form.submit();
                     });
 
-                    // langsung load tabel saat dashboard tampil
                     loadList();
                 })();
 
@@ -1805,13 +1964,10 @@
                 __charts[k] = null;
             };
 
-            // deteksi filter aktif
-            const qs = new URLSearchParams(window.location.search);
-            const hasTypeFilter = !!qs.get('type'); // true jika user pilih 'lokal' atau 'export'
+            const hasTypeFilter = !!filterState.type;
             const enableCurrencyToggle = (!
-                hasTypeFilter); // <-- 🔁 PERUBAHAN: toggle aktif selama ALL TYPE, walau plant difilter
+                hasTypeFilter);
 
-            // state currency (persist ke localStorage saat toggle aktif; jika tidak, fallback sesuai selectedType)
             let currentCurrency = (dataHolder.dataset.selectedType === 'lokal') ? 'IDR' : 'USD';
             if (enableCurrencyToggle) {
                 try {
@@ -1877,12 +2033,9 @@
                 });
             }
 
-            //HELPER RENDER TOP CUSTOMER
             function setTitleCurrencySuffixByCanvas(canvasId, currency) {
                 const titleEl = document.getElementById(canvasId)?.closest('.card')?.querySelector('.card-title');
                 if (!titleEl) return;
-
-                // Cari node teks terakhir di dalam title (ikon / toggle adalah elemen, bukan text node)
                 const textNodes = Array.from(titleEl.childNodes)
                     .filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length);
 
@@ -1890,7 +2043,6 @@
                 const tn = textNodes[textNodes.length - 1];
                 const raw = tn.textContent;
 
-                // Jika sudah ada (USD/IDR) → replace; kalau belum, tambahkan di akhir teks
                 if (/\((USD|IDR)\)/.test(raw)) {
                     tn.textContent = raw.replace(/\((USD|IDR)\)/, `(${currency})`);
                 } else {
@@ -1900,7 +2052,6 @@
 
             /* ---------- RENDER: Top 4 Customers by Outstanding Value ---------- */
             function renderTopCustomersByCurrency(currency) {
-                // Perbarui suffix currency di judul TANPA menghapus ikon/info/toggle
                 setTitleCurrencySuffixByCanvas('chartTopCustomersValue', currency);
 
                 const ds = (currency === 'IDR') ? chartData.top_customers_value_idr :
@@ -1927,19 +2078,16 @@
                 }
             }
 
-            /* ---------- UI: Toggle USD/IDR di header kartu (muncul saat ALL TYPE) ---------- */
             function mountCurrencyToggleIfNeeded() {
                 if (!enableCurrencyToggle) return;
 
-                // inject CSS sekali
                 if (!document.getElementById('yzToggleCss')) {
                     const style = document.createElement('style');
                     style.id = 'yzToggleCss';
                     style.textContent = `
       .yz-card-toolbar{position:absolute; top:.35rem; right:.75rem; z-index:3;}
       .yz-card-toolbar .btn{padding:.15rem .5rem; font-size:.75rem; line-height:1.1;}
-      /* sisihkan ruang di header agar ikon info tidak ketutup toolbar */
-      .yz-card-header-pad{padding-right:96px;} /* adjust kalau butuh lebih/kurang */
+      .yz-card-header-pad{padding-right:96px;}
     `;
                     document.head.appendChild(style);
                 }
@@ -1970,8 +2118,8 @@
                     if (!headerRow) return;
 
                     if (!headerRow.style.position) headerRow.style.position = 'relative';
-                    headerRow.classList.add('yz-card-header-pad'); // <-- ruang untuk ikon info
-                    headerRow.querySelector('.yz-card-toolbar')?.remove(); // bersihkan toolbar lama
+                    headerRow.classList.add('yz-card-header-pad');
+                    headerRow.querySelector('.yz-card-toolbar')?.remove();
 
                     const toolbar = makeToggle();
                     headerRow.appendChild(toolbar);
@@ -1991,7 +2139,6 @@
                         renderOutstandingLocation(currentCurrency);
                         renderTopCustomersByCurrency(currentCurrency);
 
-                        // sinkronkan tampilan semua toggle
                         document.querySelectorAll('.yz-currency-toggle button[data-cur]').forEach(b => {
                             const v = b.dataset.cur;
                             b.classList.toggle('btn-primary', v === 'USD' && currentCurrency ===
@@ -2007,7 +2154,6 @@
                 });
             }
 
-            /* ---------- Inisialisasi Chart (sesuai filter/toggle) ---------- */
             mountCurrencyToggleIfNeeded();
             if (enableCurrencyToggle) {
                 renderOutstandingLocation(currentCurrency);
@@ -2018,7 +2164,6 @@
                 renderTopCustomersByCurrency(fallbackCurrency);
             }
 
-            /* ---------- PO Status Overview (DONUT) — TIDAK DIUBAH ---------- */
             const ctxStatus = document.getElementById('chartSOStatus');
             let soStatusChart = null;
             if (ctxStatus) {
@@ -2061,7 +2206,6 @@
                 }
             }
 
-            /* ---------- Top Customers with Most Overdue PO — TIDAK DIUBAH ---------- */
             createHorizontalBarChart(
                 'chartTopOverdueCustomers',
                 chartData.top_customers_overdue,
@@ -2072,7 +2216,6 @@
                 }
             );
 
-            /* ======================== Outstanding PO & Performance Details by Type ======================== */
             const performanceData = chartData.so_performance_analysis;
             const performanceTbody = document.getElementById('so-performance-tbody');
             const apiPoOverdueDetails = "{{ route('dashboard.api.poOverdueDetails') }}";
@@ -2136,7 +2279,7 @@
                     performanceTbody.innerHTML =
                         `<tr><td colspan="6" class="text-center p-5 text-muted">
            <i class="fas fa-info-circle fa-2x mb-2"></i><br>Performance data is not available for this filter.
-         </td></tr>`;
+        </td></tr>`;
                 } else {
                     let tableHtml = '';
                     performanceData.forEach(item => {
@@ -2162,12 +2305,12 @@
                         const seg = (count, percent, color, bucket, textTitle) => {
                             if (!count) return '';
                             return `<div class="bar-segment js-overdue-seg"
-                      data-werks="${werks}"
-                      data-auart="${auart}"
-                      data-bucket="${bucket}"
-                      style="width:${percent}%;background-color:${color};cursor:pointer"
-                      data-bs-toggle="tooltip"
-                      title="${textTitle}: ${count} PO">${count}</div>`;
+                          data-werks="${werks}"
+                          data-auart="${auart}"
+                          data-bucket="${bucket}"
+                          style="width:${percent}%;background-color:${color};cursor:pointer"
+                          data-bs-toggle="tooltip"
+                          title="${textTitle}: ${count} PO">${count}</div>`;
                         };
 
                         let barChartHtml = '<div class="bar-chart-container">';
@@ -2300,22 +2443,22 @@
               </div>
               <hr class="mt-2">
               ${rows.length ? `
-                                                                                                                                                                                                                                                                                        <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                                                                                                                                                                                                                                          <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                                                                                                                                                                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                                                                                                                                                                                                                                <tr>
-                                                                                                                                                                                                                                                                                                    <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                                                                                                                                                                                                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                                                                                                                                                                                                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                                                                                                                                                                                                                    <th class="text-center" style="min-width:120px;">EDATU</th>
-                                                                                                                                                                                                                                                                                                    <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                                                                                                                                                                                                                                                </tr>
-                                                                                                                                                                                                                                                                                                </thead>
-                                                                                                                                                                                                                                                                                            <tbody>${body}</tbody>
-                                                                                                                                                                                                                                                                                          </table>
-                                                                                                                                                                                                                                                                                        </div>` :
-                `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
-              }
+                                                                                                                                                                                                                                                                                                                                                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                                                                                                                                                                                                                                                                                                                                    <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                                                                                                                                                                                                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                                                                                                                                                                                                                                                                                                                            <tr>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                            </tr>
+                                                                                                                                                                                                                                                                                                                                                                                                                                        </thead>
+                                                                                                                                                                                                                                                                                                                                                                                                                                        <tbody>${body}</tbody>
+                                                                                                                                                                                                                                                                                                                                                                                                                                    </table>
+                                                                                                                                                                                                                                                                                                                                                                                                                                </div>` :
+              `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
+            }
             </div>
           </div>`;
                         document.getElementById('close-po-perf-details')?.addEventListener('click', () =>
@@ -2332,7 +2475,7 @@
 
                 const tbody = (rows || []).map((r, i) => `
       <tr>
-        <td class="text-center">${i+1}</td>
+        <td class="text-center">${i + 1}</td>
         <td class="text-center">${r.PO ?? r.BSTNK ?? '-'}</td>
         <td class="text-center">${r.SO ?? r.VBELN ?? '-'}</td>
         <td class="text-center">${r.EDATU ?? '-'}</td>
@@ -2351,24 +2494,23 @@
           </div>
           <hr class="mt-2">
           ${rows && rows.length ? `
-                                                                                                                                                                                                                                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                                                                                                                                                                                                                                      <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                                                                                                                                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                                                                                                                                                                                                                            <tr>
-                                                                                                                                                                                                                                                                                                <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:120px;">EDATU</th>
-                                                                                                                                                                                                                                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                                                                                                                                                                                                                                            </tr>
-                                                                                                                                                                                                                                                                                            </thead>
-                                                                                                                                                                                                                                                                                        <tbody>${tbody}</tbody>
-                                                                                                                                                                                                                                                                                      </table>
-                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                  ` : `
-                                                                                                                                                                                                                                                                                    <div class="text-muted p-4 text-center">
-                                                                                                                                                                                                                                                                                      <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                                                                                                                                                                                                                                    </div>`}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          <tr>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          </tr>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      </thead>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      <tbody>${tbody}</tbody>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  </table>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </div>` : `
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <div class="text-muted p-4 text-center">
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </div>`}
         </div>
       </div>`;
                 document.getElementById('closePoOverdueOverlay')?.addEventListener('click', () => {
@@ -2456,13 +2598,11 @@
                                     block: 'start'
                                 });
 
-                                const currentParams = new URLSearchParams(window.location.search);
-                                const type = currentParams.get('type');
                                 const apiUrl = new URL("{{ route('dashboard.api.smallQtyDetails') }}",
                                     window.location.origin);
                                 apiUrl.searchParams.append('customerName', customerName);
                                 apiUrl.searchParams.append('locationName', locationName);
-                                if (type) apiUrl.searchParams.append('type', type);
+                                if (filterState.type) apiUrl.searchParams.append('type', filterState.type);
 
                                 try {
                                     const response = await fetch(apiUrl);
@@ -2471,25 +2611,25 @@
                                         result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2) - parseFloat(b
                                             .QTY_BALANCE2));
                                         let tableHtml = `<div class="table-responsive yz-scrollable-table-container"><table class="table table-striped table-hover table-sm align-middle">
-                  <thead class="table-light"><tr>
-                    <th style="width:5%;" class="text-center">No.</th>
-                    <th class="text-center">PO</th>
-                    <th class="text-center">SO</th>
-                    <th class="text-center">Item</th>
-                    <th>Desc FG</th>
-                    <th class="text-center">Qty PO</th>
-                    <th class="text-center">Outstanding</th>
-                  </tr></thead><tbody>`;
+                                            <thead class="table-light"><tr>
+                                                <th style="width:5%;" class="text-center">No.</th>
+                                                <th class="text-center">PO</th>
+                                                <th class="text-center">SO</th>
+                                                <th class="text-center">Item</th>
+                                                <th>Desc FG</th>
+                                                <th class="text-center">Qty PO</th>
+                                                <th class="text-center">Outstanding</th>
+                                            </tr></thead><tbody>`;
                                         result.data.forEach((item, idx) => {
                                             tableHtml += `<tr>
-                    <td class="text-center">${idx+1}</td>
-                    <td class="text-center">${item.BSTNK || '-'}</td>
-                    <td class="text-center">${item.VBELN}</td>
-                    <td class="text-center">${parseInt(item.POSNR, 10)}</td>
-                    <td>${item.MAKTX}</td>
-                    <td class="text-center">${parseFloat(item.KWMENG)}</td>
-                    <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
-                  </tr>`;
+                                                <td class="text-center">${idx+1}</td>
+                                                <td class="text-center">${item.BSTNK || '-'}</td>
+                                                <td class="text-center">${item.VBELN}</td>
+                                                <td class="text-center">${parseInt(item.POSNR, 10)}</td>
+                                                <td>${item.MAKTX}</td>
+                                                <td class="text-center">${parseFloat(item.KWMENG)}</td>
+                                                <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
+                                            </tr>`;
                                         });
                                         tableHtml += `</tbody></table></div></div>`;
                                         detailsTable.innerHTML = tableHtml;
@@ -2527,11 +2667,10 @@
         </div>
       </div>`;
 
-                const qs = new URLSearchParams(window.location.search);
                 const api = new URL("{{ route('dashboard.api.soStatusDetails') }}", window.location.origin);
                 api.searchParams.set('status', statusKey);
-                if (qs.get('location')) api.searchParams.set('location', qs.get('location'));
-                if (qs.get('type')) api.searchParams.set('type', qs.get('type'));
+                if (filterState.location) api.searchParams.set('location', filterState.location);
+                if (filterState.type) api.searchParams.set('type', filterState.type);
 
                 try {
                     const res = await fetch(api);
@@ -2582,25 +2721,25 @@
           </div>
           <hr class="mt-2">
           ${rows && rows.length ? `
-                                                                                                <div class="table-responsive yz-scrollable-table-container">
-                                                                                                  <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                    <thead class="table-light">
-                                                                                                      <tr>
-                                                                                                        <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                        <th>CUSTOMER</th>
-                                                                                                        <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                                                                      </tr>
-                                                                                                    </thead>
-                                                                                                    <tbody>${table}</tbody>
-                                                                                                  </table>
-                                                                                                </div>` : `
-                                                                                                <div class="text-muted p-4 text-center">
-                                                                                                  <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                                                </div>`}
+                                                                                                                                                                                                                                                                                                                                                                            <div class="table-responsive yz-scrollable-table-container">
+                                                                                                                                                                                                                                                                                                                                                                                <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                                                                                                                                                                                                                    <thead class="table-light">
+                                                                                                                                                                                                                                                                                                                                                                                        <tr>
+                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                                                                                                                                                                                                                            <th>CUSTOMER</th>
+                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                                                                                                                                                                                                                                                                                                                                        </tr>
+                                                                                                                                                                                                                                                                                                                                                                                    </thead>
+                                                                                                                                                                                                                                                                                                                                                                                    <tbody>${table}</tbody>
+                                                                                                                                                                                                                                                                                                                                                                                </table>
+                                                                                                                                                                                                                                                                                                                                                                            </div>` : `
+                                                                                                                                                                                                                                                                                                                                                                            <div class="text-muted p-4 text-center">
+                                                                                                                                                                                                                                                                                                                                                                                <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                                                                                                                                                                                                                                                                                                                            </div>`}
         </div>
       </div>`;
                 document.getElementById('closeSoStatusDetails')?.addEventListener('click', () => {
@@ -2638,12 +2777,11 @@
         </div>
       </div>`;
 
-                const qs = new URLSearchParams(window.location.search);
                 const api = new URL("{{ route('dashboard.api.soUrgencyDetails') }}", window.location.origin);
                 api.searchParams.set('status', statusKey);
-                if (qs.get('location')) api.searchParams.set('location', qs.get('location'));
-                if (qs.get('type')) api.searchParams.set('type', qs.get('type'));
-                if (qs.get('auart')) api.searchParams.set('auart', qs.get('auart'));
+                if (filterState.location) api.searchParams.set('location', filterState.location);
+                if (filterState.type) api.searchParams.set('type', filterState.type);
+                if (filterState.auart) api.searchParams.set('auart', filterState.auart);
 
                 try {
                     const res = await fetch(api);
@@ -2708,14 +2846,14 @@
         <td>${r.NAME1 ?? ''}</td>
         <td class="text-center">${({ '2000':'Surabaya','3000':'Semarang' })[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
         <td class="text-center">${
-  (() => {
-    if (r.order_type_label && String(r.order_type_label).trim()) return r.order_type_label;
-    const desc  = auartMap[r.IV_AUART_PARAM] || r.order_type_name || '';
-    const short = r.plant_short || (r.IV_WERKS_PARAM === '2000' ? 'SBY'
-                   : r.IV_WERKS_PARAM === '3000' ? 'SMG' : '');
-    return desc ? `${desc}${short ? ' ' + short : ''}`.trim() : (r.IV_AUART_PARAM || '');
-  })()
-}</td>
+      (() => {
+        if (r.order_type_label && String(r.order_type_label).trim()) return r.order_type_label;
+        const desc  = auartMap[r.IV_AUART_PARAM] || r.order_type_name || '';
+        const short = r.plant_short || (r.IV_WERKS_PARAM === '2000' ? 'SBY'
+                       : r.IV_WERKS_PARAM === '3000' ? 'SMG' : '');
+        return desc ? `${desc}${short ? ' ' + short : ''}`.trim() : (r.IV_AUART_PARAM || '');
+      })()
+    }</td>
         <td class="text-center">${formatDate(r.due_date) || '-'}</td>
       </tr>`).join('');
                 container.innerHTML = `
@@ -2727,24 +2865,24 @@
           </div>
           <hr class="mt-2">
           ${(rows && rows.length) ? `
-                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
-                                                                                                  <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                                                                                      <tr>
-                                                                                                        <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                        <th>CUSTOMER</th>
-                                                                                                        <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                                                                        <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                                                                      </tr>
-                                                                                                    </thead>
-                                                                                                    <tbody>${table}</tbody>
-                                                                                                  </table>
-                                                                                                </div>` :
-            `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
-          }
+                                                                                                                                                                                                                                                                                                                                                                                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
+                                                                                                                                                                                                                                                                                                                                                                                                <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                                                                                                                                                                                                                                                                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                                                                                                                                                                                                                                                                                                                                                                                        <tr>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th>CUSTOMER</th>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                                                                                                                                                                                                                                                                                                                                                            <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                                                                                                                                                                                                                                                                                                                                                        </tr>
+                                                                                                                                                                                                                                                                                                                                                                                                    </thead>
+                                                                                                                                                                                                                                                                                                                                                                                                    <tbody>${table}</tbody>
+                                                                                                                                                                                                                                                                                                                                                                                                </table>
+                                                                                                                                                                                                                                                                                                                                                                                            </div>` :
+              `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
+            }
         </div>
       </div>`;
                 document.getElementById('closeSoUrgencyDetails')?.addEventListener('click', () => {

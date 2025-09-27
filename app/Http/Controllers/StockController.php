@@ -5,14 +5,23 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Contracts\Encryption\DecryptException;
 
 class StockController extends Controller
 {
-    /**
-     * Menampilkan halaman utama Laporan Stok.
-     */
     public function index(Request $request)
     {
+        // ⬅️ DECRYPT ?q jika ada
+        if ($request->filled('q')) {
+            try {
+                $data = Crypt::decrypt($request->query('q'));
+                $request->merge(is_array($data) ? $data : []);
+            } catch (DecryptException $e) {
+                abort(404);
+            }
+        }
+
         $mapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
@@ -22,14 +31,14 @@ class StockController extends Controller
 
         $werks = $request->query('werks');
 
-        // kalau user belum pilih type, tetap redirect ke default agar tabelnya jelas
+        // ⬅️ redirect default TYPE tapi dalam bentuk terenkripsi
         if ($werks && !$request->has('type')) {
-            return redirect()->route('stock.index', ['werks' => $werks, 'type' => 'whfg']);
+            $enc = Crypt::encrypt(['werks' => $werks, 'type' => 'whfg']);
+            return redirect()->route('stock.index', ['q' => $enc]);
         }
 
         $type = $request->query('type') === 'fg' ? 'fg' : 'whfg';
 
-        // ============== NEW: total qty utk pill, selalu dihitung ==============
         $pillTotals = ['whfg_qty' => 0, 'fg_qty' => 0];
         if ($werks) {
             $pillTotals['whfg_qty'] = (float) DB::table('so_yppr079_t1')
@@ -42,7 +51,6 @@ class StockController extends Controller
                 ->where('KALAB2', '>', 0)
                 ->sum('KALAB2');
         }
-        // =====================================================================
 
         $rows = null;
         $grandTotalQty = 0;
@@ -77,18 +85,18 @@ class StockController extends Controller
 
             $rows = $q->groupBy('t1.KUNNR', 't1.NAME1', 't1.WAERK')
                 ->orderBy('t1.NAME1', 'asc')
-                ->paginate(25)
-                ->withQueryString();
+                ->paginate(25);
 
-            // grand total qty (untuk footer & pill aktif)
+            // ⬅️ hanya append ?q agar tidak bocor lagi
+            if ($request->filled('q')) {
+                $rows->appends(['q' => $request->query('q')]);
+            }
+
             $grandTotalQty = ($type === 'whfg') ? $pillTotals['whfg_qty'] : $pillTotals['fg_qty'];
 
-            // grand total value per currency
             $valueQuery = DB::table('so_yppr079_t1')
                 ->select('WAERK', DB::raw(
-                    $type === 'whfg'
-                        ? 'SUM(NETPR * KALAB) as val'
-                        : 'SUM(NETPR * KALAB2) as val'
+                    $type === 'whfg' ? 'SUM(NETPR * KALAB) as val' : 'SUM(NETPR * KALAB2) as val'
                 ))
                 ->where('IV_WERKS_PARAM', $werks)
                 ->when($type === 'whfg', fn($qq) => $qq->where('KALAB', '>', 0))
@@ -96,20 +104,27 @@ class StockController extends Controller
                 ->groupBy('WAERK')
                 ->get();
 
-            foreach ($valueQuery as $r) {
-                $grandTotalsCurr[$r->WAERK] = (float) $r->val;
-            }
+            foreach ($valueQuery as $r) $grandTotalsCurr[$r->WAERK] = (float) $r->val;
         }
 
         return view('stock_report', [
-            'mapping'        => $mapping,
-            'rows'           => $rows,
-            'selected'       => ['werks' => $werks, 'type' => $type],
-            'grandTotalQty'  => $grandTotalQty,
+            'mapping'         => $mapping,
+            'rows'            => $rows,
+            'selected'        => ['werks' => $werks, 'type' => $type],
+            'grandTotalQty'   => $grandTotalQty,
             'grandTotalsCurr' => $grandTotalsCurr,
-            // NEW: kirim total qty utk kedua pill
-            'pillTotals'     => $pillTotals,
+            'pillTotals'      => $pillTotals,
         ]);
+    }
+
+    // (OPSIONAL) kalau mau redirect via POST dari JS
+    public function redirector(Request $request)
+    {
+        $payload = $request->input('payload');
+        $data = is_string($payload) ? json_decode($payload, true) : (array) $payload;
+        abort_unless(is_array($data), 400, 'Invalid payload');
+        $clean = array_filter($data, fn($v) => !is_null($v) && $v !== '');
+        return redirect()->route('stock.index', ['q' => Crypt::encrypt($clean)]);
     }
 
     /**

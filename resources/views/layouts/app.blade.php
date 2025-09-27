@@ -31,10 +31,26 @@
 
         {{-- AREA NAV (dibuat flex-grow supaya scroll, profil bisa nempel di bawah) --}}
         <div class="flex-grow-1 d-flex flex-column overflow-auto">
+            @php
+                use Illuminate\Support\Facades\Crypt;
+
+                $decryptedQ = [];
+                if (request()->has('q')) {
+                    try {
+                        $decryptedQ = Crypt::decrypt(request('q'));
+                    } catch (\Throwable $e) {
+                    }
+                }
+
+                $isDashboard = request()->routeIs('dashboard');
+                // hanya isi saat di route dashboard
+                $curViewSidebar = $isDashboard ? $view ?? ($decryptedQ['view'] ?? (request('view') ?? 'po')) : null;
+            @endphp
             <ul class="sidebar-nav">
                 {{-- Pencarian --}}
                 <li class="nav-item px-2 mt-2 mb-2">
-                    <form action="{{ route('dashboard.search') }}" method="GET" class="sidebar-search-form">
+                    <form action="{{ route('dashboard.search') }}" method="POST" class="sidebar-search-form">
+                        @csrf
                         <div class="input-group">
                             <input type="text" class="form-control" name="term" placeholder="Search PO / SO No..."
                                 required value="{{ request('term') ?? (request('search_term') ?? '') }}"
@@ -49,13 +65,14 @@
                 {{-- Dashboard View --}}
                 <li class="nav-heading">Dashboard View</li>
                 <li class="nav-item">
-                    <a class="nav-link {{ request('view') == 'po' && !request()->has('werks') ? 'active' : '' }}"
+                    <a class="nav-link {{ $isDashboard && $curViewSidebar === 'po' && !request()->filled('werks') ? 'active' : '' }}"
                         href="{{ route('dashboard', ['view' => 'po']) }}">
                         <i class="fas fa-chart-line nav-icon"></i> Outstanding PO
                     </a>
                 </li>
+
                 <li class="nav-item">
-                    <a class="nav-link {{ request('view') == 'so' ? 'active' : '' }}"
+                    <a class="nav-link {{ $isDashboard && $curViewSidebar === 'so' ? 'active' : '' }}"
                         href="{{ route('dashboard', ['view' => 'so']) }}">
                         <i class="fas fa-chart-pie nav-icon"></i> Outstanding SO
                     </a>
@@ -72,8 +89,9 @@
                 <li class="nav-heading">Report</li>
 
                 @php
-                    $isPoRoute = request()->routeIs('dashboard') && request()->has('werks');
-                    $isSoRoute = request()->routeIs('so.index') && request()->has('werks');
+                    // [DIUBAH] Logika untuk menentukan rute aktif sekarang memeriksa variabel $selected dari controller
+                    $isPoRoute = request()->routeIs('dashboard') && request()->filled('werks');
+                    $isSoRoute = request()->routeIs('so.index') && request()->filled('werks');
                     $isStockRoute = request()->routeIs('stock.index');
                     $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
                 @endphp
@@ -91,9 +109,11 @@
                                 @foreach ($mapping as $werks => $auarts)
                                     @php
                                         $locationName = $locationMap[$werks] ?? $werks;
-                                        $activePlant = $isPoRoute && request('werks') == $werks;
+                                        // [DIUBAH] Logika untuk link aktif sekarang menggunakan variabel $selected['werks']
+                                        $activePlant = $isPoRoute && ($selected['werks'] ?? null) == $werks;
                                     @endphp
                                     <li class="nav-item">
+                                        {{-- Link ini dibiarkan TIDAK dienkripsi. Controller akan menangani redirect ke URL aman secara otomatis --}}
                                         <a class="nav-link {{ $activePlant ? 'active' : '' }}"
                                             href="{{ route('dashboard', ['werks' => $werks]) }}">
                                             <i class="fas fa-map-marker-alt nav-icon"></i>

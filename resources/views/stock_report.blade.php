@@ -30,6 +30,11 @@
             return trim(($currency ?: '') . ' ' . number_format($n, 2, ',', '.'));
         };
     @endphp
+    @php
+        use Illuminate\Support\Facades\Crypt;
+    @endphp
+    <div id="stock-root" data-werks="{{ $selectedWerks ?? '' }}" data-type="{{ $selectedType ?? '' }}" style="display:none">
+    </div>
 
     {{-- Header dengan filter WHFG dan FG (angka selalu tampil) --}}
     <div class="card yz-card shadow-sm mb-3">
@@ -39,13 +44,13 @@
                     <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
                         <li class="nav-item mb-2 me-2">
                             <a class="nav-link pill-green {{ $selectedType == 'whfg' ? 'active' : '' }}"
-                                href="{{ route('stock.index', ['werks' => $selectedWerks, 'type' => 'whfg']) }}">
+                                href="{{ route('stock.index', ['q' => Crypt::encrypt(['werks' => $selectedWerks, 'type' => 'whfg'])]) }}">
                                 WHFG (Stock = {{ $fmtNumber($whfgQty) }})
                             </a>
                         </li>
                         <li class="nav-item mb-2 me-2">
                             <a class="nav-link pill-green {{ $selectedType == 'fg' ? 'active' : '' }}"
-                                href="{{ route('stock.index', ['werks' => $selectedWerks, 'type' => 'fg']) }}">
+                                href="{{ route('stock.index', ['q' => Crypt::encrypt(['werks' => $selectedWerks, 'type' => 'fg'])]) }}">
                                 FG (Stock = {{ $fmtNumber($fgQty) }})
                             </a>
                         </li>
@@ -176,9 +181,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             const apiSoByCustomer = "{{ route('stock.api.by_customer') }}";
             const apiItemsBySo = "{{ route('stock.api.by_items') }}";
-            const qs = new URLSearchParams(window.location.search);
-            const WERKS = (qs.get('werks') || '').trim();
-            const TYPE = (qs.get('type') || '').trim(); // 'whfg' | 'fg'
+            const root = document.getElementById('stock-root');
+            const WERKS = (root?.dataset.werks || '').trim();
+            const TYPE = (root?.dataset.type || '').trim();
 
             // ===== Aksesibilitas label kolom saat mobile =====
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
@@ -212,7 +217,7 @@
             // ===== RENDER LEVEL 2 (SO per customer) =====
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
-                return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
+                    return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
 
                 let html = `<div>
             <h5 class="yz-table-title-nested yz-title-so">
@@ -255,7 +260,7 @@
             // ===== RENDER LEVEL 3 (Items per SO) =====
             function renderLevel3_Items(rows) {
                 if (!rows?.length)
-                return `<div class="p-2 text-muted">Tidak ada item detail untuk filter stok ini.</div>`;
+                    return `<div class="p-2 text-muted">Tidak ada item detail untuk filter stok ini.</div>`;
 
                 const whfgHeader = TYPE === 'whfg' ? '<th>WHFG</th>' : '';
                 const stockPackingHeader = TYPE === 'fg' ? '<th>Stock Packing</th>' : '';
@@ -361,7 +366,7 @@
                                         soTbody.classList.remove(
                                             'so-focus-mode');
                                         soRow.classList.remove(
-                                        'is-focused');
+                                            'is-focused');
                                     }
                                 }
 

@@ -628,6 +628,12 @@ thead th {
     line-height: 1.15;
 }
 
+.yz-scrollable-table-container {
+    max-height: 420px; /* Anda bisa sesuaikan tingginya */
+    overflow-y: auto;
+    position: relative; /* Penting untuk header tabel yang 'sticky' */
+}
+
 @keyframes pulse-highlight {
     0% {
         background-color: #dbeafe;
