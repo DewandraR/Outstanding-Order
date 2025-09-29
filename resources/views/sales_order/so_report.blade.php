@@ -514,47 +514,55 @@
             function renderLevel3_Items(rows) {
                 if (!rows?.length)
                     return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
+
                 let html = `<div class="table-responsive">
-      <table class="table table-sm table-hover mb-0 yz-mini">
-        <thead class="yz-header-item">
-          <tr>
-            <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-            <th>Item</th><th>Material FG</th><th>Desc FG</th>
-            <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
-            <th>GR PKG</th><th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
-          </tr>
-        </thead>
-        <tbody>`;
+  <table class="table table-sm table-hover mb-0 yz-mini">
+    <thead class="yz-header-item">
+      <tr>
+        <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+        <th>Item</th><th>Material FG</th><th>Desc FG</th>
+        <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
+        <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
+        <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
                     const hasRemark = r.remark && r.remark.trim() !== '';
                     const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
+
                     html += `
-        <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
-            data-item-id="${r.id}"
-            data-werks="${r.WERKS_KEY}"
-            data-auart="${r.AUART_KEY}"
-            data-vbeln="${r.VBELN_KEY}"
-            data-posnr="${r.POSNR_KEY}">
-          <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
-          <td>${r.POSNR ?? ''}</td>
-          <td>${r.MATNR ?? ''}</td>
-          <td>${r.MAKTX ?? ''}</td>
-          <td>${formatNumber(r.KWMENG)}</td>
-          <td>${formatNumber(r.PACKG)}</td>
-          <td>${formatNumber(r.KALAB2)}</td>
-          <td>${formatNumber(r.MENGE)}</td>
-          <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
-          <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-          <td class="text-center">
-            <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
-            <span class="remark-dot" style="display:${hasRemark ? 'inline-block':'none'};"></span>
-          </td>
-        </tr>`;
+      <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+          data-item-id="${r.id}"
+          data-werks="${r.WERKS_KEY}"
+          data-auart="${r.AUART_KEY}"
+          data-vbeln="${r.VBELN_KEY}"
+          data-posnr="${r.POSNR_KEY}">
+        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
+        <td>${r.POSNR ?? ''}</td>
+        <td>${r.MATNR ?? ''}</td>
+        <td>${r.MAKTX ?? ''}</td>
+        <td>${formatNumber(r.KWMENG)}</td>
+        <td>${formatNumber(r.PACKG)}</td>
+        <td>${formatNumber(r.KALAB2)}</td>
+        <td>${formatNumber(r.ASSYM)}</td>
+        <td>${formatNumber(r.PAINT)}</td>
+        <td>${formatNumber(r.MENGE)}</td>
+        <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
+        <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
+        <td class="text-center">
+          <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
+          <span class="remark-dot" style="display:${hasRemark ? 'inline-block':'none'};"></span>
+        </td>
+      </tr>`;
                 });
+
                 html += `</tbody></table></div>`;
                 return html;
             }
+
 
             // ------- EVENTS -------
             // Expand Level-1 (customer) -> load T2

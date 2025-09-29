@@ -1,5 +1,6 @@
 <?php
 /* composer update maatwebsite/excel -- -W */
+
 namespace App\Exports;
 
 use Illuminate\Support\Collection;
@@ -8,9 +9,19 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithStyles;
+use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class SoItemsExport implements FromCollection, WithHeadings, WithMapping, ShouldAutoSize, WithStyles
+class SoItemsExport implements
+    FromCollection,
+    WithHeadings,
+    WithMapping,
+    ShouldAutoSize,
+    WithStyles,
+    WithStrictNullComparison,   // pastikan 0 tidak dianggap kosong
+    WithColumnFormatting        // format angka untuk kolom kuantitas
 {
     protected $items;
 
@@ -52,6 +63,9 @@ class SoItemsExport implements FromCollection, WithHeadings, WithMapping, Should
             'Outs. SO',
             'WHFG',
             'Stock Packing',
+            'GR ASSY',
+            'GR PAINT',
+            'GR PKG',
             'Remark',
         ];
     }
@@ -69,13 +83,16 @@ class SoItemsExport implements FromCollection, WithHeadings, WithMapping, Should
             $item->headerInfo->NAME1 ?? '',
             $item->headerInfo->BSTNK ?? '',
             $item->VBELN,
-            (int)$item->POSNR,
-            $item->MATNR, // MATNR di sini sudah diformat di controller
+            (int) ($item->POSNR ?? 0),
+            $item->MATNR,
             $item->MAKTX,
-            (float)$item->KWMENG,
-            (float)$item->PACKG,
-            (float)($item->KALAB ?? 0),
-            (float)($item->KALAB2 ?? 0),
+            (float) ($item->KWMENG ?? 0),
+            (float) ($item->PACKG  ?? 0),
+            (float) ($item->KALAB  ?? 0),
+            (float) ($item->KALAB2 ?? 0),
+            (float) ($item->ASSYM  ?? 0),  // GR ASSY
+            (float) ($item->PAINT  ?? 0),  // GR PAINT
+            (float) ($item->MENGE  ?? 0),  // GR PKG
             $item->remark,
         ];
     }
@@ -89,8 +106,30 @@ class SoItemsExport implements FromCollection, WithHeadings, WithMapping, Should
     public function styles(Worksheet $sheet)
     {
         return [
-            // Menerapkan style 'bold' pada seluruh baris pertama (A1, B1, C1, dst.)
-            1    => ['font' => ['bold' => true]],
+            1 => ['font' => ['bold' => true]], // Header tebal
+        ];
+    }
+
+    /**
+     * Format kolom angka agar Excel selalu menampilkan 0 (bukan blank)
+     * dan tidak mengubahnya ke scientific notation.
+     *
+     * @return array
+     */
+    public function columnFormats(): array
+    {
+        // Kolom:
+        // A Costumer, B PO, C SO, D Item, E Material FG, F Description,
+        // G Qty SO, H Outs. SO, I WHFG, J Stock Packing,
+        // K GR ASSY, L GR PAINT, M GR PKG, N Remark
+        return [
+            'G' => NumberFormat::FORMAT_NUMBER, // Qty SO
+            'H' => NumberFormat::FORMAT_NUMBER, // Outs. SO
+            'I' => NumberFormat::FORMAT_NUMBER, // WHFG
+            'J' => NumberFormat::FORMAT_NUMBER, // Stock Packing
+            'K' => NumberFormat::FORMAT_NUMBER, // GR ASSY
+            'L' => NumberFormat::FORMAT_NUMBER, // GR PAINT
+            'M' => NumberFormat::FORMAT_NUMBER, // GR PKG
         ];
     }
 }

@@ -343,6 +343,9 @@ class SalesOrderController extends Controller
                 't1.PACKG',
                 't1.KALAB',
                 't1.KALAB2',
+                't1.ASSYM',
+                't1.PAINT',
+                't1.MENGE',
                 'ir.remark'
             )
             ->orderBy('t1.VBELN', 'asc')

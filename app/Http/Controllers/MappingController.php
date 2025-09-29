@@ -17,7 +17,7 @@ class MappingController extends Controller
                 ->orWhere('IV_AUART', 'like', "%$q%")
                 ->orWhere('Deskription', 'like', "%$q%");
         })
-            ->orderBy('Id', 'asc')
+            ->orderBy('id', 'asc')        // <-- id
             ->paginate(10)
             ->withQueryString();
 
@@ -49,7 +49,7 @@ class MappingController extends Controller
         Mapping::create($validated);
         return redirect()->route('mapping.index')->with('ok', 'Data berhasil ditambahkan.');
     }
-    
+
     public function edit(\App\Models\Mapping $mapping)
     {
         return view('mapping.edit-mapping', compact('mapping'));
@@ -60,14 +60,15 @@ class MappingController extends Controller
     public function update(Request $request, Mapping $mapping)
     {
         $validated = $request->validate([
-            'IV_WERKS'     => ['required', 'max:10'],
-            'IV_AUART'     => [
+            'IV_WERKS'    => ['required', 'max:10'],
+            'IV_AUART'    => [
                 'required',
                 'max:10',
-                Rule::unique('maping')->ignore($mapping->Id, 'Id')
-                    ->where(fn($q) => $q->where('IV_WERKS', $request->IV_WERKS))
+                \Illuminate\Validation\Rule::unique('maping')
+                    ->ignore($mapping->id, 'id')                 // <-- id
+                    ->where(fn($q) => $q->where('IV_WERKS', $request->IV_WERKS)),
             ],
-            'Deskription'  => ['required', 'max:255'],
+            'Deskription' => ['required', 'max:255'],
         ], [
             'IV_AUART.unique' => 'Kombinasi IV_WERKS + IV_AUART sudah ada.'
         ]);

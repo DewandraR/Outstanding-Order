@@ -67,12 +67,15 @@
                 <th style="width: 6%;">SO</th>
                 <th style="width: 4%;">Item</th>
                 <th style="width: 10%;">Material FG</th>
-                <th class="text-left" style="width: 21%;">Desc FG</th>
+                <th class="text-left" style="width: 20%;">Desc FG</th>
                 <th style="width: 5%;">Qty SO</th>
                 <th style="width: 5%;">Outs. SO</th>
                 <th style="width: 5%;">WHFG</th>
-                <th style="width: 6%;">Stock Packg.</th>
-                <th class="text-left" style="width: 16%;">Remark</th>
+                <th style="width: 5%;">Stock Packg.</th>
+                <th style="width: 5%;">GR ASSY</th>
+                <th style="width: 5%;">GR PAINT</th>
+                <th style="width: 5%;">GR PKG</th>
+                <th class="text-left" style="width: 8%;">Remark</th>
             </tr>
         </thead>
         <tbody>
@@ -88,14 +91,18 @@
                     <td>{{ number_format($item->PACKG, 0) }}</td>
                     <td>{{ number_format($item->KALAB ?? 0, 0) }}</td>
                     <td>{{ number_format($item->KALAB2 ?? 0, 0) }}</td>
+                    <td>{{ number_format($item->ASSYM ?? 0, 0) }}</td>
+                    <td>{{ number_format($item->PAINT ?? 0, 0) }}</td>
+                    <<td>{{ number_format($item->MENGE ?? 0, 0) }}</td>
                     <td class="text-left">{{ $item->remark }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="11">Tidak ada item yang dipilih untuk diekspor.</td>
+                    <td colspan="13">Tidak ada item yang dipilih untuk diekspor.</td>
                 </tr>
             @endforelse
         </tbody>
+
     </table>
 </body>
 
