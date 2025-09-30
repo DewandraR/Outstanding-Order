@@ -32,6 +32,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // [BARU] API decrypt payload (dashboard)
     Route::post('/dashboard/api/decrypt-payload', [DashboardController::class, 'apiDecryptPayload'])->name('dashboard.api.decrypt_payload');
+    Route::get('/api/po/outs-by-customer', [DashboardController::class, 'apiPoOutsByCustomer'])->name('api.po.outs_by_customer');
 
     // API untuk Dashboard (existing)
     Route::get('/dashboard/api/t2', [DashboardController::class, 'apiT2'])->name('dashboard.api.t2');
@@ -44,6 +45,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/so-remark-summary', [DashboardController::class, 'apiSoRemarkSummary'])->name('so.api.remark_summary');
     Route::get('/api/so-remark-items',   [DashboardController::class, 'apiSoRemarkItems'])->name('so.api.remark_items');
     Route::get('/dashboard/api/remark-details', [DashboardController::class, 'apiRemarkDetails'])->name('dashboard.api.remarkDetails');
+    Route::get('/api/so/outs_by_customer', [\App\Http\Controllers\DashboardController::class, 'apiSoOutsByCustomer'])
+        ->name('api.so.outs_by_customer');
 });
 
 // Grup route untuk semua fitur yang memerlukan autentikasi

@@ -292,6 +292,10 @@
         .yz-caret.rot {
             transform: rotate(90deg);
         }
+
+        tbody.customer-focus-mode~tfoot.yz-footer-customer {
+            display: none !important;
+        }
     </style>
 @endpush
 
@@ -572,10 +576,16 @@
                     const kid = row.dataset.kid;
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
-                    const open = row.classList.contains('is-open');
-                    const tbody = row.closest('tbody');
 
-                    if (!open) {
+                    const tbody = row.closest('tbody');
+                    const tableEl = row.closest('table');
+                    const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
+
+                    // status sebelum toggle
+                    const wasOpen = row.classList.contains('is-open');
+
+                    // focus mode pada tbody utama
+                    if (!wasOpen) {
                         tbody.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
                     } else {
@@ -583,22 +593,32 @@
                         row.classList.remove('is-focused');
                     }
 
+                    // toggle state
                     row.classList.toggle('is-open');
-                    if (open) {
-                        slot.style.display = 'none';
-                        return;
-                    }
-                    slot.style.display = '';
 
+                    // tampil/sembunyi nested row
+                    slot.style.display = wasOpen ? 'none' : '';
+
+                    // ==== kontrol TOTAL (tfoot) – selain CSS, kita jaga via JS juga ====
+                    const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
+                        .some(tr => tr.style.display !== 'none');
+                    if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
+
+                    // kalau barusan menutup, selesai
+                    if (wasOpen) return;
+
+                    // jika sudah pernah dimuat, selesai
                     if (wrap.dataset.loaded === '1') return;
 
                     try {
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-            <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…</div>`;
-                        const url = new URL(apiSoByCustomer);
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
+      </div>`;
+                        const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
                         url.searchParams.set('auart', AUART);
+
                         const res = await fetch(url);
                         const js = await res.json();
                         if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');

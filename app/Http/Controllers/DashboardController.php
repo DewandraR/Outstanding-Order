@@ -10,6 +10,154 @@ use Illuminate\Contracts\Encryption\DecryptException;
 
 class DashboardController extends Controller
 {
+    // DashboardController.php
+    public function apiSoOutsByCustomer(Request $request)
+    {
+        $request->validate([
+            'currency' => 'required|string|in:USD,IDR',
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string',
+        ]);
+
+        $currency = $request->query('currency');
+        $location = $request->query('location');
+        $type     = $request->query('type');
+        $auart    = $request->query('auart');
+
+        // [FIX] Basis query diubah, dimulai dari t2 sama seperti logika KPI
+        $base = DB::table('so_yppr079_t2 as t2')
+            ->join(
+                'so_yppr079_t1 as t1',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0') // Hanya item outstanding
+            ->when($location, fn($q, $v) => $q->where('t2.IV_WERKS_PARAM', $v));
+
+        // [FIX] Filter currency sekarang menggunakan t2.WAERK (data header)
+        $base->where('t2.WAERK', $currency);
+
+        // Helper filter AUART/TYPE (sama seperti logika KPI)
+        $applyTypeOrAuart = function ($q) use ($type, $auart) {
+            if (!empty($auart)) {
+                $q->where("t2.IV_AUART_PARAM", $auart);
+                return;
+            }
+            if ($type === 'lokal' || $type === 'export') {
+                $q->join('maping as m', function ($j) {
+                    $j->on("t2.IV_AUART_PARAM", '=', 'm.IV_AUART')
+                        ->on("t2.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
+                });
+                if ($type === 'lokal') {
+                    $q->where('m.Deskription', 'like', '%Local%');
+                } else { // export
+                    $q->where('m.Deskription', 'like', '%Export%')
+                        ->where('m.Deskription', 'not like', '%Replace%')
+                        ->where('m.Deskription', 'not like', '%Local%');
+                }
+            }
+        };
+
+        // Terapkan filter tipe/auart
+        $applyTypeOrAuart($base);
+
+        // Ambil deskripsi order type untuk label
+        $base->leftJoin('maping as mp', function ($j) {
+            $j->on('t2.IV_AUART_PARAM', '=', 'mp.IV_AUART')
+                ->on('t2.IV_WERKS_PARAM', '=', 'mp.IV_WERKS');
+        });
+
+        $rows = $base
+            ->groupBy('t2.KUNNR', 't2.NAME1', 't2.IV_AUART_PARAM')
+            ->selectRaw("
+            t2.KUNNR,
+            MAX(t2.NAME1) AS NAME1,
+            t2.IV_AUART_PARAM AS AUART,
+            MAX(COALESCE(mp.Deskription, t2.IV_AUART_PARAM)) AS ORDER_TYPE,
+            CAST(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_VALUE
+        ")
+            ->havingRaw('SUM(t1.TOTPR2) > 0') // [FIX] Having juga menggunakan t1.TOTPR2
+            ->orderByDesc('TOTAL_VALUE')
+            ->limit(50000)
+            ->get();
+
+        return response()->json([
+            'ok'          => true,
+            'data'        => $rows,
+            'grand_total' => (float) ($rows->sum('TOTAL_VALUE') ?? 0),
+            'metric'      => 'TOTPR2_all_outstanding',
+        ]);
+    }
+
+
+    public function apiPoOutsByCustomer(Request $request)
+    {
+        $request->validate([
+            'currency' => 'required|string|in:USD,IDR',
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string',
+        ]);
+
+        $currency = $request->query('currency'); // USD | IDR
+        $location = $request->query('location'); // 2000 | 3000 | null
+        $type     = $request->query('type');     // lokal | export | null
+        $auart    = $request->query('auart');    // optional
+
+        // Basis: outstanding value (TOTPR) by customer, filter currency dari T2
+        $q = DB::table('so_yppr079_t2 as t2')
+            ->join(
+                'so_yppr079_t1 as t1',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
+            ->leftJoin('maping as m', function ($j) {
+                $j->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })
+            ->where('t2.WAERK', $currency)
+            ->when($location, fn($qq, $v) => $qq->where('t2.IV_WERKS_PARAM', $v))
+            ->when($auart,    fn($qq, $v) => $qq->where('t2.IV_AUART_PARAM', $v));
+
+        // Filter tipe (lokal/export) sama seperti dashboard PO
+        if ($type === 'lokal') {
+            $q->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($sub) {
+                $sub->select('IV_AUART', 'IV_WERKS')->from('maping')->where('Deskription', 'like', '%Local%')
+                    ->union(
+                        DB::table('so_yppr079_t2')
+                            ->select('IV_AUART_PARAM as IV_AUART', 'IV_WERKS_PARAM as IV_WERKS')
+                            ->groupBy('IV_AUART_PARAM', 'IV_WERKS_PARAM')
+                            ->havingRaw("SUM(CASE WHEN WAERK = 'IDR' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN WAERK = 'USD' THEN 1 ELSE 0 END) = 0")
+                    );
+            });
+        } elseif ($type === 'export') {
+            $q->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($sub) {
+                $sub->select('IV_AUART', 'IV_WERKS')->from('maping')
+                    ->where('Deskription', 'like', '%Export%')
+                    ->where('Deskription', 'not like', '%Replace%')
+                    ->where('Deskription', 'not like', '%Local%');
+            });
+        }
+
+        $rows = $q->groupBy('t2.KUNNR', 't2.NAME1', 't2.IV_AUART_PARAM', 'm.Deskription')
+            ->selectRaw("
+            t2.KUNNR,
+            MAX(t2.NAME1) as NAME1,
+            t2.IV_AUART_PARAM as AUART,
+            COALESCE(m.Deskription, t2.IV_AUART_PARAM) as ORDER_TYPE,
+            CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) as TOTAL_VALUE
+        ")
+            ->havingRaw('SUM(t1.TOTPR) > 0')
+            ->orderByDesc('TOTAL_VALUE')
+            ->limit(5000)
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
+
     public function redirector(Request $request)
     {
         try {

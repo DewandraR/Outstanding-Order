@@ -45,13 +45,13 @@
                         <li class="nav-item mb-2 me-2">
                             <a class="nav-link pill-green {{ $selectedType == 'whfg' ? 'active' : '' }}"
                                 href="{{ route('stock.index', ['q' => Crypt::encrypt(['werks' => $selectedWerks, 'type' => 'whfg'])]) }}">
-                                WHFG (Stock = {{ $fmtNumber($whfgQty) }})
+                                WHFG
                             </a>
                         </li>
                         <li class="nav-item mb-2 me-2">
                             <a class="nav-link pill-green {{ $selectedType == 'fg' ? 'active' : '' }}"
                                 href="{{ route('stock.index', ['q' => Crypt::encrypt(['werks' => $selectedWerks, 'type' => 'fg'])]) }}">
-                                FG (Stock = {{ $fmtNumber($fgQty) }})
+                                Packing
                             </a>
                         </li>
                     </ul>
@@ -83,7 +83,6 @@
                             <tr>
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
-                                <th style="min-width:120px; text-align:center;">SO Count</th>
                                 <th style="min-width:150px; text-align:center;">Total Stock Qty</th>
                                 <th style="min-width:150px; text-align:center;">Value</th>
                             </tr>
@@ -100,14 +99,12 @@
                                     <td class="sticky-col-mobile-disabled text-start">
                                         <span class="fw-bold">{{ $r->NAME1 }}</span>
                                     </td>
-                                    <td class="text-center">{{ (int) $r->SO_COUNT }}</td>
                                     <td class="text-center">{{ $fmtNumber($r->TOTAL_QTY) }}</td>
-                                    <td class="text-center">
-                                        @php echo $fmtMoney($r->TOTAL_VALUE, $r->WAERK); @endphp
-                                    </td>
+                                    <td class="text-center">@php echo $fmtMoney($r->TOTAL_VALUE, $r->WAERK); @endphp</td>
                                 </tr>
                                 <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                                    <td colspan="6" class="p-0">
+                                    {{-- <== jumlah kolom sekarang 4, jadi colspan 4 --}}
+                                    <td colspan="4" class="p-0">
                                         <div class="yz-nest-wrap">
                                             <div
                                                 class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
@@ -119,7 +116,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="text-center p-5">
+                                    <td colspan="4" class="text-center p-5">
                                         <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
                                         <h5 class="text-muted">Data tidak ditemukan</h5>
                                     </td>
@@ -127,26 +124,13 @@
                             @endforelse
                         </tbody>
 
-                        {{-- ====== FOOTER TOTAL ====== --}}
                         @if ($rows->count())
                             <tfoot>
                                 <tr class="table-light">
                                     <th></th>
-                                    <th class="text-start">
-                                        <span class="fw-bold">TOTAL</span>
-                                    </th>
-                                    {{-- total SO Count seluruh baris --}}
-                                    <th class="text-center">
-                                        @php
-                                            // jumlahkan SO_COUNT dari current page (atau bisa global dari backend kalau mau semua data)
-                                            $sumSoCount = $rows->sum(fn($x) => (int) $x->SO_COUNT);
-                                            echo $fmtNumber($sumSoCount);
-                                        @endphp
-                                    </th>
-                                    {{-- grand total qty dari backend (seluruh data sesuai filter) --}}
-                                    <th class="text-center">
-                                        {{ $fmtNumber($grandTotalQty ?? 0) }}
-                                    </th>
+                                    <th class="text-start"><span class="fw-bold">TOTAL</span></th>
+                                    {{-- grand total qty dari backend --}}
+                                    <th class="text-center">{{ $fmtNumber($grandTotalQty ?? 0) }}</th>
                                     {{-- total value per currency --}}
                                     <th class="text-center">
                                         @if (!empty($grandTotalsCurr))
@@ -188,10 +172,10 @@
             // ===== Aksesibilitas label kolom saat mobile =====
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
                 row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
-                row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'SO Count');
-                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Total Stock Qty');
-                row.querySelector('td:nth-child(5)')?.setAttribute('data-label', 'Value');
+                row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Total Stock Qty');
+                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Value');
             });
+
 
             // ===== Helpers JS untuk format pada level 2/3 =====
             const formatCurrency = (value, currency, decimals = 2) => {
@@ -220,37 +204,35 @@
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
 
                 let html = `<div>
-            <h5 class="yz-table-title-nested yz-title-so">
-                <i class="fas fa-file-invoice me-2"></i>Outstanding SO
-            </h5>
-            <table class="table table-sm mb-0 yz-mini">
-                <thead class="yz-header-so">
-                    <tr>
-                        <th style="width:40px;"></th>
-                        <th class="text-start">SO</th>
-                        <th class="text-center">SO Item Count</th>
-                        <th class="text-center">Total Stock Qty</th>
-                        <th class="text-center">Value</th>
-                    </tr>
-                </thead>
-                <tbody>`;
+    <h5 class="yz-table-title-nested yz-title-so">
+        <i class="fas fa-file-invoice me-2"></i>Outstanding SO
+    </h5>
+    <table class="table table-sm mb-0 yz-mini">
+      <thead class="yz-header-so">
+        <tr>
+          <th style="width:40px;"></th>
+          <th class="text-start">SO</th>
+          <th class="text-center">Total Stock Qty</th>
+          <th class="text-center">Value</th>
+        </tr>
+      </thead>
+      <tbody>`;
 
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     html += `<tr class="yz-row js-t2row" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-                        <td class="text-center"><span class="yz-caret">▸</span></td>
-                        <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-                        <td class="text-center">${r.item_count ?? '-'}</td>
-                        <td class="text-center">${formatNumber(r.total_qty)}</td>
-                        <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-                    </tr>
-                    <tr id="${rid}" class="yz-nest" style="display:none;">
-                        <td colspan="5" class="p-0">
-                            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-                                <div class="yz-slot-items p-2"></div>
-                            </div>
-                        </td>
-                    </tr>`;
+        <td class="text-center"><span class="yz-caret">▸</span></td>
+        <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+        <td class="text-center">${formatNumber(r.total_qty)}</td>
+        <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
+      </tr>
+      <tr id="${rid}" class="yz-nest" style="display:none;">
+        <td colspan="4" class="p-0">
+          <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+            <div class="yz-slot-items p-2"></div>
+          </div>
+        </td>
+      </tr>`;
                 });
 
                 html += `</tbody></table></div>`;
@@ -307,10 +289,16 @@
                     const kid = row.dataset.kid;
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
-                    const isOpen = row.classList.contains('is-open');
-                    const tbodyUtama = row.closest('tbody');
 
-                    if (!isOpen) {
+                    const tbodyUtama = row.closest('tbody');
+                    const tableEl = row.closest('table');
+                    const tfootEl = tableEl?.querySelector('tfoot');
+
+                    // ⬇︎ status sebelum toggle
+                    const wasOpen = row.classList.contains('is-open');
+
+                    // mode fokus
+                    if (!wasOpen) {
                         tbodyUtama.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
                     } else {
@@ -318,23 +306,40 @@
                         row.classList.remove('is-focused');
                     }
 
+                    // toggle state
                     row.classList.toggle('is-open');
-                    if (isOpen) {
-                        slot.style.display = 'none';
-                        return;
+
+                    // ⬇︎ TAMPILKAN/SEMBUNYIKAN NEST SESUAI AKSI
+                    if (wasOpen) {
+                        slot.style.display = 'none'; // TUTUP
+                    } else {
+                        slot.style.display = ''; // BUKA
                     }
 
-                    slot.style.display = '';
+                    // ⬇︎ HITUNG: masih ada nest yang terlihat tidak?
+                    const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
+                        .some(tr => tr.style.display !== 'none');
+
+                    // ⬇︎ KONTROL TOTAL (tfoot)
+                    if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
+
+                    // kalau cuma MENUTUP, selesai
+                    if (wasOpen) return;
+
+                    // kalau BUKA & sudah pernah dimuat, selesai
                     if (wrap.dataset.loaded === '1') return;
 
+                    // fetch level-2 (SO per customer)
                     try {
-                        wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
-                                  </div>`;
                         const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
                         url.searchParams.set('type', TYPE);
+
+                        wrap.innerHTML = `
+        <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+          <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
+        </div>`;
 
                         const res = await fetch(url);
                         const js = await res.json();
@@ -342,7 +347,6 @@
 
                         wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
                         wrap.dataset.loaded = '1';
-
                         // bind level 3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {

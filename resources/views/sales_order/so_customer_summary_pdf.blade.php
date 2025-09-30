@@ -97,7 +97,7 @@
 </head>
 
 <body>
-    <div class="title">Overview Customer — {{ $locationName }} ({{ $werks }}) — {{ $auartDescription }}</div>
+    <div class="title">Overview Customer — {{ $locationName }} — {{ $auartDescription }}</div>
     <div class="subtitle">{{ $today->format('d F Y') }}</div>
 
     <table>

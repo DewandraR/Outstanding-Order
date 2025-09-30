@@ -1,5 +1,4 @@
 <?php
-/* composer update maatwebsite/excel -- -W */
 
 namespace App\Exports;
 
@@ -13,6 +12,8 @@ use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 
 class SoItemsExport implements
     FromCollection,
@@ -20,10 +21,11 @@ class SoItemsExport implements
     WithMapping,
     ShouldAutoSize,
     WithStyles,
-    WithStrictNullComparison,   // pastikan 0 tidak dianggap kosong
-    WithColumnFormatting        // format angka untuk kolom kuantitas
+    WithStrictNullComparison,
+    WithColumnFormatting
 {
     protected $items;
+    protected $customerRows = []; // Untuk melacak baris-baris header customer
 
     /**
      * Menerima koleksi data item dari controller saat class ini dibuat.
@@ -32,17 +34,46 @@ class SoItemsExport implements
      */
     public function __construct(Collection $items)
     {
+        // Data asli
         $this->items = $items;
     }
 
     /**
      * Mengembalikan koleksi data yang akan diproses oleh library Excel.
+     * Logika utama untuk menyisipkan header customer berada di sini.
      *
      * @return \Illuminate\Support\Collection
      */
     public function collection()
     {
-        return $this->items;
+        // Baris awal dimulai dari 2 (karena baris 1 adalah Heading/Judul kolom)
+        $currentRow = 2;
+        $finalCollection = new Collection();
+        $groups = $this->items->groupBy(function ($item) {
+            $name = preg_replace('/\s+/', ' ', trim($item->headerInfo->NAME1 ?? ''));
+            return $name === '' ? '(Unknown Customer)' : $name;
+        });
+
+        foreach ($groups as $customerName => $rows) {
+            // 1. Tambahkan baris header customer
+            $customerHeader = (object) [
+                'is_customer_header' => true,
+                'customer_name' => "Customer: " . $customerName,
+            ];
+            $finalCollection->push($customerHeader);
+            $this->customerRows[] = $currentRow; // Simpan baris untuk styling
+            $currentRow++;
+
+            // 2. Tambahkan baris data item
+            foreach ($rows as $item) {
+                // Tambahkan headerInfo agar bisa diakses di map
+                $item->is_customer_header = false;
+                $finalCollection->push($item);
+                $currentRow++;
+            }
+        }
+
+        return $finalCollection;
     }
 
     /**
@@ -53,7 +84,7 @@ class SoItemsExport implements
     public function headings(): array
     {
         return [
-            'Costumer',
+            'Customer',
             'PO',
             'SO',
             'Item',
@@ -62,7 +93,7 @@ class SoItemsExport implements
             'Qty SO',
             'Outs. SO',
             'WHFG',
-            'Stock Packing',
+            'Stock Packg.',
             'GR ASSY',
             'GR PAINT',
             'GR PKG',
@@ -72,28 +103,34 @@ class SoItemsExport implements
 
     /**
      * Memetakan data dari setiap item objek ke dalam format array.
-     * Urutan array ini harus sama persis dengan urutan di headings().
      *
      * @param mixed $item Satu baris data dari koleksi.
      * @return array
      */
     public function map($item): array
     {
+        // Periksa apakah ini baris header customer
+        if (property_exists($item, 'is_customer_header') && $item->is_customer_header) {
+            // Untuk baris header, letakkan nama customer di kolom pertama dan sisanya kosong
+            return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', '', ''];
+        }
+
+        // Baris data item biasa
         return [
-            $item->headerInfo->NAME1 ?? '',
-            $item->headerInfo->BSTNK ?? '',
-            $item->VBELN,
-            (int) ($item->POSNR ?? 0),
-            $item->MATNR,
-            $item->MAKTX,
-            (float) ($item->KWMENG ?? 0),
-            (float) ($item->PACKG  ?? 0),
-            (float) ($item->KALAB  ?? 0),
-            (float) ($item->KALAB2 ?? 0),
-            (float) ($item->ASSYM  ?? 0),  // GR ASSY
-            (float) ($item->PAINT  ?? 0),  // GR PAINT
-            (float) ($item->MENGE  ?? 0),  // GR PKG
-            $item->remark,
+            $item->headerInfo->NAME1 ?? '', // Kolom Customer
+            $item->headerInfo->BSTNK ?? '', // Kolom PO
+            $item->VBELN,                   // Kolom SO
+            (int) ($item->POSNR ?? 0),      // Kolom Item
+            $item->MATNR,                   // Kolom Material FG
+            $item->MAKTX,                   // Kolom Description
+            (float) ($item->KWMENG ?? 0),   // Kolom Qty SO
+            (float) ($item->PACKG  ?? 0),   // Kolom Outs. SO
+            (float) ($item->KALAB  ?? 0),   // Kolom WHFG
+            (float) ($item->KALAB2 ?? 0),   // Kolom Stock Packg.
+            (float) ($item->ASSYM  ?? 0),   // Kolom GR ASSY
+            (float) ($item->PAINT  ?? 0),   // Kolom GR PAINT
+            (float) ($item->MENGE  ?? 0),   // Kolom GR PKG
+            $item->remark,                  // Kolom Remark
         ];
     }
 
@@ -105,9 +142,37 @@ class SoItemsExport implements
      */
     public function styles(Worksheet $sheet)
     {
-        return [
+        $styles = [
             1 => ['font' => ['bold' => true]], // Header tebal
         ];
+
+        // Terapkan style untuk baris customer (gabung cell dan beri warna latar)
+        foreach ($this->customerRows as $row) {
+            // Gabungkan kolom A sampai N (sesuaikan jika jumlah kolom berubah)
+            $sheet->mergeCells("A{$row}:N{$row}");
+
+            $styles[$row] = [
+                'font' => [
+                    'bold' => true,
+                    'size' => 12, // Ukuran font lebih besar
+                ],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'color' => ['rgb' => 'E9ECEF'] // Warna latar abu-abu muda
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => '333333'],
+                    ],
+                ],
+                'alignment' => [
+                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                ],
+            ];
+        }
+
+        return $styles;
     }
 
     /**
@@ -118,18 +183,15 @@ class SoItemsExport implements
      */
     public function columnFormats(): array
     {
-        // Kolom:
-        // A Costumer, B PO, C SO, D Item, E Material FG, F Description,
-        // G Qty SO, H Outs. SO, I WHFG, J Stock Packing,
-        // K GR ASSY, L GR PAINT, M GR PKG, N Remark
         return [
-            'G' => NumberFormat::FORMAT_NUMBER, // Qty SO
-            'H' => NumberFormat::FORMAT_NUMBER, // Outs. SO
-            'I' => NumberFormat::FORMAT_NUMBER, // WHFG
-            'J' => NumberFormat::FORMAT_NUMBER, // Stock Packing
-            'K' => NumberFormat::FORMAT_NUMBER, // GR ASSY
-            'L' => NumberFormat::FORMAT_NUMBER, // GR PAINT
-            'M' => NumberFormat::FORMAT_NUMBER, // GR PKG
+            // Kolom G-M untuk kuantitas
+            'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // Qty SO
+            'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // Outs. SO
+            'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // WHFG
+            'J' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // Stock Packg.
+            'K' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // GR ASSY
+            'L' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // GR PAINT
+            'M' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // GR PKG
         ];
     }
 }

@@ -11,12 +11,10 @@
             font-size: 9px;
         }
 
-        /* Ukuran font sedikit dikecilkan untuk lebih banyak ruang */
         .table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 15px;
-            /* Memaksa tabel untuk mengikuti lebar kolom yang ditentukan */
             table-layout: fixed;
         }
 
@@ -24,10 +22,8 @@
         .table td {
             border: 1px solid #333;
             padding: 5px;
-            /* Padding sedikit dikurangi */
             text-align: center;
             vertical-align: middle;
-            /* Aturan ini akan memecah teks yang sangat panjang */
             word-wrap: break-word;
         }
 
@@ -38,6 +34,10 @@
 
         .text-left {
             text-align: left;
+        }
+
+        .v-middle {
+            vertical-align: middle;
         }
 
         .header-title {
@@ -52,58 +52,88 @@
             margin-top: 0;
             font-size: 11px;
         }
+
+        /* Header tabel muncul tiap halaman & baris tidak terbelah */
+        thead {
+            display: table-header-group;
+        }
+
+        tr {
+            page-break-inside: avoid;
+        }
+
+        /* Judul customer lebih besar & tebal */
+        .customer-title {
+            background: #e9ecef;
+            font-weight: 700;
+            font-size: 12px;
+            /* > dari font body 9px */
+            text-align: left;
+            padding: 8px 6px;
+        }
     </style>
 </head>
 
 <body>
-    <h2 class="header-title">Outstanding SO {{ $locationName }} ({{ $werks }}) - {{ $auartDescription }}</h2>
+    <h2 class="header-title">Outstanding SO {{ $locationName }} - {{ $auartDescription }}</h2>
     <p class="header-subtitle">{{ strtoupper(date('d F Y')) }}</p>
 
-    <table class="table">
-        <thead style="font-size: 9px;">
-            <tr>
-                <th style="width: 14%;">Customer</th>
-                <th style="width: 8%;">PO</th>
-                <th style="width: 6%;">SO</th>
-                <th style="width: 4%;">Item</th>
-                <th style="width: 10%;">Material FG</th>
-                <th class="text-left" style="width: 20%;">Desc FG</th>
-                <th style="width: 5%;">Qty SO</th>
-                <th style="width: 5%;">Outs. SO</th>
-                <th style="width: 5%;">WHFG</th>
-                <th style="width: 5%;">Stock Packg.</th>
-                <th style="width: 5%;">GR ASSY</th>
-                <th style="width: 5%;">GR PAINT</th>
-                <th style="width: 5%;">GR PKG</th>
-                <th class="text-left" style="width: 8%;">Remark</th>
-            </tr>
-        </thead>
-        <tbody>
-            @forelse($items as $item)
-                <tr>
-                    <td class="text-left">{{ $item->headerInfo->NAME1 ?? '' }}</td>
-                    <td>{{ $item->headerInfo->BSTNK ?? '' }}</td>
-                    <td>{{ $item->VBELN }}</td>
-                    <td>{{ (int) $item->POSNR }}</td>
-                    <td>{{ $item->MATNR }}</td>
-                    <td class="text-left">{{ $item->MAKTX }}</td>
-                    <td>{{ number_format($item->KWMENG, 0) }}</td>
-                    <td>{{ number_format($item->PACKG, 0) }}</td>
-                    <td>{{ number_format($item->KALAB ?? 0, 0) }}</td>
-                    <td>{{ number_format($item->KALAB2 ?? 0, 0) }}</td>
-                    <td>{{ number_format($item->ASSYM ?? 0, 0) }}</td>
-                    <td>{{ number_format($item->PAINT ?? 0, 0) }}</td>
-                    <<td>{{ number_format($item->MENGE ?? 0, 0) }}</td>
-                    <td class="text-left">{{ $item->remark }}</td>
-                </tr>
-            @empty
-                <tr>
-                    <td colspan="13">Tidak ada item yang dipilih untuk diekspor.</td>
-                </tr>
-            @endforelse
-        </tbody>
+    @php
+        $groups = collect($items)->groupBy(function ($it) {
+            $name = preg_replace('/\s+/', ' ', trim($it->headerInfo->NAME1 ?? ''));
+            return $name === '' ? '(Unknown Customer)' : $name;
+        });
+    @endphp
 
-    </table>
+    @foreach ($groups as $customerName => $rows)
+        <table class="table" style="margin-top:16px;">
+            <thead style="display: table-header-group;"> {{-- diulang setiap halaman --}}
+                <tr>
+                    {{-- SESUAIKAN colspan DENGAN JUMLAH KOLOM DI BAWAH (sekarang 14 kolom) --}}
+                    <th colspan="14" class="customer-title">
+                        Customer: {{ $customerName }}
+                    </th>
+                </tr>
+                <tr>
+                    <th style="width:4%;">No.</th>
+                    <th style="width:8%;">PO</th>
+                    <th style="width:6%;">SO</th>
+                    <th style="width:4%;">Item</th>
+                    <th style="width:10%;">Material FG</th>
+                    <th class="text-left" style="width:20%;">Desc FG</th>
+                    <th style="width:5%;">Qty SO</th>
+                    <th style="width:5%;">Outs. SO</th>
+                    <th style="width:5%;">WHFG</th>
+                    <th style="width:5%;">Stock Packg.</th>
+                    <th style="width:5%;">GR ASSY</th>
+                    <th style="width:5%;">GR PAINT</th>
+                    <th style="width:5%;">GR PKG</th>
+                    <th class="text-left" style="width:7%;">Remark</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach ($rows as $item)
+                    <tr>
+                        {{-- Nomor reset per-customer --}}
+                        <td>{{ $loop->iteration }}</td>
+                        <td>{{ $item->headerInfo->BSTNK ?? '' }}</td>
+                        <td>{{ $item->VBELN }}</td>
+                        <td>{{ (int) $item->POSNR }}</td>
+                        <td>{{ $item->MATNR }}</td>
+                        <td class="text-left">{{ $item->MAKTX }}</td>
+                        <td>{{ number_format((float) $item->KWMENG, 0) }}</td>
+                        <td>{{ number_format((float) ($item->PACKG ?? 0), 0) }}</td>
+                        <td>{{ number_format((float) ($item->KALAB ?? 0), 0) }}</td>
+                        <td>{{ number_format((float) ($item->KALAB2 ?? 0), 0) }}</td>
+                        <td>{{ number_format((float) ($item->ASSYM ?? 0), 0) }}</td>
+                        <td>{{ number_format((float) ($item->PAINT ?? 0), 0) }}</td>
+                        <td>{{ number_format((float) ($item->MENGE ?? 0), 0) }}</td>
+                        <td class="text-left">{{ $item->remark }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endforeach
 </body>
 
 </html>

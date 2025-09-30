@@ -634,6 +634,18 @@ thead th {
     position: relative; /* Penting untuk header tabel yang 'sticky' */
 }
 
+.yz-sticky-thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8f9fa;
+}
+.yz-scrollable-table-container {
+    overflow: auto;
+}
+
+
+
 @keyframes pulse-highlight {
     0% {
         background-color: #dbeafe;
