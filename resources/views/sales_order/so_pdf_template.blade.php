@@ -95,20 +95,21 @@
                     </th>
                 </tr>
                 <tr>
-                    <th style="width:4%;">No.</th>
-                    <th style="width:8%;">PO</th>
+                    {{-- PERUBAHAN LEBAR KOLOM UNTUK MEMBERI RUANG PADA REMARK --}}
+                    <th style="width:3%;">No.</th>
+                    <th style="width:7%;">PO</th>
                     <th style="width:6%;">SO</th>
-                    <th style="width:4%;">Item</th>
-                    <th style="width:10%;">Material FG</th>
-                    <th class="text-left" style="width:20%;">Desc FG</th>
-                    <th style="width:5%;">Qty SO</th>
-                    <th style="width:5%;">Outs. SO</th>
-                    <th style="width:5%;">WHFG</th>
-                    <th style="width:5%;">Stock Packg.</th>
-                    <th style="width:5%;">GR ASSY</th>
-                    <th style="width:5%;">GR PAINT</th>
-                    <th style="width:5%;">GR PKG</th>
-                    <th class="text-left" style="width:7%;">Remark</th>
+                    <th style="width:3%;">Item</th>
+                    <th style="width:8%;">Material FG</th>
+                    <th class="text-left" style="width:19%;">Desc FG</th>
+                    <th style="width:4%;">Qty SO</th>
+                    <th style="width:4%;">Outs. SO</th>
+                    <th style="width:4%;">WHFG</th>
+                    <th style="width:4%;">Stock Packg.</th>
+                    <th style="width:4%;">GR ASSY</th>
+                    <th style="width:4%;">GR PAINT</th>
+                    <th style="width:4%;">GR PKG</th>
+                    <th class="text-left" style="width:17%;">Remark</th>
                 </tr>
             </thead>
             <tbody>
