@@ -2,14 +2,12 @@
 <html>
 
 <head>
-    
     <meta charset="utf-8">
     <title>Outstanding SO Items</title>
     <style>
         /* composer require barryvdh/laravel-dompdf */
         body {
-            /* UBAH: Gunakan Times New Roman atau Monospace untuk konsistensi */
-            font-family: 'Times New Roman', Times, serif;
+            font-family: 'Helvetica', sans-serif;
             font-size: 9px;
         }
 
