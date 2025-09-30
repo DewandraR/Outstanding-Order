@@ -89,14 +89,13 @@
         <table class="table" style="margin-top:16px;">
             <thead style="display: table-header-group;"> {{-- diulang setiap halaman --}}
                 <tr>
-                    {{-- SESUAIKAN colspan DENGAN JUMLAH KOLOM DI BAWAH (sekarang 14 kolom) --}}
-                    <th colspan="14" class="customer-title">
+                    {{-- SEBELUMNYA 14, SEKARANG HANYA 13 KOLOM! --}}
+                    <th colspan="13" class="customer-title">
                         Customer: {{ $customerName }}
                     </th>
                 </tr>
                 <tr>
                     {{-- PERUBAHAN LEBAR KOLOM UNTUK MEMBERI RUANG PADA REMARK --}}
-                    <th style="width:3%;">No.</th>
                     <th style="width:7%;">PO</th>
                     <th style="width:6%;">SO</th>
                     <th style="width:3%;">Item</th>
@@ -109,14 +108,13 @@
                     <th style="width:4%;">GR ASSY</th>
                     <th style="width:4%;">GR PAINT</th>
                     <th style="width:4%;">GR PKG</th>
-                    <th class="text-left" style="width:17%;">Remark</th>
+                    <th class="text-left" style="width:20%;">Remark</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach ($rows as $item)
                     <tr>
                         {{-- Nomor reset per-customer --}}
-                        <td>{{ $loop->iteration }}</td>
                         <td>{{ $item->headerInfo->BSTNK ?? '' }}</td>
                         <td>{{ $item->VBELN }}</td>
                         <td>{{ (int) $item->POSNR }}</td>
