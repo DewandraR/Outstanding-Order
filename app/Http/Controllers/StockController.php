@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Maatwebsite\Excel\Facades\Excel; // 🟢 FIX: Mengaktifkan Facade Excel
+use App\Exports\StockItemsExport;   // 🟢 FIX: Mengimpor Export Class
 
 class StockController extends Controller
 {
@@ -100,7 +103,7 @@ class StockController extends Controller
                 ))
                 ->where('IV_WERKS_PARAM', $werks)
                 ->when($type === 'whfg', fn($qq) => $qq->where('KALAB', '>', 0))
-                ->when($type === 'fg',   fn($qq) => $qq->where('KALAB2', '>', 0))
+                ->when($type === 'fg', fn($qq) => $qq->where('KALAB2', '>', 0))
                 ->groupBy('WAERK')
                 ->get();
 
@@ -193,6 +196,7 @@ class StockController extends Controller
 
         $items = DB::table('so_yppr079_t1')
             ->select(
+                'id', // <-- Tambahkan ID untuk keperluan checkbox/export
                 DB::raw("TRIM(LEADING '0' FROM POSNR) as POSNR"),
                 'MATNR',
                 'MAKTX',
@@ -201,9 +205,10 @@ class StockController extends Controller
                 'KALAB',  // WHFG
                 'NETPR',
                 'WAERK',
-                DB::raw("CASE 
-                    WHEN '{$type}' = 'whfg' THEN (KALAB * NETPR) 
-                    ELSE (KALAB2 * NETPR) 
+                'VBELN', // Tambahkan VBELN untuk keperluan itemIdToSO di FE
+                DB::raw("CASE
+                    WHEN '{$type}' = 'whfg' THEN (KALAB * NETPR)
+                    ELSE (KALAB2 * NETPR)
                 END as VALUE")
             )
             ->where('VBELN', $request->vbeln)
@@ -214,5 +219,72 @@ class StockController extends Controller
             ->get();
 
         return response()->json(['ok' => true, 'data' => $items]);
+    }
+
+    /**
+     * Export PDF / Excel untuk item terpilih (Stock).
+     */
+    public function exportData(Request $request)
+    {
+        $validated = $request->validate([
+            'item_ids'    => 'required|array',
+            'item_ids.*'  => 'integer',
+            'export_type' => 'required|string|in:pdf,excel',
+            'werks'       => 'required|string',
+            'type'        => 'required|string',
+        ]);
+
+        $itemIds    = $validated['item_ids'];
+        $exportType = $validated['export_type'];
+        $werks      = $validated['werks'];
+        $type       = $validated['type'];
+
+        $items = DB::table('so_yppr079_t1 as t1')
+            ->whereIn('t1.id', $itemIds)
+            ->select(
+                't1.VBELN',
+                't1.KUNNR',
+                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
+                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
+                't1.MAKTX',
+                't1.KWMENG',
+                't1.KALAB',
+                't1.KALAB2',
+                't1.NETPR',
+                't1.WAERK',
+                // Ambil info header tambahan (NAME1/Customer Name, PO/BSTNK)
+                DB::raw("(SELECT NAME1 FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS NAME1"),
+                DB::raw("(SELECT BSTNK FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS BSTNK")
+            )
+            ->orderBy('t1.KUNNR', 'asc')
+            ->orderBy('t1.VBELN', 'asc')
+            ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
+            ->get();
+
+        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+        $locationName = $locationMap[$werks] ?? $werks;
+        $stockType    = $type === 'whfg' ? 'WHFG' : 'PACKING';
+
+        $fileExtension = $exportType === 'excel' ? 'xlsx' : 'pdf';
+        $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".{$fileExtension}";
+
+        if ($exportType === 'excel') {
+            // 🟢 MENGAKTIFKAN EXCEL DOWNLOAD
+            return Excel::download(new StockItemsExport($items, $type), $fileName);
+        }
+
+        // PDF: Pastikan data untuk header info ada di level terluar (seperti yang dilakukan di subquery)
+        $dataForPdf = [
+            'items'          => $items,
+            'locationName'   => $locationName,
+            'werks'          => $werks,
+            'stockType'      => $stockType,
+            'today'          => now(),
+        ];
+
+        $pdf = Pdf::loadView('sales_order.stock_pdf_template', $dataForPdf)
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->stream($fileName);
     }
 }

@@ -87,6 +87,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/stock-report/redirect', [StockController::class, 'redirector'])
         ->name('stock.redirector');
 
+    // [BARU] Route Export Item Stock
+    Route::post('/stock-report/export', [StockController::class, 'exportData'])->name('stock.export'); // 👈 DITAMBAHKAN
+
     // ==========================================================
     // == DASHBOARD STOK (VISUAL)
     // ==========================================================

@@ -463,6 +463,13 @@
                     });
             }
 
+            // ===== FIX #1: Block klik checkbox di Tabel-2 pada PHASE CAPTURE agar tidak mem-bubble ke baris =====
+            document.addEventListener('click', function(e) {
+                if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) {
+                    e.stopPropagation();
+                }
+            }, true); // <<-- penting: true = capture phase
+
             // ------- RENDERERS -------
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
@@ -567,7 +574,6 @@
                 return html;
             }
 
-
             // ------- EVENTS -------
             // Expand Level-1 (customer) -> load T2
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
@@ -599,9 +605,28 @@
                     // tampil/sembunyi nested row
                     slot.style.display = wasOpen ? 'none' : '';
 
+                    // ===== FIX: saat menutup customer, paksa tutup semua nested di dalamnya =====
+                    if (wasOpen) {
+                        const wrap = slot.querySelector('.yz-nest-wrap');
+
+                        // Tutup semua baris T3 di bawah customer ini
+                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => {
+                            tr.style.display = 'none';
+                        });
+
+                        // Bersihkan state fokus/caret di T2
+                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
+                            .remove('so-focus-mode'));
+                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
+                            .remove('is-focused'));
+                        wrap?.querySelectorAll('.js-t2row .yz-caret.rot').forEach(c => c
+                            .classList.remove('rot'));
+                    }
+
+
                     // ==== kontrol TOTAL (tfoot) – selain CSS, kita jaga via JS juga ====
                     const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
-                        .some(tr => tr.style.display !== 'none');
+                        .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
                     if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
 
                     // kalau barusan menutup, selesai
@@ -629,6 +654,13 @@
                         // Klik baris SO -> expand T3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
+                                // ===== FIX #2: abaikan klik dari checkbox/input agar tidak expand =====
+                                if (ev.target.closest(
+                                        '.check-so, .check-all-sos, .form-check-input'
+                                    )) {
+                                    return; // jangan expand
+                                }
+
                                 ev.stopPropagation();
                                 const vbeln = soRow.dataset.vbeln;
                                 const tgtId = soRow.dataset.tgt;
@@ -1015,7 +1047,6 @@
                             foundItemsBox = itemsBox;
                             break;
                         }
-                        // tutup kembali jika sebelumnya tertutup
                     }
                     if (!foundSoRow) return;
 
