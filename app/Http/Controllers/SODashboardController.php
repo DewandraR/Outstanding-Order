@@ -68,11 +68,6 @@ class SODashboardController extends Controller
         $type     = $request->query('type');
         $auart    = $request->query('auart');
 
-        $safeEdatuT2 = "COALESCE(
-        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-    )";
-
         // Basis query: item outstanding yang OVERDUE
         $base = DB::table('so_yppr079_t2 as t2')
             ->join(

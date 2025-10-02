@@ -480,17 +480,19 @@
             style.id = 'yzToggleCss';
             style.textContent = `
         .yz-card-toolbar {
-            position: absolute;
-            top: .75rem; /* Sedikit ke bawah agar sejajar dengan judul */
-            right: .75rem;
-            z-index: 3;
+        position: absolute;
+        top: .75rem;
+        right: .75rem;
+        z-index: 3;
+        }
+        .yz-card-header-pad {
+            padding-right: 96px !important; 
         }
         .yz-card-toolbar .btn {
             padding: .15rem .5rem;
             font-size: .75rem;
             line-height: 1.1;
         }
-        .yz-card-header-pad{padding-right:96px !important;}
     `;
             document.head.appendChild(style);
         }
@@ -572,10 +574,23 @@
                                         const totalTxt = formatFullCurrency(context.raw, currency);
 
                                         let breakdownTxt = '';
-                                        // LOGIKA INI KHUSUS UNTUK CHART SO, DIHAPUS UNTUK PO
-                                        // if (canvasId === 'chartTopCustomersValueSO') {
-                                        // ... logic SO ...
-                                        // }
+                                        if (canvasId === 'chartTopCustomersValueSO') {
+                                            const sby = Number(dataPoint.sby_value || 0);
+                                            const smg = Number(dataPoint.smg_value || 0);
+
+                                            if (sby > 0 && smg > 0) {
+                                                // gabungan → tampilkan keduanya dengan nilai masing-masing
+                                                breakdownTxt =
+                                                    ` (SMG: ${formatFullCurrency(smg, currency)}, ` +
+                                                    `SBY: ${formatFullCurrency(sby, currency)})`;
+                                            } else if (smg > 0 && sby === 0) {
+                                                // hanya SMG → tampilkan label saja
+                                                breakdownTxt = ' (SMG)';
+                                            } else if (sby > 0 && smg === 0) {
+                                                // hanya SBY → tampilkan label saja
+                                                breakdownTxt = ' (SBY)';
+                                            }
+                                        }
 
                                         const soCountTxt = dataPoint.so_count ?
                                             ` (${dataPoint.so_count} PO)` : '';
@@ -1136,16 +1151,7 @@
             function mountCurrencyToggleIfNeeded() {
                 if (!enableCurrencyToggle) return;
 
-                if (!document.getElementById('yzToggleCss')) {
-                    const style = document.createElement('style');
-                    style.id = 'yzToggleCss';
-                    style.textContent = `
-    .yz-card-toolbar{position:absolute; top:.35rem; right:.75rem; z-index:3;}
-    .yz-card-toolbar .btn{padding:.15rem .5rem; font-size:.75rem; line-height:1.1;}
-    .yz-card-header-pad{padding-right:96px !important;}
-    `;
-                    document.head.appendChild(style);
-                }
+                injectToggleStyles(); // Pastikan style dasar absolute ada
 
                 const targets = [
                     document.getElementById('chartOutstandingLocation'),
@@ -1156,29 +1162,42 @@
                     const holder = document.createElement('div');
                     holder.className = 'yz-card-toolbar';
                     holder.innerHTML = `
-    <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
-        <button type="button" data-cur="USD"
-          class="btn ${currentCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
-        <button type="button" data-cur="IDR"
-          class="btn ${currentCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
-    </div>
-    `;
+        <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
+            <button type="button" data-cur="USD"
+            class="btn ${currentCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
+            <button type="button" data-cur="IDR"
+            class="btn ${currentCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
+        </div>
+        `;
                     return holder;
                 };
 
                 targets.forEach(cv => {
                     const card = cv.closest('.card');
                     const titleEl = card?.querySelector('.card-title');
-                    const headerRow = titleEl?.parentElement;
-                    if (!headerRow) return;
+                    const headerRow = titleEl?.parentElement; // Ini biasanya div yang membungkus Judul + HR
 
-                    if (!headerRow.style.position) headerRow.style.position = 'relative';
-                    headerRow.classList.add('yz-card-header-pad');
+                    if (!card || !headerRow) return;
+
+                    // --- Perbaikan Utama ---
+                    // 1. Hapus kelas padding yang menyebabkan ruang kosong
+                    headerRow.classList.remove('yz-card-header-pad');
+
+                    // 2. Terapkan position: relative ke Card/Card Body agar toolbar absolute posisinya benar.
+                    //    (Pilih card jika card-body tidak berfungsi)
+                    card.style.position = 'relative';
+
+                    // 3. Hapus toggle lama dan pasang yang baru
                     headerRow.querySelector('.yz-card-toolbar')?.remove();
 
                     const toolbar = makeToggle();
+                    // Pasang di card-body atau di elemen yang menampung Judul (headerRow)
+                    // Kita pasang di headerRow (div pembungkus judul) 
+                    // dan biarkan CSS absolute yang bekerja.
                     headerRow.appendChild(toolbar);
+                    // --- End Perbaikan Utama ---
 
+                    // (Logika klik toggle tetap sama)
                     toolbar.querySelector('.yz-currency-toggle')?.addEventListener('click', (e) => {
                         const btn = e.target.closest('button[data-cur]');
                         if (!btn) return;
@@ -1510,23 +1529,23 @@
                     </div>
                     <hr class="mt-2">
                     ${rows.length ? `
-                                        <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                            <table class="table table-sm table-hover align-middle mb-0">
-                                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                    <tr>
-                                                        <th class="text-center" style="width:60px;">NO.</th>
-                                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                                        <th class="text-center" style="min-width:120px;">EDATU</th>
-                                                        <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>${body}</tbody>
-                                            </table>
-                                        </div>` : `
-                                        <div class="text-muted p-4 text-center">
-                                            <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                        </div>`}
+                                                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                <table class="table table-sm table-hover align-middle mb-0">
+                                                                    <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                        <tr>
+                                                                            <th class="text-center" style="width:60px;">NO.</th>
+                                                                            <th class="text-center" style="min-width:120px;">PO</th>
+                                                                            <th class="text-center" style="min-width:120px;">SO</th>
+                                                                            <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                            <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>${body}</tbody>
+                                                                </table>
+                                                            </div>` : `
+                                                            <div class="text-muted p-4 text-center">
+                                                                <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                            </div>`}
                 </div>
             </div>`;
                         document.getElementById('closePoOverdueOverlay')?.addEventListener('click', () => {
@@ -1765,23 +1784,23 @@
                                 </div>
                                 <hr class="mt-2">
                                 ${rows.length ? `
-                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                        <table class="table table-sm table-hover align-middle mb-0">
-                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                <tr>
-                                                                    <th class="text-center" style="width:60px;">NO.</th>
-                                                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                                                    <th class="text-center" style="min-width:120px;">EDATU</th>
-                                                                    <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>${table}</tbody>
-                                                        </table>
-                                                    </div>` : `
-                                                    <div class="text-muted p-4 text-center">
-                                                        <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                    </div>`}
+                                                                        <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                            <table class="table table-sm table-hover align-middle mb-0">
+                                                                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                    <tr>
+                                                                                        <th class="text-center" style="width:60px;">NO.</th>
+                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                        <th class="text-center" style="min-width:120px;">EDATU</th>
+                                                                                        <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>${table}</tbody>
+                                                                            </table>
+                                                                        </div>` : `
+                                                                        <div class="text-muted p-4 text-center">
+                                                                            <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                        </div>`}
                             </div>
                         </div>`;
                     document.getElementById('closePoStatusDetails')?.addEventListener('click', () => {
