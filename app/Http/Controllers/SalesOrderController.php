@@ -239,7 +239,8 @@ class SalesOrderController extends Controller
                 try {
                     $edatuDate = \Carbon\Carbon::parse($row->EDATU)->startOfDay();
                     $formattedEdatu = $edatuDate->format('d-m-Y');
-                    $overdue = $today->diffInDays($edatuDate, false); // negatif = telat
+                    $delta   = $today->diffInDays($edatuDate, false);
+                    $overdue = ($delta < 0) ? abs($delta) : -$delta;
                 } catch (\Exception $e) { /* ignore */
                 }
             }
@@ -248,9 +249,16 @@ class SalesOrderController extends Controller
         }
 
         // Urutkan dari yang paling telat
+        $sorted = collect($rows)->sort(function ($a, $b) {
+            $aOver = $a->Overdue >= 0;
+            $bOver = $b->Overdue >= 0;
+            if ($aOver !== $bOver) return $aOver ? -1 : 1;     // overdue (positif) dulu
+            // Sama-sama overdue atau sama-sama belum overdue -> urut desc
+            return $b->Overdue <=> $a->Overdue;
+        })->values();
         return response()->json([
             'ok'   => true,
-            'data' => collect($rows)->sortBy('Overdue')->values(),
+            'data' => $sorted,
         ]);
     }
 
@@ -492,12 +500,7 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t2.NAME1) AS NAME1'),
                 DB::raw('MAX(t2.WAERK) AS WAERK'),
                 DB::raw('COALESCE(MAX(overdue_values.TOTAL_OVERDUE_VALUE), 0) AS TOTAL_VALUE'),
-                DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as SO_LATE_COUNT"),
-                DB::raw("
-                ROUND(
-                    (COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) / COUNT(DISTINCT t2.VBELN)) * 100, 2
-                ) as LATE_PCT
-            ")
+                DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
             )
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where('t2.IV_AUART_PARAM', $auart)

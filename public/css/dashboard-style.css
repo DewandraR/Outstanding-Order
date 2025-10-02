@@ -84,17 +84,6 @@ thead th {
     border-bottom: 2px solid #c7d2fe; /* Warna border yang serasi */
     font-weight: 600; /* Dibuat sama seperti header lain (tidak terlalu tebal) */
 }
-
-.yz-header-customer th,
-.yz-kunnr-row td {
-    text-align: center;
-    vertical-align: middle;
-}
-
-.yz-kunnr-row td:nth-child(2) {
-    text-align: left;
-}
-
 .sticky-col {
     position: sticky;
     left: 0;
@@ -642,6 +631,174 @@ thead th {
 }
 .yz-scrollable-table-container {
     overflow: auto;
+}
+
+.chart-container {
+    position: relative;
+    /* Menghapus min-height mutlak 350px dari definisi lama Anda */
+    /* min-height: 350px; <-- Hapus baris ini dari CSS Anda jika ada */
+    width: 100%;
+    /* Gunakan flex untuk memastikan canvas mengambil ruang yang tersedia */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-grow: 1; /* PENTING: Agar mengisi ruang vertikal yang tersisa */
+    min-height: 300px; /* Batas minimal agar tidak terlalu tipis */
+}
+
+/* Canvas di dalam chart-container */
+.chart-container canvas {
+    /* Batasi ukuran maksimum agar donut tidak pecah di ukuran sangat besar */
+    max-width: 100%;
+    max-height: 100%;
+    /* Kunci: Atur rasio agar donut proporsional dan mengisi ruang */
+    aspect-ratio: 1 / 1;
+}
+
+.chart-container {
+    position: relative;
+    /* Menghapus min-height mutlak 350px dari definisi lama Anda */
+    /* min-height: 350px; <-- Hapus baris ini dari CSS Anda jika ada */
+    width: 100%;
+    /* Gunakan flex untuk memastikan canvas mengambil ruang yang tersedia */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-grow: 1; /* PENTING: Agar mengisi ruang vertikal yang tersisa */
+    min-height: 300px; /* Batas minimal agar tidak terlalu tipis */
+}
+
+/* Canvas di dalam chart-container */
+.chart-container canvas {
+    /* Batasi ukuran maksimum agar donut tidak pecah di ukuran sangat besar */
+    max-width: 100%;
+    max-height: 100%;
+    /* Kunci: Atur rasio agar donut proporsional dan mengisi ruang */
+    aspect-ratio: 1 / 1;
+}
+.yz-chart-card .card-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Penting untuk Chart.js agar bisa mengisi ruang */
+}
+
+/* chart-container: Ini harus menjadi elemen yang tumbuh */
+.chart-container {
+    position: relative;
+    width: 100%;
+    /* Perintahkan container untuk mengisi sisa ruang */
+    flex-grow: 1;
+    /* Set minimum height yang baik agar chart terlihat besar */
+    min-height: 350px;
+
+    /* Hapus baris ini jika ada di CSS lama Anda: */
+    /* min-height: 350px; */
+}
+
+@media (max-width: 991.98px) {
+    /* Menambahkan posisi relative agar .yz-card-toolbar bisa absolute di dalam card body */
+    .yz-chart-card {
+        position: relative;
+    }
+
+    /* CONTAINER CHART: Memastikan area grafik bisa di-scroll horizontal */
+    /* Targetkan chart-container di dalam col-12 untuk Top Customers */
+    .col-12 > .card > .card-body > .chart-container {
+        /* min-height: 400px tetap dipakai dari inline style */
+        min-height: 350px !important; /* Agar tidak terlalu tinggi di mobile */
+        overflow-x: auto; /* KUNCI: Memungkinkan horizontal scrolling */
+        /* Memastikan container flex-grow: 1 tetap bekerja (sudah di-handle di .card-body) */
+    }
+
+    /* CHART CANVAS: Set lebar minimum untuk chart horizontal Top 5 Customers */
+    #chartTopCustomersValueSO {
+        /* Ini adalah lebar minimum efektif yang diperlukan. Jika kurang, scroll akan muncul. */
+        min-width: 550px !important;
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Perbaikan posisi Toggle USD/IDR agar tidak menutupi judul */
+    .yz-card-toolbar {
+        position: absolute; /* Tetap absolute, tapi kita perbaiki posisi di mobile */
+        top: 0.5rem;
+        right: 0.75rem;
+    }
+
+    /* Pastikan judul tidak tertutup oleh toggle di HP */
+    .col-12 > .card > .card-body > h5.card-title {
+        /* Tambahkan padding kanan agar teks tidak tertutup toggle */
+        padding-right: 96px;
+    }
+}
+
+@media (max-width: 576px) {
+    /* Kurangi padding card agar ruang ke chart lebih lega */
+    .yz-chart-card .card-body {
+        padding: 0.75rem;
+    }
+
+    /* Toolbar (USD/IDR) jangan absolute di HP; taruh inline */
+    .yz-card-toolbar {
+        position: static !important;
+        margin-top: 0.5rem;
+    }
+
+    /* Jika header diberi padding kanan utk toolbar, hilangkan di HP */
+    .yz-card-header-pad {
+        padding-right: 0 !important;
+    }
+
+    /* Tinggi minimum kontainer chart supaya cukup luas */
+    .chart-container {
+        min-height: 260px !important;
+    }
+
+    /* Top Customers butuh ruang lebih agar label & bar enak dibaca */
+    #chartTopCustomersValueSO {
+        min-height: 420px !important;
+    }
+
+    /* Legend lebih ringkas */
+    .chartjs-render-monitor + .legend,
+    .chart-legend {
+        font-size: 0.75rem;
+    }
+
+    /* Header tabel kecil agar hemat ruang saat overlay muncul */
+    thead th {
+        font-size: 0.7rem;
+        letter-spacing: 0.02em;
+    }
+
+    /* Bikin area legend & header tidak mentok tepi */
+    .yz-chart-card .card-title {
+        font-size: 0.95rem;
+        line-height: 1.2;
+    }
+
+    /* Scroll horizontal kalau legend kepanjangan (aman di HP) */
+    .yz-chart-card .card-body {
+        overflow-x: hidden;
+    }
+}
+
+/* Sedikit rapikan tombol toggle agar lebih “tappable” di HP */
+.yz-card-toolbar .btn-group .btn {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+    line-height: 1.1;
+}
+
+@media (max-width: 576px) {
+    #chartTopCustomersValueSO {
+        font-size: 10px !important; /* kecilkan font di chart canvas */
+    }
+    .chartjs-tooltip {
+        font-size: 11px !important; /* kecilkan tooltip biar gak nabrak */
+        white-space: normal !important;
+        max-width: 220px !important; /* batasi lebar tooltip */
+    }
 }
 
 

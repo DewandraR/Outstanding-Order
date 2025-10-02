@@ -106,7 +106,7 @@
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
                                 <th style="min-width:150px; text-align:center;">Total Stock Qty</th>
-                                <th style="min-width:150px; text-align:center;">Value</th>
+                                <th style="min-width:150px; text-align:center;">Total Value</th>
                             </tr>
                         </thead>
 
@@ -295,7 +295,7 @@
                       <th style="width:40px;"></th>
                       <th class="text-start">SO</th>
                       <th class="text-center">Total Stock Qty</th>
-                      <th class="text-center">Value</th>
+                      <th class="text-center">Total Value</th>
                       <th style="width:28px;"></th>
                     </tr>
                   </thead>
@@ -342,7 +342,7 @@
                       <tr>
                         <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
                         <th>Item</th><th>Material FG</th><th>Desc FG</th>
-                        <th>Qty SO</th>${stockHeader}<th>Net Price</th><th>VALUE</th>
+                        ${stockHeader}<th>Net Price</th><th>TOTAL VALUE</th>
                       </tr>
                     </thead>
                     <tbody>`;
@@ -355,7 +355,6 @@
                         <td>${r.POSNR ?? ''}</td>
                         <td>${(r.MATNR || '').replace(/^0+/, '')}</td>
                         <td>${r.MAKTX ?? ''}</td>
-                        <td>${formatNumber(r.KWMENG)}</td>
                         <td>${formatNumber(stockCellValue)}</td>
                         <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
                         <td>${formatCurrency(r.VALUE, r.WAERK)}</td>
@@ -612,7 +611,7 @@
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
                 row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
                 row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Total Stock Qty');
-                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Value');
+                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Total Value');
             });
         });
     </script>

@@ -102,7 +102,6 @@
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
                                 <th class="text-center" style="min-width:120px;">Overdue SO</th>
-                                <th class="text-center" style="min-width:150px;">Overdue Rate</th>
                                 <th class="text-center" style="min-width:150px;">Outs. Value</th>
                             </tr>
                         </thead>
@@ -118,9 +117,6 @@
                                         <span class="fw-bold">{{ $r->NAME1 }}</span>
                                     </td>
                                     <td class="text-center">{{ $r->SO_LATE_COUNT }}</td>
-                                    <td class="text-center">
-                                        {{ is_null($r->LATE_PCT) ? '—' : number_format($r->LATE_PCT, 2, '.', '') . '%' }}
-                                    </td>
                                     <td class="text-center">
                                         @php
                                             if ($r->WAERK === 'IDR') {
@@ -177,7 +173,7 @@
 
                         <tfoot class="yz-footer-customer">
                             <tr>
-                                <th colspan="4" class="text-end">Total</th>
+                                <th colspan="3" class="text-end">Total</th>
                                 <th class="text-center">{{ $formatTotals($pageTotals ?? []) }}</th>
                             </tr>
                         </tfoot>
@@ -295,6 +291,18 @@
 
         tbody.customer-focus-mode~tfoot.yz-footer-customer {
             display: none !important;
+        }
+
+        .yz-row-highlight-negative>td,
+        .yz-row-highlight-negative td {
+            background-color: #ffe5e5 !important;
+            /* merah muda */
+        }
+
+        /* kalau pakai .table-hover, pastikan warna hover tidak menimpa */
+        .table-hover tbody tr.yz-row-highlight-negative:hover>td,
+        .table-hover tbody tr.yz-row-highlight-negative:hover td {
+            background-color: #ffd6d6 !important;
         }
     </style>
 @endpush
@@ -494,7 +502,7 @@
         <tbody>`;
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                    const rowHighlightClass = r.Overdue < 0 ? 'yz-row-highlight-negative' : '';
+                    const rowHighlightClass = r.Overdue > 0 ? 'yz-row-highlight-negative' : '';
                     const hasRemark = Number(r.remark_count || 0) > 0;
                     html += `
         <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
