@@ -105,7 +105,6 @@
             <tr>
                 <th class="th-customer" style="width:48%;">CUSTOMER</th>
                 <th style="width:14%;">OVERDUE SO</th>
-                <th style="width:18%;">OVERDUE RATE</th>
                 <th style="width:20%;">VALUE</th>
             </tr>
         </thead>
@@ -126,7 +125,6 @@
                 <tr>
                     <td class="td-customer">{{ $r->NAME1 }}</td>
                     <td>{{ (int) $r->SO_LATE_COUNT }}</td>
-                    <td>{{ is_null($r->LATE_PCT) ? '—' : number_format($r->LATE_PCT, 2) . '%' }}</td>
                     <td class="text-right">{{ $fmt($r->WAERK, $r->TOTAL_VALUE) }}</td>
                 </tr>
             @empty
