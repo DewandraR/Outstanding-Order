@@ -25,48 +25,34 @@ class SoItemsExport implements
     WithColumnFormatting
 {
     protected $items;
-    protected $customerRows = []; // Untuk melacak baris-baris header customer
+    protected $customerRows = []; // baris-baris header "Customer: ..."
 
-    /**
-     * Menerima koleksi data item dari controller saat class ini dibuat.
-     *
-     * @param \Illuminate\Support\Collection $items
-     */
     public function __construct(Collection $items)
     {
-        // Data asli
         $this->items = $items;
     }
 
-    /**
-     * Mengembalikan koleksi data yang akan diproses oleh library Excel.
-     * Logika utama untuk menyisipkan header customer berada di sini.
-     *
-     * @return \Illuminate\Support\Collection
-     */
     public function collection()
     {
-        // Baris awal dimulai dari 2 (karena baris 1 adalah Heading/Judul kolom)
-        $currentRow = 2;
+        $currentRow = 2; // baris 1 = heading
         $finalCollection = new Collection();
+
         $groups = $this->items->groupBy(function ($item) {
             $name = preg_replace('/\s+/', ' ', trim($item->headerInfo->NAME1 ?? ''));
             return $name === '' ? '(Unknown Customer)' : $name;
         });
 
         foreach ($groups as $customerName => $rows) {
-            // 1. Tambahkan baris header customer
+            // baris judul customer (akan di-merge A..M)
             $customerHeader = (object) [
                 'is_customer_header' => true,
-                'customer_name' => "Customer: " . $customerName,
+                'customer_name'      => 'Customer: ' . $customerName,
             ];
             $finalCollection->push($customerHeader);
-            $this->customerRows[] = $currentRow; // Simpan baris untuk styling
+            $this->customerRows[] = $currentRow;
             $currentRow++;
 
-            // 2. Tambahkan baris data item
             foreach ($rows as $item) {
-                // Tambahkan headerInfo agar bisa diakses di map
                 $item->is_customer_header = false;
                 $finalCollection->push($item);
                 $currentRow++;
@@ -76,15 +62,10 @@ class SoItemsExport implements
         return $finalCollection;
     }
 
-    /**
-     * Mendefinisikan judul untuk setiap kolom di baris pertama file Excel.
-     *
-     * @return array
-     */
     public function headings(): array
     {
+        // ❌ Kolom "Customer" dihapus.
         return [
-            'Customer',
             'PO',
             'SO',
             'Item',
@@ -101,65 +82,45 @@ class SoItemsExport implements
         ];
     }
 
-    /**
-     * Memetakan data dari setiap item objek ke dalam format array.
-     *
-     * @param mixed $item Satu baris data dari koleksi.
-     * @return array
-     */
     public function map($item): array
     {
-        // Periksa apakah ini baris header customer
+        // baris header customer: taruh teks di kolom A, sisanya kosong (total 13 kolom)
         if (property_exists($item, 'is_customer_header') && $item->is_customer_header) {
-            // Untuk baris header, letakkan nama customer di kolom pertama dan sisanya kosong
-            return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', '', ''];
+            return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', ''];
         }
 
-        // Baris data item biasa
+        // Baris data item — semua angka jadi integer (tanpa desimal)
         return [
-            $item->headerInfo->NAME1 ?? '', // Kolom Customer
-            $item->headerInfo->BSTNK ?? '', // Kolom PO
-            $item->VBELN,                   // Kolom SO
-            (int) ($item->POSNR ?? 0),      // Kolom Item
-            $item->MATNR,                   // Kolom Material FG
-            $item->MAKTX,                   // Kolom Description
-            (float) ($item->KWMENG ?? 0),   // Kolom Qty SO
-            (float) ($item->PACKG  ?? 0),   // Kolom Outs. SO
-            (float) ($item->KALAB  ?? 0),   // Kolom WHFG
-            (float) ($item->KALAB2 ?? 0),   // Kolom Stock Packg.
-            (float) ($item->ASSYM  ?? 0),   // Kolom GR ASSY
-            (float) ($item->PAINT  ?? 0),   // Kolom GR PAINT
-            (float) ($item->MENGE  ?? 0),   // Kolom GR PKG
-            $item->remark,                  // Kolom Remark
+            $item->headerInfo->BSTNK ?? '', // A: PO
+            $item->VBELN,                   // B: SO
+            (int) ($item->POSNR ?? 0),      // C: Item
+            $item->MATNR,                   // D: Material FG
+            $item->MAKTX,                   // E: Description
+
+            (int) ($item->KWMENG ?? 0),     // F: Qty SO
+            (int) ($item->PACKG  ?? 0),     // G: Outs. SO
+            (int) ($item->KALAB  ?? 0),     // H: WHFG
+            (int) ($item->KALAB2 ?? 0),     // I: Stock Packg.
+            (int) ($item->ASSYM  ?? 0),     // J: GR ASSY
+            (int) ($item->PAINT  ?? 0),     // K: GR PAINT
+            (int) ($item->MENGE  ?? 0),     // L: GR PKG
+
+            $item->remark,                  // M: Remark
         ];
     }
 
-    /**
-     * Menerapkan style pada sheet Excel.
-     *
-     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
-     * @return array
-     */
     public function styles(Worksheet $sheet)
     {
         $styles = [
-            1 => ['font' => ['bold' => true]], // Header tebal
+            1 => ['font' => ['bold' => true]], // heading tebal
         ];
 
-        // Terapkan style untuk baris customer (gabung cell dan beri warna latar)
+        // Merge baris judul customer melebar dari A sampai M (13 kolom)
         foreach ($this->customerRows as $row) {
-            // Gabungkan kolom A sampai N (sesuaikan jika jumlah kolom berubah)
-            $sheet->mergeCells("A{$row}:N{$row}");
-
+            $sheet->mergeCells("A{$row}:M{$row}");
             $styles[$row] = [
-                'font' => [
-                    'bold' => true,
-                    'size' => 12, // Ukuran font lebih besar
-                ],
-                'fill' => [
-                    'fillType' => Fill::FILL_SOLID,
-                    'color' => ['rgb' => 'E9ECEF'] // Warna latar abu-abu muda
-                ],
+                'font' => ['bold' => true, 'size' => 12],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => 'E9ECEF']],
                 'borders' => [
                     'allBorders' => [
                         'borderStyle' => Border::BORDER_THIN,
@@ -175,23 +136,20 @@ class SoItemsExport implements
         return $styles;
     }
 
-    /**
-     * Format kolom angka agar Excel selalu menampilkan 0 (bukan blank)
-     * dan tidak mengubahnya ke scientific notation.
-     *
-     * @return array
-     */
     public function columnFormats(): array
     {
+        // Format integer tanpa desimal; jika tak ingin pemisah ribuan, ganti ke '0'
+        $intNoDecimal = '#,##0';
+
+        // Kolom angka sekarang F..L (Qty SO sampai GR PKG)
         return [
-            // Kolom G-M untuk kuantitas
-            'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // Qty SO
-            'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // Outs. SO
-            'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // WHFG
-            'J' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // Stock Packg.
-            'K' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // GR ASSY
-            'L' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // GR PAINT
-            'M' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1, // GR PKG
+            'F' => $intNoDecimal, // Qty SO
+            'G' => $intNoDecimal, // Outs. SO
+            'H' => $intNoDecimal, // WHFG
+            'I' => $intNoDecimal, // Stock Packg.
+            'J' => $intNoDecimal, // GR ASSY
+            'K' => $intNoDecimal, // GR PAINT
+            'L' => $intNoDecimal, // GR PKG
         ];
     }
 }

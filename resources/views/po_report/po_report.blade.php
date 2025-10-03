@@ -101,7 +101,6 @@
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
                                 <th style="min-width:120px; text-align:center;">Overdue PO</th>
-                                <th style="min-width:150px; text-align:center;">Overdue Rate</th>
                                 <th style="min-width:150px;">Outs. Value</th>
                             </tr>
                         </thead>
@@ -117,9 +116,6 @@
                                         <span class="fw-bold">{{ $r->NAME1 }}</span>
                                     </td>
                                     <td class="text-center">{{ $r->SO_LATE_COUNT }}</td>
-                                    <td class="text-center">
-                                        {{ is_null($r->LATE_PCT) ? '—' : number_format((float) $r->LATE_PCT, 2, '.', '') . '%' }}
-                                    </td>
                                     <td class="data-raw-totpr">
                                         <span class="customer-totpr">
                                             @php
@@ -137,7 +133,7 @@
                                     </td>
                                 </tr>
                                 <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                                    <td colspan="5" class="p-0">
+                                    <td colspan="4" class="p-0">
                                         <div class="yz-nest-wrap">
                                             <div
                                                 class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
@@ -164,8 +160,8 @@
                                 <tr class="table-light">
                                     <th></th>
                                     <th class="text-start">Total ({{ $cur ?: 'N/A' }})</th>
-                                    <th class="text-center" colspan="2">—</th>
-                                    <th class="text-end">{{ $formatTotal($sum, $cur) }}</th>
+                                    <th class="text-center"></th>
+                                    <th class="text-center">{{ $formatTotal($sum, $cur) }}</th>
                                 </tr>
                             @endforeach
                         </tfoot>
@@ -329,8 +325,7 @@
             customerRows.forEach(row => {
                 row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
                 row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Overdue PO');
-                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Overdue Rate');
-                row.querySelector('td:nth-child(5)')?.setAttribute('data-label', 'Outs. Value');
+                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Outs. Value');
             });
 
             const rootElement = document.getElementById('yz-root');
