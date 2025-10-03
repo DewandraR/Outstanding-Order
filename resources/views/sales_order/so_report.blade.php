@@ -311,7 +311,6 @@
     <script>
         // ==== Redirector helper: kirim payload terenkripsi via server ====
         function applySoFilter(params) {
-            // params contoh: {werks:'2000', auart:'ZEXP'}
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = "{{ route('so.redirector') }}";
@@ -471,62 +470,93 @@
                     });
             }
 
-            // ===== FIX #1: Block klik checkbox di Tabel-2 pada PHASE CAPTURE agar tidak mem-bubble ke baris =====
+            // ===== helper footer Tabel-2: sembunyikan kalau ada Tabel-3 yang terbuka =====
+            function updateT2FooterVisibility(t2Table) {
+                if (!t2Table) return;
+                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
+                    .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
+                const tfoot = t2Table.querySelector('tfoot.t2-footer');
+                if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
+            }
+
+            // ===== FIX #1: blok klik checkbox di Tabel-2 pada CAPTURE agar tidak bubble ke baris =====
             document.addEventListener('click', function(e) {
                 if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) {
                     e.stopPropagation();
                 }
-            }, true); // <<-- penting: true = capture phase
+            }, true);
 
             // ------- RENDERERS -------
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
+
+                // >>> Hitung total per currency utk footer
+                const totalsByCurr = {};
+                rows.forEach(r => {
+                    const cur = (r.WAERK || '').trim();
+                    const val = parseFloat(r.total_value) || 0;
+                    totalsByCurr[cur] = (totalsByCurr[cur] || 0) + val;
+                });
+
                 let html = `
-      <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
-      <table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-so">
-          <tr>
-            <th style="width:40px;" class="text-center">
-              <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-            </th>
-            <th style="width:40px;"></th>
-            <th class="text-start">SO</th>
-            <th class="text-center">SO Item Count</th>
-            <th class="text-center">Req. Deliv. Date</th>
-            <th class="text-center">Overdue (Days)</th>
-            <th class="text-center">Outs. Value</th>
-            <th style="width:28px;"></th>
-          </tr>
-        </thead>
-        <tbody>`;
+        <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
+        <table class="table table-sm mb-0 yz-mini">
+          <thead class="yz-header-so">
+            <tr>
+              <th style="width:40px;" class="text-center">
+                <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+              </th>
+              <th style="width:40px;"></th>
+              <th class="text-start">SO</th>
+              <th class="text-center">SO Item Count</th>
+              <th class="text-center">Req. Deliv. Date</th>
+              <th class="text-center">Overdue (Days)</th>
+              <th class="text-center">Outs. Value</th>
+              <th style="width:28px;"></th>
+            </tr>
+          </thead>
+          <tbody>`;
+
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const rowHighlightClass = r.Overdue > 0 ? 'yz-row-highlight-negative' : '';
                     const hasRemark = Number(r.remark_count || 0) > 0;
+
                     html += `
-        <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-          <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
-          <td class="text-center"><span class="yz-caret">▸</span></td>
-          <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-          <td class="text-center">${r.item_count ?? '-'}</td>
-          <td class="text-center">${r.FormattedEdatu || '-'}</td>
-          <td class="text-center">${r.Overdue}</td>
-          <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-          <td class="text-center">
-            <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" title="Ada item yang diberi catatan" style="display:${hasRemark ? 'inline-block':'none'};"></i>
-            <span class="so-selected-dot"></span>
-          </td>
-        </tr>
-        <tr id="${rid}" class="yz-nest" style="display:none;">
-          <td colspan="8" class="p-0">
-            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-              <div class="yz-slot-items p-2"></div>
-            </div>
-          </td>
-        </tr>`;
+          <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+            <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
+            <td class="text-center"><span class="yz-caret">▸</span></td>
+            <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+            <td class="text-center">${r.item_count ?? '-'}</td>
+            <td class="text-center">${r.FormattedEdatu || '-'}</td>
+            <td class="text-center">${r.Overdue}</td>
+            <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
+            <td class="text-center">
+              <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" title="Ada item yang diberi catatan" style="display:${hasRemark ? 'inline-block':'none'};"></i>
+              <span class="so-selected-dot"></span>
+            </td>
+          </tr>
+          <tr id="${rid}" class="yz-nest" style="display:none;">
+            <td colspan="8" class="p-0">
+              <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+                <div class="yz-slot-items p-2"></div>
+              </div>
+            </td>
+          </tr>`;
                 });
-                html += `</tbody></table>`;
+
+                // >>> FOOTER Total (pakai class t2-footer, tidak ada dash)
+                html += `</tbody><tfoot class="t2-footer">`;
+                Object.entries(totalsByCurr).forEach(([cur, sum]) => {
+                    html += `
+          <tr class="table-light">
+            <th colspan="6" class="text-end">Total (${cur || 'N/A'})</th>
+            <th class="text-center">${formatCurrency(sum, cur)}</th>
+            <th></th>
+          </tr>`;
+                });
+                html += `</tfoot></table>`;
                 return html;
             }
 
@@ -535,17 +565,17 @@
                     return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
 
                 let html = `<div class="table-responsive">
-  <table class="table table-sm table-hover mb-0 yz-mini">
-    <thead class="yz-header-item">
-      <tr>
-        <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-        <th>Item</th><th>Material FG</th><th>Desc FG</th>
-        <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
-        <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
-        <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
-      </tr>
-    </thead>
-    <tbody>`;
+        <table class="table table-sm table-hover mb-0 yz-mini">
+          <thead class="yz-header-item">
+            <tr>
+              <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+              <th>Item</th><th>Material FG</th><th>Desc FG</th>
+              <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
+              <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
+              <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
+            </tr>
+          </thead>
+          <tbody>`;
 
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
@@ -553,29 +583,29 @@
                     const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
 
                     html += `
-      <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
-          data-item-id="${r.id}"
-          data-werks="${r.WERKS_KEY}"
-          data-auart="${r.AUART_KEY}"
-          data-vbeln="${r.VBELN_KEY}"
-          data-posnr="${r.POSNR_KEY}">
-        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
-        <td>${r.POSNR ?? ''}</td>
-        <td>${r.MATNR ?? ''}</td>
-        <td>${r.MAKTX ?? ''}</td>
-        <td>${formatNumber(r.KWMENG)}</td>
-        <td>${formatNumber(r.PACKG)}</td>
-        <td>${formatNumber(r.KALAB2)}</td>
-        <td>${formatNumber(r.ASSYM)}</td>
-        <td>${formatNumber(r.PAINT)}</td>
-        <td>${formatNumber(r.MENGE)}</td>
-        <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
-        <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-        <td class="text-center">
-          <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
-          <span class="remark-dot" style="display:${hasRemark ? 'inline-block':'none'};"></span>
-        </td>
-      </tr>`;
+          <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+              data-item-id="${r.id}"
+              data-werks="${r.WERKS_KEY}"
+              data-auart="${r.AUART_KEY}"
+              data-vbeln="${r.VBELN_KEY}"
+              data-posnr="${r.POSNR_KEY}">
+            <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
+            <td>${r.POSNR ?? ''}</td>
+            <td>${r.MATNR ?? ''}</td>
+            <td>${r.MAKTX ?? ''}</td>
+            <td>${formatNumber(r.KWMENG)}</td>
+            <td>${formatNumber(r.PACKG)}</td>
+            <td>${formatNumber(r.KALAB2)}</td>
+            <td>${formatNumber(r.ASSYM)}</td>
+            <td>${formatNumber(r.PAINT)}</td>
+            <td>${formatNumber(r.MENGE)}</td>
+            <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
+            <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
+            <td class="text-center">
+              <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
+              <span class="remark-dot" style="display:${hasRemark ? 'inline-block':'none'};"></span>
+            </td>
+          </tr>`;
                 });
 
                 html += `</tbody></table></div>`;
@@ -595,10 +625,8 @@
                     const tableEl = row.closest('table');
                     const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
-                    // status sebelum toggle
                     const wasOpen = row.classList.contains('is-open');
 
-                    // focus mode pada tbody utama
                     if (!wasOpen) {
                         tbody.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
@@ -607,22 +635,13 @@
                         row.classList.remove('is-focused');
                     }
 
-                    // toggle state
                     row.classList.toggle('is-open');
-
-                    // tampil/sembunyi nested row
                     slot.style.display = wasOpen ? 'none' : '';
 
-                    // ===== FIX: saat menutup customer, paksa tutup semua nested di dalamnya =====
                     if (wasOpen) {
                         const wrap = slot.querySelector('.yz-nest-wrap');
-
-                        // Tutup semua baris T3 di bawah customer ini
-                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => {
-                            tr.style.display = 'none';
-                        });
-
-                        // Bersihkan state fokus/caret di T2
+                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
+                            'none');
                         wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
                             .remove('so-focus-mode'));
                         wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
@@ -631,22 +650,17 @@
                             .classList.remove('rot'));
                     }
 
-
-                    // ==== kontrol TOTAL (tfoot) – selain CSS, kita jaga via JS juga ====
                     const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
                         .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
                     if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
 
-                    // kalau barusan menutup, selesai
                     if (wasOpen) return;
-
-                    // jika sudah pernah dimuat, selesai
                     if (wrap.dataset.loaded === '1') return;
 
                     try {
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
-      </div>`;
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
+          </div>`;
                         const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
@@ -659,19 +673,21 @@
                         wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
                         wrap.dataset.loaded = '1';
 
+                        // Pastikan footer T2 tampil (belum ada T3 yang terbuka)
+                        updateT2FooterVisibility(wrap.querySelector('table'));
+
                         // Klik baris SO -> expand T3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
-                                // ===== FIX #2: abaikan klik dari checkbox/input agar tidak expand =====
+                                // abaikan klik dari checkbox/input agar tidak expand
                                 if (ev.target.closest(
                                         '.check-so, .check-all-sos, .form-check-input'
-                                    )) {
-                                    return; // jangan expand
-                                }
+                                        )) return;
 
                                 ev.stopPropagation();
                                 const vbeln = soRow.dataset.vbeln;
                                 const tgtId = soRow.dataset.tgt;
+
                                 const itemRow = wrap.querySelector('#' +
                                     tgtId);
                                 const itemBox = itemRow.querySelector(
@@ -679,6 +695,7 @@
                                 const open = itemRow.style.display !==
                                     'none';
                                 const soTbody = soRow.closest('tbody');
+                                const t2Table = soRow.closest('table');
 
                                 if (soTbody) {
                                     if (!open) {
@@ -689,7 +706,7 @@
                                         soTbody.classList.remove(
                                             'so-focus-mode');
                                         soRow.classList.remove(
-                                            'is-focused');
+                                        'is-focused');
                                     }
                                 }
                                 soRow.querySelector('.yz-caret')?.classList
@@ -697,14 +714,20 @@
 
                                 if (open) {
                                     itemRow.style.display = 'none';
+                                    updateT2FooterVisibility(
+                                    t2Table); // << sembunyikan/ tampilkan sesuai state
                                     return;
                                 }
+
                                 itemRow.style.display = '';
+                                updateT2FooterVisibility(
+                                t2Table); // << ketika dibuka, footer disembunyikan
 
                                 if (itemRow.dataset.loaded === '1') return;
 
                                 itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…</div>`;
+                <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+              </div>`;
                                 try {
                                     const u = new URL(apiItemsBySo);
                                     u.searchParams.set('vbeln', vbeln);
@@ -945,10 +968,8 @@
             (async function autoExpandFromRoot() {
                 const VBELN = VBELN_HL;
                 const KUNNR = KUNNR_HL;
-                const POSNR = (__root?.dataset.hposnr || '').trim(); // boleh "10" / "000160"
+                const POSNR = (__root?.dataset.hposnr || '').trim();
                 const shouldAuto = AUTO;
-
-                // normalisasi POSNR ke 6 digit (match data-posnr T3)
                 const POSNR6 = POSNR ? String(POSNR).replace(/\D/g, '').padStart(6, '0') : '';
 
                 const scrollAndFlash = (el) => {
@@ -963,7 +984,6 @@
                     } catch {}
                 };
 
-                // cari item row dengan normalisasi (tahan jika ada spasi/format lain)
                 const findItemRow = (box, vbeln, pos6) => {
                     const rows = box?.querySelectorAll(`tr[data-vbeln='${CSS.escape(vbeln)}']`) || [];
                     for (const tr of rows) {
@@ -976,7 +996,6 @@
 
                 if (!(shouldAuto && (VBELN || KUNNR))) return;
 
-                // -- jalur utama: KUNNR & VBELN ada
                 const openToSO = async (customerRow) => {
                     if (!customerRow.classList.contains('is-open')) customerRow.click();
                     const wrap = customerRow.nextElementSibling?.querySelector('.yz-nest-wrap');
@@ -990,7 +1009,7 @@
                     };
 
                     const soRow = wrap.querySelector(
-                        `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
+                    `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
                     if (!soRow) return {
                         wrap,
                         soRow: null,
@@ -1039,14 +1058,12 @@
                     return;
                 }
 
-                // -- fallback: cuma VBELN
                 if (VBELN && !KUNNR) {
                     let foundSoRow = null,
                         foundItemsBox = null;
                     const custRows = Array.from(document.querySelectorAll('.yz-kunnr-row'));
                     for (const crow of custRows) {
                         const {
-                            wrap,
                             soRow,
                             itemsBox
                         } = await openToSO(crow);

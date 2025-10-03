@@ -204,9 +204,7 @@
 
 @push('scripts')
     <script>
-        // ... (SALIN SEMUA FUNGSI JAVASCRIPT: formatCurrencyForTable, renderT2, renderT3, handleSearchHighlight, dan event listener click expand/collapse)
-        // ... (gunakan `route('dashboard.api.t2')` dan `route('dashboard.api.t3')` karena kita biarkan API di DashboardController)
-
+        /** Format currency utk tabel */
         const formatCurrencyForTable = (value, currency) => {
             const n = parseFloat(value);
             if (!Number.isFinite(n)) return '';
@@ -219,9 +217,12 @@
             return `${currency} ${n.toLocaleString('id-ID', options)}`;
         };
 
+        /** Render Tabel-2 (Overview PO per SO) */
         function renderT2(rows, kunnr) {
-            if (!rows?.length)
+            if (!rows?.length) {
                 return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
+            }
+
             const totalsByCurr = {};
             rows.forEach(r => {
                 const cur = (r.WAERK || '').trim();
@@ -229,19 +230,24 @@
                 totalsByCurr[cur] = (totalsByCurr[cur] || 0) + val;
             });
 
-            let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
-            <table class="table table-sm mb-0 yz-mini">
-              <thead class="yz-header-so">
-                <tr>
-                  <th style="width:40px;text-align:center;"></th>
-                  <th style="min-width:150px;text-align:left;">PO</th>
-                  <th style="min-width:100px;text-align:left;">SO</th>
-                  <th style="min-width:100px;text-align:right;">Outs. Value</th>
-                  <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
-                  <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
-                  <th style="min-width:120px;text-align:center;">Shortage %</th>
-                </tr>
-              </thead><tbody>`;
+            let html = `
+  <div style="width:100%">
+    <h5 class="yz-table-title-nested yz-title-so">
+      <i class="fas fa-file-invoice me-2"></i>Overview PO
+    </h5>
+    <table class="table table-sm mb-0 yz-mini">
+      <thead class="yz-header-so">
+        <tr>
+          <th style="width:40px;text-align:center;"></th>
+          <th style="min-width:150px;text-align:left;">PO</th>
+          <th style="min-width:100px;text-align:left;">SO</th>
+          <th style="min-width:100px;text-align:right;">Outs. Value</th>
+          <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
+          <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
+          <th style="min-width:120px;text-align:center;">Shortage %</th>
+        </tr>
+      </thead>
+      <tbody>`;
 
             rows.forEach((r, i) => {
                 const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
@@ -249,78 +255,93 @@
                 const rowHighlightClass = overdueDays < 0 ? 'yz-row-highlight-negative' : '';
                 const edatuDisplay = r.FormattedEdatu || '';
                 const shortageDisplay = `${(r.ShortagePercentage || 0).toFixed(2)}%`;
-                html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-                <td style="text-align:center;"><span class="yz-caret">▸</span></td>
-                <td style="text-align:left;">${r.BSTNK ?? ''}</td>
-                <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
-                <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-                <td style="text-align:center;">${edatuDisplay}</td>
-                <td style="text-align:center;">${overdueDays ?? 0}</td>
-                <td style="text-align:center;">${shortageDisplay}</td>
-              </tr>
-              <tr id="${rid}" class="yz-nest" style="display:none;">
-                <td colspan="7" class="p-0">
-                  <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
-                    <div class="yz-slot-t3 p-2"></div>
-                  </div>
-                </td>
-              </tr>`;
+
+                html += `
+      <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+        <td style="text-align:center;"><span class="yz-caret">▸</span></td>
+        <td style="text-align:left;">${r.BSTNK ?? ''}</td>
+        <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
+        <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
+        <td style="text-align:center;">${edatuDisplay}</td>
+        <td style="text-align:center;">${overdueDays ?? 0}</td>
+        <td style="text-align:center;">${shortageDisplay}</td>
+      </tr>
+      <tr id="${rid}" class="yz-nest" style="display:none;">
+        <td colspan="7" class="p-0">
+          <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
+            <div class="yz-slot-t3 p-2"></div>
+          </div>
+        </td>
+      </tr>`;
             });
 
-            html += `</tbody><tfoot>`;
+            // FOOTER: beri class t2-footer, kosongkan kolom non-value
+            html += `</tbody><tfoot class="t2-footer">`;
             Object.entries(totalsByCurr).forEach(([cur, sum]) => {
-                html += `<tr class="table-light">
-                <th></th>
-                <th colspan="2" style="text-align:left;">Total (${cur || 'N/A'})</th>
-                <th style="text-align:right;">${formatCurrencyForTable(sum, cur)}</th>
-                <th style="text-align:center;">—</th>
-                <th style="text-align:center;">—</th>
-                <th style="text-align:center;">—</th>
-              </tr>`;
+                html += `
+      <tr class="table-light">
+        <th></th>
+        <th colspan="2" style="text-align:left;">Total (${cur || 'N/A'})</th>
+        <th style="text-align:right;">${formatCurrencyForTable(sum, cur)}</th>
+        <th></th><th></th><th></th>
+      </tr>`;
             });
             html += `</tfoot></table></div>`;
             return html;
         }
 
+        /** Render Tabel-3 (items) */
         function renderT3(rows) {
             if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
-            let out = `<div class="table-responsive"><table class="table table-sm mb-0 yz-mini">
-              <thead class="yz-header-item">
-                <tr>
-                  <th style="min-width:80px; text-align:center;">Item</th>
-                  <th style="min-width:150px; text-align:center;">Material FG</th>
-                  <th style="min-width:300px">Desc FG</th>
-                  <th style="min-width:80px">Qty PO</th>
-                  <th style="min-width:60px">Shipped</th>
-                  <th style="min-width:60px">Outs. Ship</th>
-                  <th style="min-width:80px">WHFG</th>
-                  <th style="min-width:100px">Net Price</th>
-                  <th style="min-width:80px">Outs. Ship Value</th>
-                </tr>
-              </thead><tbody>`;
+            let out = `
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 yz-mini">
+        <thead class="yz-header-item">
+          <tr>
+            <th style="min-width:80px; text-align:center;">Item</th>
+            <th style="min-width:150px; text-align:center;">Material FG</th>
+            <th style="min-width:300px">Desc FG</th>
+            <th style="min-width:80px">Qty PO</th>
+            <th style="min-width:60px">Shipped</th>
+            <th style="min-width:60px">Outs. Ship</th>
+            <th style="min-width:80px">WHFG</th>
+            <th style="min-width:100px">Net Price</th>
+            <th style="min-width:80px">Outs. Ship Value</th>
+          </tr>
+        </thead>
+        <tbody>`;
             rows.forEach(r => {
-                out += `<tr>
-                <td style="text-align:center;">${r.POSNR ?? ''}</td>
-                <td style="text-align:center;">${r.MATNR ?? ''}</td>
-                <td>${r.MAKTX ?? ''}</td>
-                <td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td>
-                <td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td>
-                <td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td>
-                <td>${parseFloat(r.KALAB).toLocaleString('id-ID')}</td>
-                <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
-                <td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-              </tr>`;
+                out += `
+      <tr>
+        <td style="text-align:center;">${r.POSNR ?? ''}</td>
+        <td style="text-align:center;">${r.MATNR ?? ''}</td>
+        <td>${r.MAKTX ?? ''}</td>
+        <td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td>
+        <td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td>
+        <td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td>
+        <td>${parseFloat(r.KALAB).toLocaleString('id-ID')}</td>
+        <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
+        <td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
+      </tr>`;
             });
             out += `</tbody></table></div>`;
             return out;
         }
 
+        /** Helper: sembunyikan footer Tabel-2 saat ada Tabel-3 yang terbuka */
+        function updateT2FooterVisibility(t2Table) {
+            if (!t2Table) return;
+            const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
+                .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
+            const tfoot = t2Table.querySelector('tfoot.t2-footer');
+            if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
-            // Hilangkan semua toggle currency (USD/IDR) di header jika ada
+            // Hilangkan toggle currency (jika ada)
             document.querySelectorAll('.yz-currency-toggle').forEach(el => el.remove());
 
-            // Tambahkan label untuk responsif tabel
+            // Label responsive untuk Tabel-1
             const customerRows = document.querySelectorAll('.yz-kunnr-row');
             customerRows.forEach(row => {
                 row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
@@ -331,211 +352,210 @@
             const rootElement = document.getElementById('yz-root');
             const showTable = rootElement ? !!parseInt(rootElement.dataset.show) : false;
 
-            /* ---------- MODE TABEL (LAPORAN) ---------- */
-            if (showTable) {
-                // Gunakan route API yang baru/sudah ada
-                const apiT2 = "{{ route('dashboard.api.t2') }}";
-                const apiT3 = "{{ route('dashboard.api.t3') }}";
-                const apiDecryptPayload = "{{ route('dashboard.api.decrypt_payload') }}";
-                const WERKS = (rootElement.dataset.werks || '').trim() || null;
-                const AUART = (rootElement.dataset.auart || '').trim() || null;
+            if (!showTable) return;
 
-                // ... (Event listener click expand/collapse)
-                document.querySelectorAll('.yz-kunnr-row').forEach(row => {
-                    row.addEventListener('click', async () => {
-                        const kunnr = (row.dataset.kunnr || '').trim();
-                        const kid = row.dataset.kid;
-                        const slot = document.getElementById(kid);
-                        const wrap = slot?.querySelector('.yz-nest-wrap');
+            const apiT2 = "{{ route('dashboard.api.t2') }}";
+            const apiT3 = "{{ route('dashboard.api.t3') }}";
+            const apiDecryptPayload = "{{ route('dashboard.api.decrypt_payload') }}";
+            const WERKS = (rootElement.dataset.werks || '').trim() || null;
+            const AUART = (rootElement.dataset.auart || '').trim() || null;
 
-                        const tbody = row.closest('tbody');
-                        const tableEl = row.closest('table');
-                        const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
+            // Expand Tabel-1 → load Tabel-2
+            document.querySelectorAll('.yz-kunnr-row').forEach(row => {
+                row.addEventListener('click', async () => {
+                    const kunnr = (row.dataset.kunnr || '').trim();
+                    const kid = row.dataset.kid;
+                    const slot = document.getElementById(kid);
+                    const wrap = slot?.querySelector('.yz-nest-wrap');
 
-                        const wasOpen = row.classList.contains('is-open');
+                    const tbody = row.closest('tbody');
+                    const tableEl = row.closest('table');
+                    const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
-                        if (!wasOpen) {
-                            tbody.classList.add('customer-focus-mode');
-                            row.classList.add('is-focused');
-                        } else {
-                            tbody.classList.remove('customer-focus-mode');
-                            row.classList.remove('is-focused');
-                        }
+                    const wasOpen = row.classList.contains('is-open');
 
-                        row.classList.toggle('is-open');
-                        slot.style.display = wasOpen ? 'none' : '';
+                    if (!wasOpen) {
+                        tbody.classList.add('customer-focus-mode');
+                        row.classList.add('is-focused');
+                    } else {
+                        tbody.classList.remove('customer-focus-mode');
+                        row.classList.remove('is-focused');
+                    }
 
-                        if (wasOpen) {
-                            wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style
-                                .display = 'none');
-                            wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb
-                                .classList.remove('so-focus-mode'));
-                            wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r
-                                .classList.remove('is-focused'));
-                            wrap?.querySelectorAll('.js-t2row .yz-caret.rot').forEach(c => c
-                                .classList.remove('rot'));
-                        }
+                    row.classList.toggle('is-open');
+                    slot.style.display = wasOpen ? 'none' : '';
 
-                        if (tfootEl) {
-                            const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
-                                .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                                    null);
-                            tfootEl.style.display = anyVisibleNest ? 'none' : '';
-                        }
+                    if (wasOpen) {
+                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
+                            'none');
+                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
+                            .remove('so-focus-mode'));
+                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
+                            .remove('is-focused'));
+                        wrap?.querySelectorAll('.js-t2row .yz-caret.rot').forEach(c => c
+                            .classList.remove('rot'));
+                    }
 
-                        if (wasOpen) return;
-                        if (wrap.dataset.loaded === '1') return;
+                    // Footer Tabel-1 tampil/ sembunyi sesuai nested
+                    if (tfootEl) {
+                        const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
+                            .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
+                            null);
+                        tfootEl.style.display = anyVisibleNest ? 'none' : '';
+                    }
 
-                        try {
-                            wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                              <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
-                            </div>`;
+                    if (wasOpen) return;
+                    if (wrap.dataset.loaded === '1') return;
 
-                            const url = new URL(apiT2, window.location.origin);
-                            url.searchParams.set('kunnr', kunnr);
-                            if (typeof WERKS !== 'undefined' && WERKS) url.searchParams.set(
-                                'werks', WERKS);
-                            if (typeof AUART !== 'undefined' && AUART) url.searchParams.set(
-                                'auart', AUART);
+                    try {
+                        wrap.innerHTML = `
+          <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+            <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+          </div>`;
 
-                            const res = await fetch(url);
-                            if (!res.ok) throw new Error('Network response was not ok');
-                            const js = await res.json();
-                            if (!js.ok) throw new Error(js.error || 'Gagal memuat data PO');
+                        const url = new URL(apiT2, window.location.origin);
+                        url.searchParams.set('kunnr', kunnr);
+                        if (WERKS) url.searchParams.set('werks', WERKS);
+                        if (AUART) url.searchParams.set('auart', AUART);
 
-                            wrap.innerHTML = renderT2(js.data, kunnr);
-                            wrap.dataset.loaded = '1';
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error('Network response was not ok');
+                        const js = await res.json();
+                        if (!js.ok) throw new Error(js.error || 'Gagal memuat data PO');
 
-                            wrap.querySelectorAll('.js-t2row').forEach(row2 => {
-                                row2.addEventListener('click', async (ev) => {
-                                    ev.stopPropagation();
+                        wrap.innerHTML = renderT2(js.data, kunnr);
+                        wrap.dataset.loaded = '1';
 
-                                    const vbeln = (row2.dataset.vbeln || '')
-                                        .trim();
-                                    const tgtId = row2.dataset.tgt;
-                                    const caret = row2.querySelector(
-                                        '.yz-caret');
-                                    const tgt = wrap.querySelector('#' +
-                                        tgtId);
-                                    const body = tgt.querySelector(
-                                        '.yz-slot-t3');
-                                    const open = tgt.style.display !==
-                                        'none';
-                                    const tbody2 = row2.closest('tbody');
+                        // Pastikan state footer T2 benar saat pertama render
+                        updateT2FooterVisibility(wrap.querySelector('table'));
 
-                                    if (!open) {
-                                        tbody2.classList.add(
-                                            'so-focus-mode');
-                                        row2.classList.add('is-focused');
-                                    } else {
-                                        tbody2.classList.remove(
-                                            'so-focus-mode');
-                                        row2.classList.remove('is-focused');
-                                    }
+                        // Klik Tabel-2 → toggle & load Tabel-3
+                        wrap.querySelectorAll('.js-t2row').forEach(row2 => {
+                            row2.addEventListener('click', async (ev) => {
+                                ev.stopPropagation();
 
-                                    if (open) {
-                                        tgt.style.display = 'none';
-                                        caret?.classList.remove('rot');
-                                        return;
-                                    }
+                                const vbeln = (row2.dataset.vbeln || '')
+                                    .trim();
+                                const tgtId = row2.dataset.tgt;
+                                const caret = row2.querySelector(
+                                    '.yz-caret');
+                                const tgt = wrap.querySelector('#' + tgtId);
+                                const body = tgt.querySelector(
+                                    '.yz-slot-t3');
+                                const open = tgt.style.display !== 'none';
+                                const tbody2 = row2.closest('tbody');
+                                const t2Table = row2.closest('table');
 
-                                    tgt.style.display = '';
-                                    caret?.classList.add('rot');
+                                if (!open) {
+                                    tbody2.classList.add('so-focus-mode');
+                                    row2.classList.add('is-focused');
+                                } else {
+                                    tbody2.classList.remove(
+                                    'so-focus-mode');
+                                    row2.classList.remove('is-focused');
+                                }
 
-                                    if (tgt.dataset.loaded === '1') return;
+                                if (open) {
+                                    tgt.style.display = 'none';
+                                    caret?.classList.remove('rot');
+                                    updateT2FooterVisibility(t2Table);
+                                    return;
+                                }
 
-                                    body.innerHTML = `<div class="p-2 text-muted small yz-loader-pulse">
-                                      <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
-                                    </div>`;
+                                tgt.style.display = '';
+                                caret?.classList.add('rot');
+                                updateT2FooterVisibility(t2Table);
 
-                                    const u3 = new URL(apiT3, window
-                                        .location.origin);
-                                    u3.searchParams.set('vbeln', vbeln);
-                                    if (typeof WERKS !== 'undefined' &&
-                                        WERKS) u3.searchParams.set('werks',
-                                        WERKS);
-                                    if (typeof AUART !== 'undefined' &&
-                                        AUART) u3.searchParams.set('auart',
-                                        AUART);
+                                if (tgt.dataset.loaded === '1') return;
 
-                                    const r3 = await fetch(u3);
-                                    if (!r3.ok) throw new Error(
-                                        'Network response was not ok for item details'
+                                body.innerHTML = `
+              <div class="p-2 text-muted small yz-loader-pulse">
+                <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
+              </div>`;
+
+                                const u3 = new URL(apiT3, window.location
+                                    .origin);
+                                u3.searchParams.set('vbeln', vbeln);
+                                if (WERKS) u3.searchParams.set('werks',
+                                    WERKS);
+                                if (AUART) u3.searchParams.set('auart',
+                                    AUART);
+
+                                const r3 = await fetch(u3);
+                                if (!r3.ok) throw new Error(
+                                    'Network response was not ok for item details'
                                     );
-                                    const j3 = await r3.json();
-                                    if (!j3.ok) throw new Error(j3.error ||
-                                        'Gagal memuat detail item');
+                                const j3 = await r3.json();
+                                if (!j3.ok) throw new Error(j3.error ||
+                                    'Gagal memuat detail item');
 
-                                    body.innerHTML = renderT3(j3.data);
-                                    tgt.dataset.loaded = '1';
-                                });
+                                body.innerHTML = renderT3(j3.data);
+                                tgt.dataset.loaded = '1';
                             });
-                        } catch (e) {
-                            console.error(e);
-                            wrap.innerHTML =
-                                `<div class="alert alert-danger m-3">${e.message}</div>`;
-                        }
-                    });
+                        });
+                    } catch (e) {
+                        console.error(e);
+                        wrap.innerHTML =
+                            `<div class="alert alert-danger m-3">${e.message}</div>`;
+                    }
                 });
+            });
 
-                // highlight hasil pencarian dari Search PO
-                const handleSearchHighlight = () => {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const encryptedPayload = urlParams.get('q');
-                    if (!encryptedPayload) return;
+            // Highlight hasil pencarian dari Search PO
+            const handleSearchHighlight = () => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const encryptedPayload = urlParams.get('q');
+                if (!encryptedPayload) return;
 
-                    fetch(apiDecryptPayload, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')
-                                    .getAttribute('content')
-                            },
-                            body: JSON.stringify({
-                                q: encryptedPayload
-                            })
+                fetch(apiDecryptPayload, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute(
+                                'content')
+                        },
+                        body: JSON.stringify({
+                            q: encryptedPayload
                         })
-                        .then(res => res.json())
-                        .then(result => {
-                            if (!result.ok || !result.data) return;
+                    })
+                    .then(res => res.json())
+                    .then(result => {
+                        if (!result.ok || !result.data) return;
 
-                            const params = result.data;
-                            const highlightKunnr = params.highlight_kunnr;
-                            const highlightVbeln = params.highlight_vbeln;
+                        const params = result.data;
+                        const highlightKunnr = params.highlight_kunnr;
+                        const highlightVbeln = params.highlight_vbeln;
 
-                            if (highlightKunnr && highlightVbeln) {
-                                const customerRow = document.querySelector(
-                                    `.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
-                                if (customerRow) {
-                                    customerRow.click();
-                                    let attempts = 0,
-                                        maxAttempts = 50;
-                                    const interval = setInterval(() => {
-                                        const soRow = document.querySelector(
-                                            `.js-t2row[data-vbeln="${highlightVbeln}"]`);
-                                        if (soRow) {
-                                            clearInterval(interval);
-                                            soRow.classList.add('row-highlighted');
-                                            soRow.addEventListener('click', () => {
-                                                soRow.classList.remove('row-highlighted');
-                                            }, {
+                        if (highlightKunnr && highlightVbeln) {
+                            const customerRow = document.querySelector(
+                                `.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
+                            if (customerRow) {
+                                customerRow.click();
+                                let attempts = 0,
+                                    maxAttempts = 50;
+                                const interval = setInterval(() => {
+                                    const soRow = document.querySelector(
+                                        `.js-t2row[data-vbeln="${highlightVbeln}"]`);
+                                    if (soRow) {
+                                        clearInterval(interval);
+                                        soRow.classList.add('row-highlighted');
+                                        soRow.addEventListener('click', () => soRow.classList
+                                            .remove('row-highlighted'), {
                                                 once: true
                                             });
-                                            setTimeout(() => soRow.scrollIntoView({
-                                                behavior: 'smooth',
-                                                block: 'center'
-                                            }), 500);
-                                        }
-                                        attempts++;
-                                        if (attempts > maxAttempts) clearInterval(interval);
-                                    }, 100);
-                                }
+                                        setTimeout(() => soRow.scrollIntoView({
+                                            behavior: 'smooth',
+                                            block: 'center'
+                                        }), 500);
+                                    }
+                                    attempts++;
+                                    if (attempts > maxAttempts) clearInterval(interval);
+                                }, 100);
                             }
-                        }).catch(console.error);
-                };
-                handleSearchHighlight();
-            }
-
+                        }
+                    }).catch(console.error);
+            };
+            handleSearchHighlight();
         });
     </script>
 @endpush
