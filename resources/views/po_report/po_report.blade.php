@@ -27,7 +27,7 @@
         style="display:none"></div>
 
     {{-- =========================================================
-    HEADER: PILIH TYPE & ACTION BUTTONS
+    HEADER: PILIH TYPE (tombol Collabs & Export DIHAPUS)
     ========================================================= --}}
     @if (filled($werks))
         @php
@@ -37,7 +37,6 @@
 
         <div class="card yz-card shadow-sm mb-3 overflow-visible">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-
                 {{-- Kiri: pills PO Type --}}
                 <div class="py-1">
                     @if ($typesForPlant->count())
@@ -61,39 +60,8 @@
                     @endif
                 </div>
 
-                {{-- Kanan: Collabs + Export --}}
-                <div class="py-1 d-flex align-items-center gap-2">
-                    {{-- [NEW] Collabs buttons --}}
-                    <div id="collabs-container" class="d-flex gap-2" style="display:none;">
-                        <button class="btn btn-collabs d-inline-flex align-items-center" type="button" id="btn-collabs">
-                            <i class="fas fa-layer-group me-2"></i>
-                            Buka Item SO Terpilih
-                            <span class="badge rounded-pill bg-collabs ms-2" id="collabs-count-badge">0</span>
-                        </button>
-                        <button class="btn btn-collabs-exit d-inline-flex align-items-center" type="button"
-                            id="btn-collabs-exit" style="display:none;">
-                            <i class="fas fa-compress me-2"></i>
-                            Keluar Mode
-                        </button>
-                    </div>
-
-                    {{-- Export Items (muncul saat ada item terpilih) --}}
-                    <div class="dropdown" id="export-dropdown-container" style="display:none;">
-                        <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn"
-                            data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-file-export me-2"></i>
-                            Export Items (<span id="selected-count">0</span>)
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="export-btn">
-                            <li><a class="dropdown-item export-option" href="#" data-type="pdf">
-                                    <i class="fas fa-file-pdf text-danger me-2"></i>Export to PDF
-                                </a></li>
-                            <li><a class="dropdown-item export-option" href="#" data-type="excel">
-                                    <i class="fas fa-file-excel text-success me-2"></i>Export to Excel
-                                </a></li>
-                        </ul>
-                    </div>
-                </div>
+                {{-- Kanan dikosongkan (tombol dihapus) --}}
+                <div class="py-1 d-flex align-items-center gap-2"></div>
             </div>
         </div>
     @endif
@@ -236,6 +204,7 @@
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
+        /* sembunyikan footer total Tabel-1 saat customer focus mode */
         tbody.customer-focus-mode~tfoot.yz-footer-customer {
             display: none !important;
         }
@@ -256,62 +225,6 @@
         .yz-caret.rot {
             transform: rotate(90deg);
         }
-
-        /* [NEW] kelas untuk hide saat collabs-focus */
-        .collabs-hidden {
-            display: none !important;
-        }
-
-        /* [NEW][opsional] rapikan tombol */
-        #collabs-container .btn {
-            white-space: nowrap;
-        }
-
-        .btn-collabs {
-            --c1: #22c55e;
-            /* green-500 */
-            --c2: #16a34a;
-            /* green-600 */
-            background: linear-gradient(180deg, var(--c1), var(--c2));
-            color: #fff;
-            border: 0;
-            box-shadow: 0 4px 12px rgba(34, 197, 94, .25);
-        }
-
-        .btn-collabs:hover {
-            filter: brightness(0.98);
-            color: #fff;
-        }
-
-        .btn-collabs:focus {
-            outline: 0;
-            box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, .35);
-        }
-
-        .btn-collabs-exit {
-            background: #eef2ff;
-            /* indigo-50 */
-            color: #3730a3;
-            /* indigo-800 */
-            border: 1px solid #c7d2fe;
-            /* indigo-200 */
-        }
-
-        .btn-collabs-exit:hover {
-            background: #e0e7ff;
-            color: #312e81;
-        }
-
-        .btn-collabs-exit:focus {
-            outline: 0;
-            box-shadow: 0 0 0 .2rem rgba(99, 102, 241, .25);
-        }
-
-        .bg-collabs {
-            background: #065f46 !important;
-        }
-
-        /* emerald-800 */
     </style>
 @endpush
 
@@ -342,46 +255,49 @@
             return s.length ? s : null;
         };
 
-        /* ========= STATE EXPORT (berbasis item) ========= */
+        /* ========= STATE PILIHAN (berbasis item) ========= */
         const selectedItems = new Set(); // id item
         const itemIdToSO = new Map(); // id -> vbeln
-        const exportDropdownContainer = document.getElementById('export-dropdown-container');
-        const selectedCountSpan = document.getElementById('selected-count');
-        const updateExportButton = () => {
-            selectedCountSpan.textContent = selectedItems.size;
-            if (exportDropdownContainer) exportDropdownContainer.style.display = selectedItems.size > 0 ? 'block' :
-                'none';
-        };
 
-        /* ========= [NEW] STATE COLLABS (berbasis SO) ========= */
-        const collabsContainer = document.getElementById('collabs-container');
-        const collabsCountSpan = document.getElementById('collabs-count-badge');
-        const btnCollabs = document.getElementById('btn-collabs');
-        const btnCollabsExit = document.getElementById('btn-collabs-exit');
-        let collabsMode = false;
+        /* ========= SINKRONISASI CHECKBOX T3 ========= */
+        function syncSelectAllItemsState(container) {
+            const itemCheckboxes = container.querySelectorAll('.check-item');
+            const selectAll = container.querySelector('.check-all-items');
+            if (!selectAll || !itemCheckboxes.length) return;
+            const allChecked = Array.from(itemCheckboxes).every(ch => ch.checked);
+            const anyChecked = Array.from(itemCheckboxes).some(ch => ch.checked);
+            selectAll.checked = !!allChecked;
+            selectAll.indeterminate = !allChecked && anyChecked;
+        }
 
-        const countCheckedSO = () =>
-            document.querySelectorAll('.yz-nest-wrap .check-so:checked').length;
+        function applySelectionsToRenderedItems(container) {
+            container.querySelectorAll('.check-item').forEach(chk => {
+                const sid = sanitizeId(chk.dataset.id);
+                chk.checked = !!(sid && selectedItems.has(sid));
+            });
+            syncSelectAllItemsState(container);
+        }
 
-        const setCollabsUI = () => {
-            if (collabsContainer) {
-                collabsContainer.style.display = (collabsMode || countCheckedSO() > 0) ? 'block' : 'none';
+        function clearRenderedItemsUnderSO(nest) {
+            if (!nest) return;
+            const box = nest.querySelector('.yz-slot-t3');
+            if (!box) return;
+            box.querySelectorAll('.check-item').forEach(ch => ch.checked = false);
+            const selAll = box.querySelector('.check-all-items');
+            if (selAll) {
+                selAll.checked = false;
+                selAll.indeterminate = false;
             }
-            if (btnCollabs) btnCollabs.style.display = collabsMode ? 'none' : 'inline-flex';
-            if (btnCollabsExit) btnCollabsExit.style.display = collabsMode ? 'inline-flex' : 'none';
-        };
+        }
 
-        const updateCollabsButton = () => {
-            const n = countCheckedSO();
-            if (collabsCountSpan) collabsCountSpan.textContent = n;
-            setCollabsUI();
-        };
-
-
-        /* Tangkal klik checkbox agar tidak ikut expand */
-        document.addEventListener('click', (e) => {
-            if (e.target.closest('.form-check-input')) e.stopPropagation();
-        }, true);
+        /* ========= FOOTER T2 VISIBILITY ========= */
+        function updateT2FooterVisibility(t2Table) {
+            if (!t2Table) return;
+            const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
+                .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
+            const tfoot = t2Table.querySelector('tfoot.t2-footer');
+            if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
+        }
 
         /* ========= RENDER T2 ========= */
         function renderT2(rows, kunnr) {
@@ -423,7 +339,9 @@
 
                 html += `
       <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-        <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
+        <td class="text-center">
+          <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}">
+        </td>
         <td style="text-align:center;"><span class="yz-caret">▸</span></td>
         <td style="text-align:left;">${r.BSTNK ?? ''}</td>
         <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
@@ -463,7 +381,9 @@
     <table class="table table-sm mb-0 yz-mini">
       <thead class="yz-header-item">
         <tr>
-          <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+          <th style="width:40px;">
+            <input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item">
+          </th>
           <th style="min-width:80px;text-align:center;">Item</th>
           <th style="min-width:150px;text-align:center;">Material FG</th>
           <th style="min-width:300px;">Desc FG</th>
@@ -500,138 +420,6 @@
             return out;
         }
 
-        /* Footer T2 hide/show saat T3 dibuka */
-        function updateT2FooterVisibility(t2Table) {
-            if (!t2Table) return;
-            const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
-                .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
-            const tfoot = t2Table.querySelector('tfoot.t2-footer');
-            if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
-        }
-
-        /* ========= COLLABS MODE HELPERS ========= */
-        function enterCollabsMode() {
-            collabsMode = true;
-            setCollabsUI();
-
-            const wraps = document.querySelectorAll('.yz-nest-wrap');
-            const affectedT2Tables = new Set();
-
-            // Sembunyikan seluruh customer yg tidak punya SO terpilih
-            document.querySelectorAll('.yz-kunnr-row').forEach(krow => {
-                const nxt = document.getElementById(krow.dataset.kid);
-                const wrap = nxt?.querySelector('.yz-nest-wrap');
-                if (!wrap) return;
-
-                const anyChecked = wrap.querySelector('.check-so:checked');
-                if (!anyChecked) {
-                    krow.classList.add('collabs-hidden');
-                    nxt.classList.add('collabs-hidden');
-                } else {
-                    krow.classList.remove('collabs-hidden');
-                    nxt.classList.remove('collabs-hidden');
-                }
-            });
-
-            // Di tiap wrap yang punya SO terpilih: tampilkan hanya SO terpilih, expand & load T3
-            wraps.forEach(async (wrap) => {
-                const t2tbl = wrap.querySelector('table');
-                if (t2tbl) affectedT2Tables.add(t2tbl);
-
-                // hide semua baris dulu
-                wrap.querySelectorAll('.js-t2row').forEach(row => {
-                    row.classList.add('collabs-hidden');
-                    const nest = row.nextElementSibling;
-                    if (nest?.classList.contains('yz-nest')) nest.classList.add('collabs-hidden');
-                });
-
-                const checked = wrap.querySelectorAll('.check-so:checked');
-                for (const chk of checked) {
-                    const soRow = chk.closest('.js-t2row');
-                    if (!soRow) continue;
-
-                    // show row + nest
-                    soRow.classList.remove('collabs-hidden');
-                    const tgt = soRow.nextElementSibling; // tr.yz-nest (T3)
-                    const caret = soRow.querySelector('.yz-caret');
-
-                    // Expand
-                    if (tgt && tgt.style.display === 'none') {
-                        tgt.style.display = '';
-                        tgt.dataset.collabsOpen = '1'; // [ADD] tandai bahwa T3 ini dibuka oleh collabs
-                        caret?.classList.add('rot');
-                        caret?.classList.add('rot');
-                    }
-                    tgt?.classList.remove('collabs-hidden');
-
-                    // Load jika belum
-                    if (tgt && tgt.dataset.loaded !== '1') {
-                        const vbeln = (chk.dataset.vbeln || '').trim();
-                        const box = tgt.querySelector('.yz-slot-t3');
-                        if (box) {
-                            box.innerHTML = `
-                                <div class="p-2 text-muted small yz-loader-pulse">
-                                    <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
-                                </div>`;
-                            const u3 = new URL("{{ route('dashboard.api.t3') }}", window.location.origin);
-                            const root = document.getElementById('yz-root');
-                            const WERKS = (root?.dataset.werks || '').trim() || null;
-                            const AUART = (root?.dataset.auart || '').trim() || null;
-                            u3.searchParams.set('vbeln', vbeln);
-                            if (WERKS) u3.searchParams.set('werks', WERKS);
-                            if (AUART) u3.searchParams.set('auart', AUART);
-
-                            const r3 = await fetch(u3);
-                            const j3 = await r3.json();
-                            if (j3?.ok) {
-                                box.innerHTML = renderT3(j3.data);
-                                tgt.dataset.loaded = '1';
-                                box.querySelectorAll('.check-item').forEach(ci => {
-                                    const sid = sanitizeId(ci.dataset.id);
-                                    ci.checked = !!(sid && selectedItems.has(sid));
-                                });
-                            } else {
-                                box.innerHTML =
-                                    `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
-                            }
-                        }
-                    }
-                }
-            });
-
-            affectedT2Tables.forEach(tbl => updateT2FooterVisibility(tbl));
-
-            // Scroll ke SO terpilih pertama
-            const first = document.querySelector('.yz-nest-wrap .check-so:checked')?.closest('.js-t2row')
-                ?.nextElementSibling;
-            first?.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
-        }
-
-        function exitCollabsMode() {
-            collabsMode = false;
-            setCollabsUI();
-
-            // 1) Tampilkan semua baris/customer yang tersembunyi saat fokus
-            document.querySelectorAll('.collabs-hidden').forEach(el => el.classList.remove('collabs-hidden'));
-
-            // 2) TUTUP HANYA T3 yang dibuka oleh collabs sebelumnya
-            document.querySelectorAll('tr.yz-nest[data-collabs-open="1"]').forEach(tgt => {
-                tgt.style.display = 'none'; // close
-                tgt.dataset.collabsOpen = ''; // clear flag
-                const soRow = tgt.previousElementSibling;
-                soRow?.querySelector('.yz-caret')?.classList.remove('rot'); // kembalikan caret
-            });
-
-            // 3) Recompute footer visibility per T2
-            document.querySelectorAll('.yz-nest-wrap table').forEach(tbl => updateT2FooterVisibility(tbl));
-
-            // Catatan: status ceklis SO/Item TETAP (tidak diubah).
-        }
-
-
         /* ========= MAIN ========= */
         document.addEventListener('DOMContentLoaded', () => {
             // Label responsif Tabel-1
@@ -650,7 +438,15 @@
             const WERKS = (root.dataset.werks || '').trim() || null;
             const AUART = (root.dataset.auart || '').trim() || null;
 
-            // Expand Level-1 → load T2
+            /* ===== Cegah checkbox T2 memicu toggle baris (biar tidak masuk focus mode) ===== */
+            document.body.addEventListener('click', (e) => {
+                if (e.target.classList.contains('check-so') || e.target.classList.contains(
+                    'check-all-sos')) {
+                    e.stopPropagation();
+                }
+            }, true);
+
+            // Expand Level-1 (Customer) → load T2 (DENGAN focus mode, seperti di Stock)
             document.querySelectorAll('.yz-kunnr-row').forEach(custRow => {
                 custRow.addEventListener('click', async () => {
                     const kunnr = (custRow.dataset.kunnr || '').trim();
@@ -663,37 +459,38 @@
                     const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
                     const wasOpen = custRow.classList.contains('is-open');
+
+                    // === FOCUS MODE (Customer) ===
                     if (!wasOpen) {
                         tbody.classList.add('customer-focus-mode');
                         custRow.classList.add('is-focused');
                     } else {
                         tbody.classList.remove('customer-focus-mode');
                         custRow.classList.remove('is-focused');
+                        // reset bagian dalamnya (seperti di Stock)
+                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
+                            .remove('so-focus-mode'));
+                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
+                            .remove('is-focused'));
+                        wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
+                            'rot'));
+                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
+                            'none');
                     }
 
                     custRow.classList.toggle('is-open');
                     slot.style.display = wasOpen ? 'none' : '';
 
-                    if (wasOpen) {
-                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
-                            'none');
-                        wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
-                            'rot'));
-                    }
-
                     // Footer Tabel-1
                     if (tfootEl) {
                         const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')]
                             .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                                null);
+                            null);
                         tfootEl.style.display = anyVisible ? 'none' : '';
                     }
 
                     if (wasOpen) return;
-                    if (wrap.dataset.loaded === '1') {
-                        updateCollabsButton();
-                        return;
-                    }
+                    if (wrap.dataset.loaded === '1') return;
 
                     try {
                         wrap.innerHTML = `
@@ -712,11 +509,10 @@
 
                         wrap.innerHTML = renderT2(js.data, kunnr);
                         wrap.dataset.loaded = '1';
-                        updateExportButton();
-                        updateT2FooterVisibility(wrap.querySelector('table'));
-                        updateCollabsButton();
 
-                        // Klik baris SO → toggle & load T3
+                        updateT2FooterVisibility(wrap.querySelector('table'));
+
+                        // Klik baris SO → toggle & load T3 (DENGAN focus mode, seperti di Stock)
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
                                 if (ev.target.closest('.form-check-input'))
@@ -730,16 +526,17 @@
                                     '.yz-caret');
                                 const tgt = wrap.querySelector('#' + tgtId);
                                 const box = tgt.querySelector(
-                                    '.yz-slot-t3');
+                                '.yz-slot-t3');
                                 const open = tgt.style.display !== 'none';
                                 const tbody2 = soRow.closest('tbody');
                                 const t2tbl = soRow.closest('table');
 
+                                // === FOCUS MODE (SO) ===
                                 if (!open) {
-                                    tbody2.classList.add('so-focus-mode');
+                                    tbody2?.classList.add('so-focus-mode');
                                     soRow.classList.add('is-focused');
                                 } else {
-                                    tbody2.classList.remove(
+                                    tbody2?.classList.remove(
                                         'so-focus-mode');
                                     soRow.classList.remove('is-focused');
                                 }
@@ -755,7 +552,10 @@
                                 caret?.classList.add('rot');
                                 updateT2FooterVisibility(t2tbl);
 
-                                if (tgt.dataset.loaded === '1') return;
+                                if (tgt.dataset.loaded === '1') {
+                                    applySelectionsToRenderedItems(box);
+                                    return;
+                                }
 
                                 box.innerHTML = `
               <div class="p-2 text-muted small yz-loader-pulse">
@@ -779,118 +579,161 @@
                                 box.innerHTML = renderT3(j3.data);
                                 tgt.dataset.loaded = '1';
 
-                                // Sinkronkan checkbox item yang sudah terpilih
-                                box.querySelectorAll('.check-item').forEach(
-                                    chk => {
-                                        const sid = sanitizeId(chk
-                                            .dataset.id);
-                                        chk.checked = !!(sid &&
-                                            selectedItems.has(sid));
-                                    });
+                                applySelectionsToRenderedItems(box);
                             });
                         });
 
-                        /* Delegasi perubahan checkbox di embed T2/T3 (di dalam wrap) */
+                        /* Delegasi perubahan checkbox di T2/T3 (TANPA focus mode) */
                         wrap.addEventListener('change', async (e) => {
-                            // Check-all SO
+                            // === PILIH SEMUA SO (HEADER T2) ===
                             if (e.target.classList.contains('check-all-sos')) {
                                 const allSO = wrap.querySelectorAll('.check-so');
                                 for (const chk of allSO) {
                                     chk.checked = e.target.checked;
                                     const v = chk.dataset.vbeln;
 
-                                    // kalau T3 sudah di DOM
-                                    const nest = wrap.querySelector(
-                                            `.js-t2row[data-vbeln='${v}']`)
-                                        ?.nextElementSibling;
+                                    const soRow = chk.closest('.js-t2row');
+                                    const nest = soRow?.nextElementSibling;
+                                    const caret = soRow?.querySelector('.yz-caret');
                                     const box = nest?.querySelector('.yz-slot-t3');
-                                    if (box && nest.dataset.loaded === '1') {
+
+                                    if (e.target.checked) {
+                                        // Open + load jika perlu (tanpa ubah focus class)
+                                        if (nest && nest.style.display === 'none') {
+                                            nest.style.display = '';
+                                            caret?.classList.add('rot');
+                                        }
+                                        if (nest && nest.dataset.loaded !== '1') {
+                                            const u3 = new URL(apiT3, window
+                                                .location.origin);
+                                            u3.searchParams.set('vbeln', v);
+                                            if (WERKS) u3.searchParams.set('werks',
+                                                WERKS);
+                                            if (AUART) u3.searchParams.set('auart',
+                                                AUART);
+                                            const r3 = await fetch(u3);
+                                            const j3 = await r3.json();
+                                            if (j3?.ok) {
+                                                box.innerHTML = renderT3(j3.data);
+                                                nest.dataset.loaded = '1';
+                                            } else {
+                                                box.innerHTML =
+                                                    `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
+                                            }
+                                        }
+                                        if (box) {
+                                            box.querySelectorAll('.check-item')
+                                                .forEach(ci => {
+                                                    const sid = sanitizeId(ci
+                                                        .dataset.id);
+                                                    if (!sid) return;
+                                                    ci.checked = true;
+                                                    selectedItems.add(sid);
+                                                });
+                                            const selAll = box.querySelector(
+                                                '.check-all-items');
+                                            if (selAll) {
+                                                selAll.checked = true;
+                                                selAll.indeterminate = false;
+                                            }
+                                        }
+                                    } else {
+                                        // Uncheck → clear rendered + close (tanpa ubah focus class)
+                                        if (box) {
+                                            box.querySelectorAll('.check-item')
+                                                .forEach(ci => {
+                                                    const sid = sanitizeId(ci
+                                                        .dataset.id);
+                                                    if (!sid) return;
+                                                    ci.checked = false;
+                                                    selectedItems.delete(sid);
+                                                });
+                                            const selAll = box.querySelector(
+                                                '.check-all-items');
+                                            if (selAll) {
+                                                selAll.checked = false;
+                                                selAll.indeterminate = false;
+                                            }
+                                        }
+                                        if (nest) {
+                                            nest.style.display = 'none';
+                                            caret?.classList.remove('rot');
+                                        }
+                                    }
+                                }
+                                return;
+                            }
+
+                            // === PILIH SATU SO (CHECKBOX BARIS) ===
+                            if (e.target.classList.contains('check-so')) {
+                                const v = e.target.dataset.vbeln;
+                                const soRow = e.target.closest('.js-t2row');
+                                const nest = soRow?.nextElementSibling;
+                                const caret = soRow?.querySelector('.yz-caret');
+                                const box = nest?.querySelector('.yz-slot-t3');
+
+                                if (e.target.checked) {
+                                    // Open + load jika perlu (tanpa ubah focus class)
+                                    if (nest && nest.style.display === 'none') {
+                                        nest.style.display = '';
+                                        caret?.classList.add('rot');
+                                    }
+                                    if (nest && nest.dataset.loaded !== '1') {
+                                        const u3 = new URL(apiT3, window.location
+                                            .origin);
+                                        u3.searchParams.set('vbeln', v);
+                                        if (WERKS) u3.searchParams.set('werks',
+                                            WERKS);
+                                        if (AUART) u3.searchParams.set('auart',
+                                            AUART);
+
+                                        const r3 = await fetch(u3);
+                                        const j3 = await r3.json();
+                                        if (j3.ok) {
+                                            box.innerHTML = renderT3(j3.data);
+                                            nest.dataset.loaded = '1';
+                                        } else {
+                                            box.innerHTML =
+                                                `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
+                                        }
+                                    }
+                                    if (box) {
                                         box.querySelectorAll('.check-item').forEach(
                                             ci => {
                                                 const sid = sanitizeId(ci
                                                     .dataset.id);
                                                 if (!sid) return;
-                                                ci.checked = e.target.checked;
-                                                if (e.target.checked)
-                                                    selectedItems.add(sid);
-                                                else selectedItems.delete(sid);
-                                            });
-                                        continue;
-                                    }
-
-                                    // belum di-load → fetch cepat untuk daftar id
-                                    const u3 = new URL(apiT3, window.location
-                                        .origin);
-                                    u3.searchParams.set('vbeln', v);
-                                    if (WERKS) u3.searchParams.set('werks', WERKS);
-                                    if (AUART) u3.searchParams.set('auart', AUART);
-                                    const r3 = await fetch(u3);
-                                    const j3 = await r3.json();
-                                    if (j3.ok) {
-                                        j3.data.forEach(it => {
-                                            const sid = sanitizeId(it.id);
-                                            if (!sid) return;
-                                            if (e.target.checked)
+                                                ci.checked = true;
                                                 selectedItems.add(sid);
-                                            else selectedItems.delete(sid);
-                                            itemIdToSO.set(sid, String(it
-                                                .VBELN));
-                                        });
+                                            });
+                                        const selAll = box.querySelector(
+                                            '.check-all-items');
+                                        if (selAll) {
+                                            selAll.checked = true;
+                                            selAll.indeterminate = false;
+                                        }
+                                    }
+                                } else {
+                                    // Uncheck → clear rendered + close (tanpa ubah focus class)
+                                    clearRenderedItemsUnderSO(nest);
+                                    if (box) {
+                                        box.querySelectorAll('.check-item').forEach(
+                                            ci => {
+                                                const sid = sanitizeId(ci
+                                                    .dataset.id);
+                                                if (!sid) return;
+                                                selectedItems.delete(sid);
+                                            });
+                                    }
+                                    if (nest) {
+                                        nest.style.display = 'none';
+                                        caret?.classList.remove('rot');
                                     }
                                 }
-                                updateExportButton();
-                                updateCollabsButton();
                                 return;
                             }
 
-                            // Check SO baris tunggal
-                            if (e.target.classList.contains('check-so')) {
-                                const v = e.target.dataset.vbeln;
-                                const nest = wrap.querySelector(
-                                        `.js-t2row[data-vbeln='${v}']`)
-                                    ?.nextElementSibling;
-                                const box = nest?.querySelector('.yz-slot-t3');
-
-                                if (box && nest.dataset.loaded === '1') {
-                                    box.querySelectorAll('.check-item').forEach(
-                                        ci => {
-                                            const sid = sanitizeId(ci.dataset
-                                                .id);
-                                            if (!sid) return;
-                                            ci.checked = e.target.checked;
-                                            if (e.target.checked) selectedItems
-                                                .add(sid);
-                                            else selectedItems.delete(sid);
-                                        });
-                                    updateExportButton();
-                                    updateCollabsButton();
-                                    return;
-                                }
-
-                                // fetch cepat
-                                const u3 = new URL(apiT3, window.location.origin);
-                                u3.searchParams.set('vbeln', v);
-                                if (WERKS) u3.searchParams.set('werks', WERKS);
-                                if (AUART) u3.searchParams.set('auart', AUART);
-                                const r3 = await fetch(u3);
-                                const j3 = await r3.json();
-                                if (j3.ok) {
-                                    j3.data.forEach(it => {
-                                        const sid = sanitizeId(it.id);
-                                        if (!sid) return;
-                                        if (e.target.checked) selectedItems
-                                            .add(sid);
-                                        else selectedItems.delete(sid);
-                                        itemIdToSO.set(sid, String(it
-                                            .VBELN));
-                                    });
-                                }
-                                updateExportButton();
-                                updateCollabsButton();
-                                return;
-                            }
-
-                            // Check-all items (di T3)
+                            // === PILIH SEMUA ITEM (HEADER T3) ===
                             if (e.target.classList.contains('check-all-items')) {
                                 const t3 = e.target.closest('table');
                                 t3.querySelectorAll('.check-item').forEach(ch => {
@@ -901,19 +744,20 @@
                                         sid);
                                     else selectedItems.delete(sid);
                                 });
-                                updateExportButton();
-                                updateCollabsButton();
+                                e.target.indeterminate = false;
                                 return;
                             }
 
-                            // Check single item
+                            // === PILIH SATU ITEM (T3) ===
                             if (e.target.classList.contains('check-item')) {
                                 const sid = sanitizeId(e.target.dataset.id);
                                 if (!sid) return;
                                 if (e.target.checked) selectedItems.add(sid);
                                 else selectedItems.delete(sid);
-                                updateExportButton();
-                                updateCollabsButton();
+
+                                const box = e.target.closest('.yz-slot-t3') ||
+                                    document;
+                                syncSelectAllItemsState(box);
                                 return;
                             }
                         });
@@ -924,78 +768,6 @@
                     }
                 });
             });
-
-            // [NEW] Handler tombol Collabs → fokus hanya SO terpilih (buka T3)
-            if (btnCollabs) {
-                btnCollabs.addEventListener('click', async () => {
-                    if (countCheckedSO() === 0) {
-                        alert('Pilih minimal 1 SO di Tabel-2.');
-                        return;
-                    }
-                    enterCollabsMode();
-                });
-            }
-            // [NEW] Keluar Mode Collabs
-            if (btnCollabsExit) {
-                btnCollabsExit.addEventListener('click', () => {
-                    exitCollabsMode();
-                });
-            }
-
-            // Export handler (tetap sama)
-            if (exportDropdownContainer) {
-                exportDropdownContainer.addEventListener('click', (e) => {
-                    if (!e.target.classList.contains('export-option')) return;
-                    e.preventDefault();
-                    if (selectedItems.size === 0) {
-                        alert('Pilih minimal 1 item.');
-                        return;
-                    }
-
-                    const exportType = e.target.dataset.type;
-
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = "{{ route('po.export') }}";
-                    form.target = '_blank';
-
-                    const csrf = document.createElement('input');
-                    csrf.type = 'hidden';
-                    csrf.name = '_token';
-                    csrf.value = "{{ csrf_token() }}";
-                    form.appendChild(csrf);
-
-                    const t = document.createElement('input');
-                    t.type = 'hidden';
-                    t.name = 'export_type';
-                    t.value = exportType;
-                    form.appendChild(t);
-
-                    const w = document.createElement('input');
-                    w.type = 'hidden';
-                    w.name = 'werks';
-                    w.value = "{{ $selected['werks'] ?? '' }}";
-                    form.appendChild(w);
-
-                    const a = document.createElement('input');
-                    a.type = 'hidden';
-                    a.name = 'auart';
-                    a.value = "{{ $selected['auart'] ?? '' }}";
-                    form.appendChild(a);
-
-                    Array.from(selectedItems).forEach(id => {
-                        const i = document.createElement('input');
-                        i.type = 'hidden';
-                        i.name = 'item_ids[]';
-                        i.value = id;
-                        form.appendChild(i);
-                    });
-
-                    document.body.appendChild(form);
-                    form.submit();
-                    document.body.removeChild(form);
-                });
-            }
         });
     </script>
 @endpush

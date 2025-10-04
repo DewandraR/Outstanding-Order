@@ -5,7 +5,6 @@
 @section('content')
 
     @php
-        // State pilihan dari controller
         $selectedWerks = $selected['werks'] ?? null;
         $selectedAuart = trim((string) ($selected['auart'] ?? ''));
         $typesForPlant = collect($mapping[$selectedWerks] ?? []);
@@ -14,19 +13,16 @@
         $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
     @endphp
 
-    {{-- Root state (dipakai JS – bukan query string) --}}
+    {{-- ROOT STATE --}}
     <div id="so-root" data-werks="{{ $selectedWerks ?? '' }}" data-auart="{{ $selectedAuart }}"
         data-hkunnr="{{ request('highlight_kunnr', '') }}" data-hvbeln="{{ request('highlight_vbeln', '') }}"
         data-hposnr="{{ request('highlight_posnr', '') }}" data-auto="{{ request('auto', '1') ? '1' : '0' }}"
         style="display:none"></div>
 
-    {{-- =========================================================
-   HEADER: Pills (SO Type) & Actions (Collabs + Export)
-========================================================= --}}
+    {{-- HEADER --}}
     <div class="card yz-card shadow-sm mb-3 overflow-visible">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-
-            {{-- Kiri: pills SO Type --}}
+            {{-- Kiri: pills type --}}
             <div class="py-1">
                 @if ($selectedWerks && $typesForPlant->count())
                     <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
@@ -49,24 +45,8 @@
                 @endif
             </div>
 
-            {{-- Kanan: Collabs + Export Items + Export Overview PDF --}}
+            {{-- Kanan: Export Items (tanpa tombol collabs apapun) --}}
             <div class="py-1 d-flex align-items-center gap-2">
-
-                {{-- [NEW] Collabs buttons (fokus hanya SO yang dicentang) --}}
-                <div id="collabs-container" class="d-flex gap-2" style="display:none;">
-                    <button class="btn btn-collabs d-inline-flex align-items-center" type="button" id="btn-collabs">
-                        <i class="fas fa-layer-group me-2"></i>
-                        Buka Item SO Terpilih
-                        <span class="badge rounded-pill bg-collabs ms-2" id="collabs-count-badge">0</span>
-                    </button>
-                    <button class="btn btn-collabs-exit d-inline-flex align-items-center" type="button"
-                        id="btn-collabs-exit" style="display:none;">
-                        <i class="fas fa-compress me-2"></i>
-                        Keluar Mode
-                    </button>
-                </div>
-
-                {{-- Export Items (dropdown) --}}
                 <div class="dropdown" id="export-dropdown-container" style="display:none;">
                     <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn" data-bs-toggle="dropdown"
                         aria-expanded="false">
@@ -80,17 +60,7 @@
                                     class="fas fa-file-excel text-success me-2"></i>Export to Excel</a></li>
                     </ul>
                 </div>
-
-                {{-- Export Overview PDF --}}
-                {{-- @if ($selectedWerks && $selectedAuart)
-                    @php $q = urlencode(Crypt::encrypt(['werks' => $selectedWerks, 'auart' => $selectedAuart])); @endphp
-                    <a href="{{ route('so.export.summary') }}?q={{ $q }}" target="_blank"
-                        class="btn btn-outline-success">
-                        <i class="fas fa-file-pdf me-2"></i> Export Overview PDF
-                    </a>
-                @endif --}}
             </div>
-
         </div>
     </div>
 
@@ -102,9 +72,7 @@
         </div>
     @endif
 
-    {{-- =========================================================
-   TABEL LEVEL-1 (Overview Customer)
-========================================================= --}}
+    {{-- TABEL LEVEL-1 --}}
     @if ($rows)
         <div class="card yz-card shadow-sm">
             <div class="card-body p-0 p-md-2">
@@ -200,9 +168,7 @@
         </div>
     @endif
 
-    {{-- =========================================================
-   MODAL REMARK
-========================================================= --}}
+    {{-- MODAL REMARK --}}
     <div class="modal fade" id="remarkModal" tabindex="-1" aria-labelledby="remarkModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -235,11 +201,11 @@
         .remark-icon {
             cursor: pointer;
             color: #6c757d;
-            transition: color .2s;
+            transition: color .2s
         }
 
         .remark-icon:hover {
-            color: #0d6efd;
+            color: #0d6efd
         }
 
         .remark-dot {
@@ -249,7 +215,7 @@
             border-radius: 50%;
             display: inline-block;
             margin-left: 5px;
-            vertical-align: middle;
+            vertical-align: middle
         }
 
         .so-selected-dot {
@@ -257,174 +223,92 @@
             width: 8px;
             background: #0d6efd;
             border-radius: 50%;
-            display: none;
+            display: none
         }
 
         .yz-footer-customer th {
             background: #f4faf7;
-            border-top: 2px solid #cfe9dd;
+            border-top: 2px solid #cfe9dd
         }
 
         .so-remark-flag {
             color: #6c757d;
             margin-right: 6px;
-            display: none;
+            display: none
         }
 
         .so-remark-flag.active {
             color: #0d6efd;
-            display: inline-block;
+            display: inline-block
         }
 
         .row-highlighted {
-            animation: flashRow 1.2s ease-in-out 3;
+            animation: flashRow 1.2s ease-in-out 3
         }
 
         @keyframes flashRow {
             0% {
-                background: #fff8d6;
+                background: #fff8d6
             }
 
             50% {
-                background: #ffe89a;
+                background: #ffe89a
             }
 
             100% {
-                background: transparent;
+                background: transparent
             }
         }
 
         .yz-caret {
             display: inline-block;
             transition: transform .18s ease;
-            user-select: none;
+            user-select: none
         }
 
         .yz-caret.rot {
-            transform: rotate(90deg);
+            transform: rotate(90deg)
         }
 
         tbody.customer-focus-mode~tfoot.yz-footer-customer {
-            display: none !important;
+            display: none !important
         }
 
         .yz-row-highlight-negative>td,
         .yz-row-highlight-negative td {
-            background-color: #ffe5e5 !important;
+            background-color: #ffe5e5 !important
         }
 
         .table-hover tbody tr.yz-row-highlight-negative:hover>td,
         .table-hover tbody tr.yz-row-highlight-negative:hover td {
-            background-color: #ffd6d6 !important;
+            background-color: #ffd6d6 !important
         }
-
-        /* [NEW] Collabs focus helpers */
-        .collabs-hidden {
-            display: none !important;
-        }
-
-        /* [NEW] Tombol Collabs yang lebih cantik */
-        .btn-collabs {
-            --c1: #22c55e;
-            --c2: #16a34a;
-            background: linear-gradient(180deg, var(--c1), var(--c2));
-            color: #fff;
-            border: 0;
-            box-shadow: 0 4px 12px rgba(34, 197, 94, .25);
-        }
-
-        .btn-collabs:hover {
-            filter: brightness(.98);
-            color: #fff;
-        }
-
-        .btn-collabs:focus {
-            outline: 0;
-            box-shadow: 0 0 0 .2rem rgba(34, 197, 94, .35);
-        }
-
-        .btn-collabs-exit {
-            background: #eef2ff;
-            color: #3730a3;
-            border: 1px solid #c7d2fe;
-        }
-
-        .btn-collabs-exit:hover {
-            background: #e0e7ff;
-            color: #312e81;
-        }
-
-        .btn-collabs-exit:focus {
-            outline: 0;
-            box-shadow: 0 0 0 .2rem rgba(99, 102, 241, .25);
-        }
-
-        .bg-collabs {
-            background: #065f46 !important;
-        }
-
-        /* emerald-800 */
     </style>
 @endpush
 
 @push('scripts')
     <script>
-        // ==== Redirector helper: kirim payload terenkripsi via server ====
+        /* ====== Filter helper ====== */
         function applySoFilter(params) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = "{{ route('so.redirector') }}";
-
-            const csrf = document.createElement('input');
-            csrf.type = 'hidden';
-            csrf.name = '_token';
-            csrf.value = "{{ csrf_token() }}";
-            form.appendChild(csrf);
-
-            const payload = document.createElement('input');
-            payload.type = 'hidden';
-            payload.name = 'payload';
-            payload.value = JSON.stringify(params);
-            form.appendChild(payload);
-
-            document.body.appendChild(form);
-            form.submit();
+            const f = document.createElement('form');
+            f.method = 'POST';
+            f.action = "{{ route('so.redirector') }}";
+            const t = document.createElement('input');
+            t.type = 'hidden';
+            t.name = '_token';
+            t.value = "{{ csrf_token() }}";
+            const p = document.createElement('input');
+            p.type = 'hidden';
+            p.name = 'payload';
+            p.value = JSON.stringify(params);
+            f.appendChild(t);
+            f.appendChild(p);
+            document.body.appendChild(f);
+            f.submit();
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            // ------- utils -------
-            function waitFor(checkFn, {
-                timeout = 12000,
-                interval = 120
-            } = {}) {
-                return new Promise(resolve => {
-                    const start = Date.now();
-                    const t = setInterval(() => {
-                        let ok = false;
-                        try {
-                            ok = !!checkFn();
-                        } catch (e) {
-                            ok = false;
-                        }
-                        if (ok) {
-                            clearInterval(t);
-                            return resolve(true);
-                        }
-                        if (Date.now() - start > timeout) {
-                            clearInterval(t);
-                            return resolve(false);
-                        }
-                    }, interval);
-                });
-            }
-            if (typeof window.CSS === 'undefined') window.CSS = {};
-            if (typeof window.CSS.escape !== 'function') {
-                window.CSS.escape = function(sel) {
-                    return String(sel).replace(/([^\w-])/g, '\\$1');
-                };
-            }
-
-            // ------- constants & state -------
+        document.addEventListener('DOMContentLoaded', () => {
+            /* ---------- Constants & state ---------- */
             const apiSoByCustomer = "{{ route('so.api.by_customer') }}";
             const apiItemsBySo = "{{ route('so.api.by_items') }}";
             const exportUrl = "{{ route('so.export') }}";
@@ -440,7 +324,6 @@
 
             const exportDropdownContainer = document.getElementById('export-dropdown-container');
             const selectedCountSpan = document.getElementById('selected-count');
-            const selectedItems = new Set();
 
             const remarkModalEl = document.getElementById('remarkModal');
             const remarkModal = new bootstrap.Modal(remarkModalEl);
@@ -448,62 +331,43 @@
             const saveRemarkBtn = document.getElementById('save-remark-btn');
             const remarkFeedback = document.getElementById('remark-feedback');
 
-            // cache
-            const itemsCache = new Map(); // vbeln -> array items
+            const selectedItems = new Set(); // item ids
+            const itemsCache = new Map(); // vbeln -> items
             const itemIdToSO = new Map(); // itemId -> vbeln
 
-            // ===== [NEW] Collabs state & helpers =====
-            const collabsContainer = document.getElementById('collabs-container');
-            const collabsCountSpan = document.getElementById('collabs-count-badge');
-            const btnCollabs = document.getElementById('btn-collabs');
-            const btnCollabsExit = document.getElementById('btn-collabs-exit');
-            let collabsMode = false;
+            /* ---------- Utils ---------- */
+            if (!window.CSS) window.CSS = {};
+            if (typeof window.CSS.escape !== 'function') window.CSS.escape = s => String(s).replace(/([^\w-])/g,
+                '\\$1');
 
-            const countCheckedSO = () =>
-                document.querySelectorAll('.yz-nest-wrap .check-so:checked').length;
-
-            const setCollabsUI = () => {
-                if (collabsContainer) collabsContainer.style.display = (collabsMode || countCheckedSO() > 0) ?
-                    'block' : 'none';
-                if (btnCollabs) btnCollabs.style.display = collabsMode ? 'none' : 'inline-flex';
-                if (btnCollabsExit) btnCollabsExit.style.display = collabsMode ? 'inline-flex' : 'none';
-            };
-
-            const updateCollabsButton = () => {
-                const n = countCheckedSO();
-                if (collabsCountSpan) collabsCountSpan.textContent = n;
-                setCollabsUI();
-            };
-
-            // ------- helpers -------
             function updateExportButton() {
-                const count = selectedItems.size;
-                selectedCountSpan.textContent = count;
-                exportDropdownContainer.style.display = count > 0 ? 'block' : 'none';
+                const n = selectedItems.size;
+                selectedCountSpan.textContent = n;
+                exportDropdownContainer.style.display = n > 0 ? 'block' : 'none';
             }
-            const formatCurrency = (value, currency, decimals = 2) => {
-                const n = parseFloat(value);
+            const formatCurrency = (v, c, d = 2) => {
+                const n = parseFloat(v);
                 if (!Number.isFinite(n)) return '';
                 const opt = {
-                    minimumFractionDigits: decimals,
-                    maximumFractionDigits: decimals
+                    minimumFractionDigits: d,
+                    maximumFractionDigits: d
                 };
-                if (currency === 'IDR') return `Rp ${n.toLocaleString('id-ID', opt)}`;
-                if (currency === 'USD') return `$${n.toLocaleString('en-US', opt)}`;
-                return `${currency} ${n.toLocaleString('id-ID', opt)}`;
+                if (c === 'IDR') return `Rp ${n.toLocaleString('id-ID',opt)}`;
+                if (c === 'USD') return `$${n.toLocaleString('en-US',opt)}`;
+                return `${c} ${n.toLocaleString('id-ID',opt)}`;
             };
-            const formatNumber = (num, decimals = 0) => {
-                const n = parseFloat(num);
+            const formatNumber = (v, d = 0) => {
+                const n = parseFloat(v);
                 if (!Number.isFinite(n)) return '';
                 return n.toLocaleString('id-ID', {
-                    minimumFractionDigits: decimals,
-                    maximumFractionDigits: decimals
+                    minimumFractionDigits: d,
+                    maximumFractionDigits: d
                 });
             };
 
             async function ensureItemsLoadedForSO(vbeln) {
                 if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
-                const u = new URL(apiItemsBySo);
+                const u = new URL(apiItemsBySo, window.location.origin);
                 u.searchParams.set('vbeln', vbeln);
                 u.searchParams.set('werks', WERKS);
                 u.searchParams.set('auart', AUART);
@@ -516,21 +380,32 @@
             }
 
             function updateSODot(vbeln) {
-                const anySelected = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
-                document.querySelectorAll(`.js-t2row[data-vbeln='${vbeln}'] .so-selected-dot`)
-                    .forEach(dot => dot.style.display = anySelected ? 'inline-block' : 'none');
+                const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
+                    .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
             }
 
+            // sinkronkan checkbox di T3 dengan selectedItems (on/off)
             function applySelectionsToRenderedItems(container) {
                 container.querySelectorAll('.check-item').forEach(chk => {
-                    if (selectedItems.has(chk.dataset.id)) chk.checked = true;
+                    chk.checked = selectedItems.has(chk.dataset.id);
                 });
+            }
+
+            // sinkronkan header check-all pada box item
+            function syncCheckAllHeader(itemBox) {
+                const table = itemBox?.querySelector('table');
+                if (!table) return;
+                const hdr = table.querySelector('.check-all-items');
+                if (!hdr) return;
+                const all = Array.from(table.querySelectorAll('.check-item'));
+                hdr.checked = (all.length > 0 && all.every(ch => ch.checked));
             }
 
             function updateSoRemarkFlagFromCache(vbeln) {
                 const items = itemsCache.get(vbeln) || [];
                 const hasAny = items.some(it => (it.remark || '').trim() !== '');
-                document.querySelectorAll(`.js-t2row[data-vbeln='${vbeln}'] .so-remark-flag`)
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
                     .forEach(el => {
                         el.style.display = hasAny ? 'inline-block' : 'none';
                         el.classList.toggle('active', hasAny);
@@ -538,106 +413,92 @@
             }
 
             function recalcSoRemarkFlagFromDom(vbeln) {
-                const nest = document.querySelector(`.js-t2row[data-vbeln='${vbeln}']`)?.nextElementSibling;
+                const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
+                    ?.nextElementSibling;
                 let hasAny = false;
                 if (nest) {
                     nest.querySelectorAll('.remark-icon').forEach(ic => {
-                        const txt = decodeURIComponent(ic.dataset.remark || '');
-                        if (txt.trim() !== '') hasAny = true;
+                        const t = decodeURIComponent(ic.dataset.remark || '');
+                        if (t.trim() !== '') hasAny = true;
                     });
                 }
-                document.querySelectorAll(`.js-t2row[data-vbeln='${vbeln}'] .so-remark-flag`)
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
                     .forEach(el => {
                         el.style.display = hasAny ? 'inline-block' : 'none';
                         el.classList.toggle('active', hasAny);
                     });
             }
 
-            // ===== helper footer Tabel-2: sembunyikan kalau ada Tabel-3 yang terbuka =====
             function updateT2FooterVisibility(t2Table) {
                 if (!t2Table) return;
-                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
-                    .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
+                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
+                    'none' && tr.offsetParent !== null);
                 const tfoot = t2Table.querySelector('tfoot.t2-footer');
                 if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
             }
 
-            // ===== FIX: blok klik checkbox di Tabel-2 pada CAPTURE agar tidak bubble ke baris =====
-            document.addEventListener('click', function(e) {
-                if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) {
-                    e.stopPropagation();
-                }
+            // cegah klik checkbox T2 memicu expand row (fokus hanya via klik baris)
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
+                    .stopPropagation();
             }, true);
 
-            // ------- RENDERERS -------
+            /* ---------- RENDERERS ---------- */
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
-
-                // >>> Hitung total per currency utk footer
                 const totalsByCurr = {};
                 rows.forEach(r => {
-                    const cur = (r.WAERK || '').trim();
-                    const val = parseFloat(r.total_value) || 0;
-                    totalsByCurr[cur] = (totalsByCurr[cur] || 0) + val;
+                    const c = (r.WAERK || '').trim();
+                    const v = +r.total_value || 0;
+                    totalsByCurr[c] = (totalsByCurr[c] || 0) + v;
                 });
-
                 let html = `
         <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
         <table class="table table-sm mb-0 yz-mini">
-          <thead class="yz-header-so">
-            <tr>
-              <th style="width:40px;" class="text-center">
-                <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-              </th>
-              <th style="width:40px;"></th>
-              <th class="text-start">SO</th>
-              <th class="text-center">SO Item Count</th>
-              <th class="text-center">Req. Deliv. Date</th>
-              <th class="text-center">Overdue (Days)</th>
-              <th class="text-center">Outs. Value</th>
-              <th style="width:28px;"></th>
-            </tr>
-          </thead>
-          <tbody>`;
-
+        <thead class="yz-header-so">
+          <tr>
+            <th style="width:40px;" class="text-center"><input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO"></th>
+            <th style="width:40px;"></th>
+            <th class="text-start">SO</th>
+            <th class="text-center">SO Item Count</th>
+            <th class="text-center">Req. Deliv. Date</th>
+            <th class="text-center">Overdue (Days)</th>
+            <th class="text-center">Outs. Value</th>
+            <th style="width:28px;"></th>
+          </tr>
+        </thead>
+        <tbody>`;
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                    const rowHighlightClass = r.Overdue > 0 ? 'yz-row-highlight-negative' : '';
+                    const rowHi = r.Overdue > 0 ? 'yz-row-highlight-negative' : '';
                     const hasRemark = Number(r.remark_count || 0) > 0;
-
                     html += `
-          <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-            <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
-            <td class="text-center"><span class="yz-caret">▸</span></td>
-            <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-            <td class="text-center">${r.item_count ?? '-'}</td>
-            <td class="text-center">${r.FormattedEdatu || '-'}</td>
-            <td class="text-center">${r.Overdue}</td>
-            <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-            <td class="text-center">
-              <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" title="Ada item yang diberi catatan" style="display:${hasRemark ? 'inline-block':'none'};"></i>
-              <span class="so-selected-dot"></span>
-            </td>
-          </tr>
-          <tr id="${rid}" class="yz-nest" style="display:none;">
-            <td colspan="8" class="p-0">
-              <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-                <div class="yz-slot-items p-2"></div>
-              </div>
-            </td>
-          </tr>`;
+            <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+              <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
+              <td class="text-center"><span class="yz-caret">▸</span></td>
+              <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+              <td class="text-center">${r.item_count ?? '-'}</td>
+              <td class="text-center">${r.FormattedEdatu || '-'}</td>
+              <td class="text-center">${r.Overdue}</td>
+              <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
+              <td class="text-center">
+                <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+                <span class="so-selected-dot"></span>
+              </td>
+            </tr>
+            <tr id="${rid}" class="yz-nest" style="display:none;">
+              <td colspan="8" class="p-0">
+                <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+                  <div class="yz-slot-items p-2"></div>
+                </div>
+              </td>
+            </tr>`;
                 });
-
-                // >>> FOOTER Total
                 html += `</tbody><tfoot class="t2-footer">`;
                 Object.entries(totalsByCurr).forEach(([cur, sum]) => {
-                    html += `
-          <tr class="table-light">
-            <th colspan="6" class="text-end">Total (${cur || 'N/A'})</th>
-            <th class="text-center">${formatCurrency(sum, cur)}</th>
-            <th></th>
-          </tr>`;
+                    html +=
+                        `<tr class="table-light"><th colspan="6" class="text-end">Total (${cur||'N/A'})</th><th class="text-center">${formatCurrency(sum,cur)}</th><th></th></tr>`;
                 });
                 html += `</tfoot></table>`;
                 return html;
@@ -646,57 +507,49 @@
             function renderLevel3_Items(rows) {
                 if (!rows?.length)
                     return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
-
                 let html = `<div class="table-responsive">
         <table class="table table-sm table-hover mb-0 yz-mini">
-          <thead class="yz-header-item">
-            <tr>
-              <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-              <th>Item</th><th>Material FG</th><th>Desc FG</th>
-              <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
-              <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
-              <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
-            </tr>
-          </thead>
-          <tbody>`;
-
+        <thead class="yz-header-item">
+          <tr>
+            <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+            <th>Item</th><th>Material FG</th><th>Desc FG</th>
+            <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
+            <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
+            <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
+          </tr>
+        </thead>
+        <tbody>`;
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
                     const hasRemark = r.remark && r.remark.trim() !== '';
                     const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
-
                     html += `
-          <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
-              data-item-id="${r.id}"
-              data-werks="${r.WERKS_KEY}"
-              data-auart="${r.AUART_KEY}"
-              data-vbeln="${r.VBELN_KEY}"
-              data-posnr="${r.POSNR_KEY}">
-            <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
-            <td>${r.POSNR ?? ''}</td>
-            <td>${r.MATNR ?? ''}</td>
-            <td>${r.MAKTX ?? ''}</td>
-            <td>${formatNumber(r.KWMENG)}</td>
-            <td>${formatNumber(r.PACKG)}</td>
-            <td>${formatNumber(r.KALAB2)}</td>
-            <td>${formatNumber(r.ASSYM)}</td>
-            <td>${formatNumber(r.PAINT)}</td>
-            <td>${formatNumber(r.MENGE)}</td>
-            <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
-            <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
-            <td class="text-center">
-              <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
-              <span class="remark-dot" style="display:${hasRemark ? 'inline-block':'none'};"></span>
-            </td>
-          </tr>`;
+            <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+                data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
+                data-vbeln="${r.VBELN_KEY}" data-posnr="${r.POSNR_KEY}">
+              <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
+              <td>${r.POSNR ?? ''}</td>
+              <td>${r.MATNR ?? ''}</td>
+              <td>${r.MAKTX ?? ''}</td>
+              <td>${formatNumber(r.KWMENG)}</td>
+              <td>${formatNumber(r.PACKG)}</td>
+              <td>${formatNumber(r.KALAB2)}</td>
+              <td>${formatNumber(r.ASSYM)}</td>
+              <td>${formatNumber(r.PAINT)}</td>
+              <td>${formatNumber(r.MENGE)}</td>
+              <td>${formatCurrency(r.NETPR, r.WAERK)}</td>
+              <td>${formatCurrency(r.TOTPR2, r.WAERK)}</td>
+              <td class="text-center">
+                <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
+                <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
+              </td>
+            </tr>`;
                 });
-
                 html += `</tbody></table></div>`;
                 return html;
             }
 
-            // ------- EVENTS -------
-            // Expand Level-1 (customer) -> load T2
+            /* ---------- Expand Level-1 (load T2) ---------- */
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
                 row.addEventListener('click', async () => {
                     const kunnr = row.dataset.kunnr;
@@ -709,7 +562,6 @@
                     const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
                     const wasOpen = row.classList.contains('is-open');
-
                     if (!wasOpen) {
                         tbody.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
@@ -722,7 +574,6 @@
                     slot.style.display = wasOpen ? 'none' : '';
 
                     if (wasOpen) {
-                        const wrap = slot.querySelector('.yz-nest-wrap');
                         wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
                             'none');
                         wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
@@ -738,83 +589,74 @@
                     if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
 
                     if (wasOpen) return;
-                    if (wrap.dataset.loaded === '1') {
-                        updateCollabsButton();
-                        return;
-                    }
+                    if (wrap.dataset.loaded === '1') return;
 
                     try {
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
-          </div>`;
+                  <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+                </div>`;
                         const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
                         url.searchParams.set('auart', AUART);
-
                         const res = await fetch(url);
                         const js = await res.json();
                         if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
 
                         wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
                         wrap.dataset.loaded = '1';
-
-                        // Pastikan footer T2 tampil (belum ada T3 yang terbuka)
                         updateT2FooterVisibility(wrap.querySelector('table'));
-                        updateCollabsButton();
 
-                        // Klik baris SO -> expand T3
+                        // klik baris SO => focus-mode & load items
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
-                                // abaikan klik dari checkbox/input agar tidak expand
                                 if (ev.target.closest(
                                         '.check-so, .check-all-sos, .form-check-input'
                                     )) return;
-
                                 ev.stopPropagation();
+
                                 const vbeln = soRow.dataset.vbeln;
                                 const tgtId = soRow.dataset.tgt;
-
-                                const itemRow = wrap.querySelector('#' +
+                                const itemTr = wrap.querySelector('#' +
                                     tgtId);
-                                const itemBox = itemRow.querySelector(
+                                const box = itemTr.querySelector(
                                     '.yz-slot-items');
-                                const open = itemRow.style.display !==
+                                const open = itemTr.style.display !==
                                     'none';
+                                const t2tbl = soRow.closest('table');
                                 const soTbody = soRow.closest('tbody');
-                                const t2Table = soRow.closest('table');
 
-                                if (soTbody) {
-                                    if (!open) {
-                                        soTbody.classList.add(
-                                            'so-focus-mode');
-                                        soRow.classList.add('is-focused');
-                                    } else {
-                                        soTbody.classList.remove(
-                                            'so-focus-mode');
-                                        soRow.classList.remove(
-                                            'is-focused');
-                                    }
-                                }
                                 soRow.querySelector('.yz-caret')?.classList
                                     .toggle('rot');
+                                if (!open) {
+                                    soTbody?.classList.add('so-focus-mode');
+                                    soRow.classList.add('is-focused');
+                                } else {
+                                    soTbody?.classList.remove(
+                                        'so-focus-mode');
+                                    soRow.classList.remove('is-focused');
+                                }
 
                                 if (open) {
-                                    itemRow.style.display = 'none';
-                                    updateT2FooterVisibility(t2Table);
+                                    itemTr.style.display = 'none';
+                                    updateT2FooterVisibility(t2tbl);
+                                    return;
+                                }
+                                itemTr.style.display = '';
+                                updateT2FooterVisibility(t2tbl);
+
+                                if (itemTr.dataset.loaded === '1') {
+                                    applySelectionsToRenderedItems(box);
+                                    syncCheckAllHeader(box);
                                     return;
                                 }
 
-                                itemRow.style.display = '';
-                                updateT2FooterVisibility(t2Table);
-
-                                if (itemRow.dataset.loaded === '1') return;
-
-                                itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-              </div>`;
+                                box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                           <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+                         </div>`;
                                 try {
-                                    const u = new URL(apiItemsBySo);
+                                    const u = new URL(apiItemsBySo, window
+                                        .location.origin);
                                     u.searchParams.set('vbeln', vbeln);
                                     u.searchParams.set('werks', WERKS);
                                     u.searchParams.set('auart', AUART);
@@ -822,19 +664,18 @@
                                     const jd = await r.json();
                                     if (!jd.ok) throw new Error(jd.error ||
                                         'Gagal memuat item');
-
                                     jd.data.forEach(x => itemIdToSO.set(
                                         String(x.id), vbeln));
                                     itemsCache.set(vbeln, jd.data);
 
-                                    itemBox.innerHTML = renderLevel3_Items(
-                                        jd.data);
-                                    applySelectionsToRenderedItems(itemBox);
-                                    itemRow.dataset.loaded = '1';
-
+                                    box.innerHTML = renderLevel3_Items(jd
+                                        .data);
+                                    applySelectionsToRenderedItems(box);
+                                    syncCheckAllHeader(box);
+                                    itemTr.dataset.loaded = '1';
                                     updateSoRemarkFlagFromCache(vbeln);
                                 } catch (e) {
-                                    itemBox.innerHTML =
+                                    box.innerHTML =
                                         `<div class="alert alert-danger m-3">${e.message}</div>`;
                                 }
                             });
@@ -846,15 +687,15 @@
                 });
             });
 
-            // CHANGE EVENTS (pilih item/SO)
-            document.body.addEventListener('change', async function(e) {
+            /* ---------- CHANGE events (checkbox) ---------- */
+            document.body.addEventListener('change', async (e) => {
+                // --- check-all items (T3)
                 if (e.target.classList.contains('check-all-items')) {
                     const table = e.target.closest('table');
                     if (!table) return;
-                    const itemCheckboxes = table.querySelectorAll('.check-item');
-                    itemCheckboxes.forEach(checkbox => {
-                        checkbox.checked = e.target.checked;
-                        const id = checkbox.dataset.id;
+                    table.querySelectorAll('.check-item').forEach(ch => {
+                        ch.checked = e.target.checked;
+                        const id = ch.dataset.id;
                         if (e.target.checked) selectedItems.add(id);
                         else selectedItems.delete(id);
                     });
@@ -867,46 +708,88 @@
                     return;
                 }
 
+                // --- single item (T3)
                 if (e.target.classList.contains('check-item')) {
                     const id = e.target.dataset.id;
                     if (e.target.checked) selectedItems.add(id);
                     else selectedItems.delete(id);
                     const vbeln = itemIdToSO.get(String(id));
                     if (vbeln) updateSODot(vbeln);
+                    // sinkronkan header check-all di box ini
+                    const box = e.target.closest('.yz-slot-items');
+                    if (box) syncCheckAllHeader(box);
                     updateExportButton();
                     return;
                 }
 
+                // --- check-all SO (T2)  (tanpa mengubah focus-mode)
                 if (e.target.classList.contains('check-all-sos')) {
                     const tbody = e.target.closest('table')?.querySelector('tbody');
                     if (!tbody) return;
                     const allSO = tbody.querySelectorAll('.check-so');
+
                     for (const chk of allSO) {
                         chk.checked = e.target.checked;
                         const vbeln = chk.dataset.vbeln;
-                        if (e.target.checked) {
-                            const items = await ensureItemsLoadedForSO(vbeln);
-                            items.forEach(it => selectedItems.add(String(it.id)));
-                        } else {
+
+                        // maintain selection set
+                        const items = await ensureItemsLoadedForSO(vbeln);
+                        if (e.target.checked) items.forEach(it => selectedItems.add(String(it.id)));
+                        else {
                             Array.from(selectedItems).forEach(id => {
                                 if (itemIdToSO.get(String(id)) === vbeln) selectedItems.delete(
                                     id);
                             });
                         }
                         updateSODot(vbeln);
-                        const nest = document.querySelector(`tr.js-t2row[data-vbeln='${vbeln}']`)
-                            ?.nextElementSibling;
-                        const box = nest?.querySelector('.yz-slot-items');
-                        if (box) box.querySelectorAll('.check-item').forEach(ch => ch.checked = e.target
-                            .checked);
+
+                        // buka/tutup T3 TANPA focus-mode + sinkron header
+                        const soRow = chk.closest('.js-t2row');
+                        const nest = soRow?.nextElementSibling;
+                        const caret = soRow?.querySelector('.yz-caret');
+                        const t2tbl = soRow?.closest('table');
+
+                        if (nest) {
+                            const box = nest.querySelector('.yz-slot-items');
+                            if (e.target.checked) {
+                                if (nest.style.display === 'none') {
+                                    nest.style.display = '';
+                                    caret?.classList.add('rot');
+                                }
+                                if (nest.dataset.loaded !== '1') {
+                                    box.innerHTML = renderLevel3_Items(items);
+                                    applySelectionsToRenderedItems(box);
+                                    nest.dataset.loaded = '1';
+                                    updateSoRemarkFlagFromCache(vbeln);
+                                } else {
+                                    box.querySelectorAll('.check-item').forEach(ch => ch.checked =
+                                        true);
+                                }
+                                // header check-all ikut true
+                                const hdr = box.querySelector('table .check-all-items');
+                                if (hdr) hdr.checked = true;
+                            } else {
+                                // uncheck semua tampilan & header jadi false, lalu tutup
+                                if (box) {
+                                    box.querySelectorAll('.check-item').forEach(ch => ch.checked =
+                                        false);
+                                    const hdr = box.querySelector('table .check-all-items');
+                                    if (hdr) hdr.checked = false;
+                                }
+                                nest.style.display = 'none';
+                                caret?.classList.remove('rot');
+                            }
+                            updateT2FooterVisibility(t2tbl);
+                        }
                     }
                     updateExportButton();
-                    updateCollabsButton();
                     return;
                 }
 
+                // --- single SO (T2) (tanpa mengubah focus-mode)
                 if (e.target.classList.contains('check-so')) {
                     const vbeln = e.target.dataset.vbeln;
+
                     if (e.target.checked) {
                         const items = await ensureItemsLoadedForSO(vbeln);
                         items.forEach(it => selectedItems.add(String(it.id)));
@@ -917,19 +800,49 @@
                     }
                     updateSODot(vbeln);
                     updateExportButton();
-                    updateCollabsButton();
 
-                    const nest = document.querySelector(`tr.js-t2row[data-vbeln='${vbeln}']`)
-                        ?.nextElementSibling;
-                    const box = nest?.querySelector('.yz-slot-items');
-                    if (box) box.querySelectorAll('.check-item').forEach(ch => ch.checked = e.target
-                        .checked);
+                    // buka/tutup T3 tanpa fokus-mode + sinkron header check-all
+                    const soRow = document.querySelector(
+                        `.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+                    const nest = soRow?.nextElementSibling;
+                    const caret = soRow?.querySelector('.yz-caret');
+                    const t2tbl = soRow?.closest('table');
+
+                    if (nest) {
+                        const box = nest.querySelector('.yz-slot-items');
+                        if (e.target.checked) {
+                            if (nest.style.display === 'none') {
+                                nest.style.display = '';
+                                caret?.classList.add('rot');
+                            }
+                            if (nest.dataset.loaded !== '1') {
+                                const items = await ensureItemsLoadedForSO(vbeln);
+                                box.innerHTML = renderLevel3_Items(items);
+                                applySelectionsToRenderedItems(box);
+                                nest.dataset.loaded = '1';
+                                updateSoRemarkFlagFromCache(vbeln);
+                            } else {
+                                box.querySelectorAll('.check-item').forEach(ch => ch.checked = true);
+                            }
+                            const hdr = box.querySelector('table .check-all-items');
+                            if (hdr) hdr.checked = true;
+                        } else {
+                            if (box) {
+                                box.querySelectorAll('.check-item').forEach(ch => ch.checked = false);
+                                const hdr = box.querySelector('table .check-all-items');
+                                if (hdr) hdr.checked = false;
+                            }
+                            nest.style.display = 'none';
+                            caret?.classList.remove('rot');
+                        }
+                        updateT2FooterVisibility(t2tbl);
+                    }
                     return;
                 }
             });
 
-            // Klik ikon remark (Level-3)
-            document.body.addEventListener('click', function(e) {
+            /* ---------- Remark handlers ---------- */
+            document.body.addEventListener('click', (e) => {
                 if (!e.target.classList.contains('remark-icon')) return;
                 const rowEl = e.target.closest('tr');
                 const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
@@ -941,14 +854,12 @@
 
                 remarkTextarea.value = currentRemark;
                 remarkFeedback.textContent = '';
-
                 if (remarkModalEl.parentElement !== document.body) document.body.appendChild(remarkModalEl);
                 if (bootstrap.Modal.getInstance(remarkModalEl)) bootstrap.Modal.getInstance(remarkModalEl)
                     .hide();
                 remarkModal.show();
             });
 
-            // Simpan remark
             saveRemarkBtn.addEventListener('click', async function() {
                 const payload = {
                     werks: this.dataset.werks,
@@ -959,7 +870,7 @@
                 };
                 this.disabled = true;
                 this.innerHTML =
-                    `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Menyimpan...`;
+                    `<span class="spinner-border spinner-border-sm" role="status"></span> Menyimpan...`;
                 try {
                     const response = await fetch("{{ route('so.api.save_remark') }}", {
                         method: 'POST',
@@ -997,12 +908,13 @@
                 }
             });
 
-            // Export Items
+            /* ---------- Export ---------- */
             if (exportDropdownContainer) {
-                exportDropdownContainer.addEventListener('click', function(e) {
-                    if (!e.target.classList.contains('export-option')) return;
+                exportDropdownContainer.addEventListener('click', (e) => {
+                    const opt = e.target.closest('.export-option');
+                    if (!opt) return;
                     e.preventDefault();
-                    const exportType = e.target.dataset.type;
+                    const exportType = opt.dataset.type;
                     if (selectedItems.size === 0) {
                         alert('Pilih setidaknya satu item untuk diekspor.');
                         return;
@@ -1012,181 +924,52 @@
                     form.method = 'POST';
                     form.action = exportUrl;
                     form.target = '_blank';
-
-                    const csrfInput = document.createElement('input');
-                    csrfInput.type = 'hidden';
-                    csrfInput.name = '_token';
-                    csrfInput.value = csrfToken;
-                    form.appendChild(csrfInput);
-
-                    const typeInput = document.createElement('input');
-                    typeInput.type = 'hidden';
-                    typeInput.name = 'export_type';
-                    typeInput.value = exportType;
-                    form.appendChild(typeInput);
-
-                    const werksInput = document.createElement('input');
-                    werksInput.type = 'hidden';
-                    werksInput.name = 'werks';
-                    werksInput.value = WERKS;
-                    form.appendChild(werksInput);
-
-                    const auartInput = document.createElement('input');
-                    auartInput.type = 'hidden';
-                    auartInput.name = 'auart';
-                    auartInput.value = AUART;
-                    form.appendChild(auartInput);
-
-                    selectedItems.forEach(id => {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'item_ids[]';
-                        input.value = id;
-                        form.appendChild(input);
-                    });
-
+                    const add = (n, v) => {
+                        const i = document.createElement('input');
+                        i.type = 'hidden';
+                        i.name = n;
+                        i.value = v;
+                        form.appendChild(i);
+                    };
+                    add('_token', csrfToken);
+                    add('export_type', exportType);
+                    add('werks', WERKS);
+                    add('auart', AUART);
+                    selectedItems.forEach(id => add('item_ids[]', id));
                     document.body.appendChild(form);
                     form.submit();
                     document.body.removeChild(form);
                 });
             }
 
-            // ===== [NEW] COLLABS: fokus & keluar mode =====
-            function enterCollabsMode() {
-                collabsMode = true;
-                setCollabsUI();
-
-                // Sembunyikan customer tanpa SO terpilih
-                document.querySelectorAll('.yz-kunnr-row').forEach(krow => {
-                    const nxt = document.getElementById(krow.dataset.kid);
-                    const wrap = nxt?.querySelector('.yz-nest-wrap');
-                    if (!wrap) return;
-
-                    const anyChecked = wrap.querySelector('.check-so:checked');
-                    if (!anyChecked) {
-                        krow.classList.add('collabs-hidden');
-                        nxt.classList.add('collabs-hidden');
-                    } else {
-                        krow.classList.remove('collabs-hidden');
-                        nxt.classList.remove('collabs-hidden');
-                    }
-                });
-
-                // Tampilkan hanya SO terpilih per customer, buka T3, dan tandai sebagai collabsOpen
-                document.querySelectorAll('.yz-nest-wrap').forEach(async (wrap) => {
-                    const t2tbl = wrap.querySelector('table');
-                    // hide semua baris dulu
-                    wrap.querySelectorAll('.js-t2row').forEach(row => {
-                        row.classList.add('collabs-hidden');
-                        const nest = row.nextElementSibling;
-                        if (nest?.classList.contains('yz-nest')) nest.classList.add(
-                            'collabs-hidden');
-                    });
-
-                    const checked = wrap.querySelectorAll('.check-so:checked');
-                    for (const chk of checked) {
-                        const soRow = chk.closest('.js-t2row');
-                        if (!soRow) continue;
-
-                        // tampilkan baris + nest
-                        soRow.classList.remove('collabs-hidden');
-                        const tgt = soRow.nextElementSibling; // tr.yz-nest
-                        const caret = soRow.querySelector('.yz-caret');
-
-                        // Expand & tandai collabsOpen
-                        if (tgt && tgt.style.display === 'none') {
-                            tgt.style.display = '';
-                            tgt.dataset.collabsOpen = '1';
-                            caret?.classList.add('rot');
-                        }
-                        tgt?.classList.remove('collabs-hidden');
-
-                        // Load T3 jika belum ada
-                        if (tgt && tgt.dataset.loaded !== '1') {
-                            const vbeln = (chk.dataset.vbeln || '').trim();
-                            const box = tgt.querySelector('.yz-slot-items');
-                            if (box) {
-                                box.innerHTML = `
-                                  <div class="p-2 text-muted small yz-loader-pulse">
-                                    <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                                  </div>`;
-                                const u3 = new URL("{{ route('so.api.by_items') }}", window.location
-                                    .origin);
-                                u3.searchParams.set('vbeln', vbeln);
-                                u3.searchParams.set('werks', WERKS);
-                                u3.searchParams.set('auart', AUART);
-
-                                try {
-                                    const r3 = await fetch(u3);
-                                    const j3 = await r3.json();
-                                    if (j3?.ok) {
-                                        j3.data.forEach(x => itemIdToSO.set(String(x.id), vbeln));
-                                        itemsCache.set(vbeln, j3.data);
-                                        box.innerHTML = renderLevel3_Items(j3.data);
-                                        applySelectionsToRenderedItems(box);
-                                        tgt.dataset.loaded = '1';
-                                        updateSoRemarkFlagFromCache(vbeln);
-                                    } else {
-                                        box.innerHTML =
-                                            `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
-                                    }
-                                } catch (_) {
-                                    box.innerHTML =
-                                        `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
-                                }
-                            }
-                        }
-                    }
-
-                    updateT2FooterVisibility(t2tbl);
-                });
-
-                // Scroll ke SO terpilih pertama
-                const first = document.querySelector('.yz-nest-wrap .check-so:checked')?.closest('.js-t2row')
-                    ?.nextElementSibling;
-                first?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-            }
-
-            function exitCollabsMode() {
-                collabsMode = false;
-                setCollabsUI();
-
-                // Tampilkan semua yang tersembunyi
-                document.querySelectorAll('.collabs-hidden').forEach(el => el.classList.remove('collabs-hidden'));
-
-                // Tutup T3 yang dibuka oleh collabs saja
-                document.querySelectorAll('tr.yz-nest[data-collabs-open="1"]').forEach(tgt => {
-                    tgt.style.display = 'none';
-                    tgt.dataset.collabsOpen = '';
-                    const soRow = tgt.previousElementSibling;
-                    soRow?.querySelector('.yz-caret')?.classList.remove('rot');
-                });
-
-                // Recompute footer T2
-                document.querySelectorAll('.yz-nest-wrap table').forEach(tbl => updateT2FooterVisibility(tbl));
-            }
-
-            // Hook tombol
-            if (btnCollabs) btnCollabs.addEventListener('click', () => {
-                if (countCheckedSO() === 0) {
-                    alert('Pilih minimal 1 SO di Tabel-2.');
-                    return;
-                }
-                enterCollabsMode();
-            });
-            if (btnCollabsExit) btnCollabsExit.addEventListener('click', () => exitCollabsMode());
-
-            // ------- AUTO-EXPAND & AUTO-SCROLL SAMPAI ITEM (Level-3) -------
+            /* ---------- Auto expand/scroll (opsional) ---------- */
             (async function autoExpandFromRoot() {
-                const VBELN = VBELN_HL;
-                const KUNNR = KUNNR_HL;
+                const VBELN = VBELN_HL,
+                    KUNNR = KUNNR_HL;
                 const POSNR = (__root?.dataset.hposnr || '').trim();
                 const shouldAuto = AUTO;
                 const POSNR6 = POSNR ? String(POSNR).replace(/\D/g, '').padStart(6, '0') : '';
 
+                const waitFor = (fn, {
+                    timeout = 12000,
+                    interval = 120
+                } = {}) => new Promise(r => {
+                    const s = Date.now(),
+                        t = setInterval(() => {
+                            let ok = false;
+                            try {
+                                ok = !!fn();
+                            } catch {};
+                            if (ok) {
+                                clearInterval(t);
+                                return r(true);
+                            }
+                            if (Date.now() - s > timeout) {
+                                clearInterval(t);
+                                return r(false);
+                            }
+                        }, interval);
+                });
                 const scrollAndFlash = (el) => {
                     if (!el) return;
                     try {
@@ -1196,14 +979,12 @@
                         });
                         el.classList.add('row-highlighted');
                         setTimeout(() => el.classList.remove('row-highlighted'), 3000);
-                    } catch {}
+                    } catch {};
                 };
-
                 const findItemRow = (box, vbeln, pos6) => {
                     const rows = box?.querySelectorAll(`tr[data-vbeln='${CSS.escape(vbeln)}']`) || [];
                     for (const tr of rows) {
-                        const raw = (tr.dataset.posnr || '').trim();
-                        const norm = raw.replace(/\D/g, '').padStart(6, '0');
+                        const norm = (tr.dataset.posnr || '').replace(/\D/g, '').padStart(6, '0');
                         if (norm === pos6) return tr;
                     }
                     return null;
@@ -1222,7 +1003,6 @@
                         soRow: null,
                         itemsBox: null
                     };
-
                     const soRow = wrap.querySelector(
                         `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
                     if (!soRow) return {
@@ -1230,12 +1010,10 @@
                         soRow: null,
                         itemsBox: null
                     };
-
                     const itemNest = soRow.nextElementSibling;
                     const itemsBox = itemNest?.querySelector('.yz-slot-items');
                     const opened = itemNest && itemNest.style.display !== 'none';
                     if (!opened) soRow.click();
-
                     const okT3 = await waitFor(() => itemNest && itemNest.dataset.loaded === '1', {
                         timeout: 7000
                     });
@@ -1244,7 +1022,6 @@
                         soRow,
                         itemsBox: null
                     };
-
                     return {
                         wrap,
                         soRow,
@@ -1253,22 +1030,18 @@
                 };
 
                 if (VBELN && KUNNR) {
-                    const customerRow = document.querySelector(
-                        `.yz-kunnr-row[data-kunnr='${CSS.escape(KUNNR)}']`);
-                    if (!customerRow) return;
-
+                    const crow = document.querySelector(`.yz-kunnr-row[data-kunnr='${CSS.escape(KUNNR)}']`);
+                    if (!crow) return;
                     const {
                         soRow,
                         itemsBox
-                    } = await openToSO(customerRow);
+                    } = await openToSO(crow);
                     if (!soRow) return;
-
                     const target = (POSNR6 && findItemRow(itemsBox, VBELN, POSNR6)) ||
                         Array.from(itemsBox?.querySelectorAll('tr') || []).find(tr => {
                             const ic = tr.querySelector('.remark-icon');
                             return ic && decodeURIComponent(ic.dataset.remark || '').trim() !== '';
                         });
-
                     scrollAndFlash(target || soRow);
                     return;
                 }
@@ -1276,8 +1049,7 @@
                 if (VBELN && !KUNNR) {
                     let foundSoRow = null,
                         foundItemsBox = null;
-                    const custRows = Array.from(document.querySelectorAll('.yz-kunnr-row'));
-                    for (const crow of custRows) {
+                    for (const crow of Array.from(document.querySelectorAll('.yz-kunnr-row'))) {
                         const {
                             soRow,
                             itemsBox
@@ -1289,16 +1061,15 @@
                         }
                     }
                     if (!foundSoRow) return;
-
                     const target = (POSNR6 && findItemRow(foundItemsBox, VBELN, POSNR6)) ||
                         Array.from(foundItemsBox?.querySelectorAll('tr') || []).find(tr => {
                             const ic = tr.querySelector('.remark-icon');
                             return ic && decodeURIComponent(ic.dataset.remark || '').trim() !== '';
                         });
-
                     scrollAndFlash(target || foundSoRow);
                 }
             })();
+
         });
     </script>
 @endpush
