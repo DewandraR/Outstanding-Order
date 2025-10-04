@@ -55,6 +55,23 @@ class ProfileController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
+        // Tambahkan Flash Message yang berisi JavaScript untuk pembersihan klien
+        $request->session()->flash('js_script', '
+        // 1. Membersihkan Session Storage
+        sessionStorage.clear();
+        
+        // 2. Membersihkan Local Storage (Opsional, jika Anda menggunakannya)
+        // localStorage.clear(); 
+
+        // 3. Menghapus Cookies yang Mungkin Tersisa
+        // Catatan: Ini HANYA akan menghapus cookies yang tidak memiliki flag "HttpOnly".
+        // Cookies sesi Laravel yang utama sudah dihapus oleh Auth::logout() dan invalidate().
+        // Ini berguna untuk menghapus cookies lain (misalnya, "remember me" atau kustom).
+        document.cookie.split(";").forEach(function(c) {
+            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+    ');
+
         return Redirect::to('/');
     }
 }

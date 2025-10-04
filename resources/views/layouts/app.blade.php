@@ -282,6 +282,22 @@
     </script>
 
     <script src="{{ asset('js/chart-help.js') }}" data-json="{{ asset('chart-help.json') }}" defer></script>
+    @if (session()->has('js_script'))
+        <script>
+            // Ambil script dari flash session
+            const script = @json(session('js_script'));
+
+            if (script) {
+                try {
+                    // Jalankan string script sebagai kode JavaScript
+                    eval(script);
+                    console.log('Pembersihan client-side (session storage/cookies) berhasil dijalankan.');
+                } catch (e) {
+                    console.error('Error saat menjalankan script pembersihan:', e);
+                }
+            }
+        </script>
+    @endif
     @stack('scripts')
 </body>
 
