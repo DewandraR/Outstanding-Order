@@ -413,13 +413,22 @@
     <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
 
     <script>
-        document.addEventListener('click', function(e) {
-            if (e.target.closest('.yz-info-icon')) {
-                e.stopPropagation();
-                e.stopImmediatePropagation?.();
-                e.preventDefault?.();
-            }
-        }, true);
+        document.addEventListener('DOMContentLoaded', () => {
+            // Bind awal
+            preventInfoButtonPropagation();
+
+            // Bind ulang untuk ikon yang disisipkan dinamis oleh chart-help.js
+            const iv = setInterval(() => {
+                if (!document.querySelector('.yz-info-icon:not([data-click-bound="1"])')) {
+                    clearInterval(iv);
+                    return;
+                }
+                preventInfoButtonPropagation();
+            }, 500);
+
+            // Stop pengecekan setelah 5 detik
+            setTimeout(() => clearInterval(iv), 5000);
+        });
         // =========================================================
         // Helper Functions (Copy dari kode lama)
         // =========================================================
@@ -442,21 +451,12 @@
         }
 
         function preventInfoButtonPropagation() {
-            // Tombol info dibuat dinamis oleh chart-help.js dengan class .yz-info-icon
-            const infoButtons = document.querySelectorAll('.yz-info-icon');
-
-            infoButtons.forEach(btn => {
-                // Pastikan event handler hanya dipasang sekali
+            document.querySelectorAll('.yz-info-icon').forEach(btn => {
                 if (btn.dataset.clickBound === '1') return;
-
                 btn.addEventListener('click', (e) => {
-                    // KUNCI UTAMA: Hentikan event agar tidak 'menggelembung' 
-                    // ke elemen card induk yang memiliki click listener lain, dan stop *immediate* propagation.
-                    e.stopPropagation();
-                    e
-                        .stopImmediatePropagation(); // Ini memastikan event lain di elemen yang sama juga berhenti.
+                    e.stopPropagation(); // cukup hentikan bubbling
+                    // JANGAN panggil e.preventDefault() atau e.stopImmediatePropagation()
                 });
-
                 btn.dataset.clickBound = '1';
             });
         }
@@ -971,22 +971,22 @@
           </div>
           <hr class="mt-2">
           ${(rows && rows.length) ? `
-                                              <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
-                                                  <table class="table table-sm table-hover align-middle mb-0">
-                                                      <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                                          <tr>
-                                                              <th class="text-center" style="width:60px;">NO.</th>
-                                                              <th class="text-center" style="min-width:120px;">PO</th>
-                                                              <th class="text-center" style="min-width:120px;">SO</th>
-                                                              <th>CUSTOMER</th>
-                                                              <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                              <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                              <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                          </tr>
-                                                      </thead>
-                                                      <tbody>${table}</tbody>
-                                                  </table>
-                                              </div>` :
+                                                      <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
+                                                          <table class="table table-sm table-hover align-middle mb-0">
+                                                              <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                                                  <tr>
+                                                                      <th class="text-center" style="width:60px;">NO.</th>
+                                                                      <th class="text-center" style="min-width:120px;">PO</th>
+                                                                      <th class="text-center" style="min-width:120px;">SO</th>
+                                                                      <th>CUSTOMER</th>
+                                                                      <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                      <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                      <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                  </tr>
+                                                              </thead>
+                                                              <tbody>${table}</tbody>
+                                                          </table>
+                                                      </div>` :
               `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
             }
         </div>
@@ -1217,22 +1217,22 @@
                         </div>
                 <hr class="mt-2">
                 ${(rows && rows.length) ? `
-                                                            <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                <table class="table table-sm table-hover align-middle mb-0">
-                                                                    <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                        <tr>
-                                                                            <th class="text-center" style="width:60px;">NO.</th>
-                                                                            <th class="text-center" style="min-width:120px;">SO</th>
-                                                                            <th class="text-center" style="min-width:120px;">PO</th>
-                                                                            <th>Customer</th>
-                                                                            <th class="text-center" style="min-width:100px;">Plant</th>
-                                                                            <th class="text-center" style="min-width:140px;">Order Type</th>
-                                                                            <th class="text-center" style="min-width:120px;">Due Date</th>
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody>${body}</tbody>
-                                                                </table>
-                                                            </div>` :
+                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                        <table class="table table-sm table-hover align-middle mb-0">
+                                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                <tr>
+                                                                                    <th class="text-center" style="width:60px;">NO.</th>
+                                                                                    <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                    <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                    <th>Customer</th>
+                                                                                    <th class="text-center" style="min-width:100px;">Plant</th>
+                                                                                    <th class="text-center" style="min-width:140px;">Order Type</th>
+                                                                                    <th class="text-center" style="min-width:120px;">Due Date</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>${body}</tbody>
+                                                                        </table>
+                                                                    </div>` :
               `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada Potensial bottleneck (dalam 7 hari ke depan).</div>`}
               </div>
             </div>

@@ -1,30 +1,52 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ProfileController;
 
-// Controllers aplikasi
-use App\Http\Controllers\DashboardController;         // PO Dashboard (visual)
-use App\Http\Controllers\SODashboardController;      // SO Dashboard (visual)
+// Auth
+use App\Http\Controllers\AuthController;
+
+// Aplikasi
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\DashboardController;        // PO Dashboard (visual)
+use App\Http\Controllers\SODashboardController;     // SO Dashboard (visual)
 use App\Http\Controllers\MappingController;
-use App\Http\Controllers\SalesOrderController;       // Outstanding SO (report lama)
+use App\Http\Controllers\SalesOrderController;      // Outstanding SO (report lama)
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockDashboardController;
 use App\Http\Controllers\PoReportController;
+use Illuminate\Support\Facades\Auth;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes
+| AUTH (Guest area)
 |--------------------------------------------------------------------------
+| Login GET untuk form (route name 'login'),
+| Login POST untuk proses (tanpa nama; form pakai action route('login') -> '/login').
+| Kedua route diberi middleware: guest + nocache.after
 */
 
-// Root -> PO Dashboard (visual)
-Route::get('/', fn() => redirect()->route('dashboard'));
+Route::middleware(['guest', 'nocache.after'])->group(function () {
+	Route::get('/login',  [AuthController::class, 'showLogin'])->name('login');
+	Route::post('/login', [AuthController::class, 'login']);
+});
 
-// =========================
-// Area perlu login + verified
-// =========================
-Route::middleware(['auth', 'verified'])->group(function () {
+/*
+|--------------------------------------------------------------------------
+| LOGOUT (wajib POST)
+|--------------------------------------------------------------------------
+*/
+Route::post('/logout', [AuthController::class, 'logout'])
+	->middleware(['auth'])
+	->name('logout');
+
+/*
+|--------------------------------------------------------------------------
+| APP (Protected area) - semua butuh login + no-cache
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', 'nocache'])->group(function () {
+	// Root -> redirect ke dashboard
+	Route::get('/', fn() => redirect()->route('dashboard'));
 
 	// --------- PO Dashboard (visual) ---------
 	Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -93,20 +115,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
 	Route::post('/stock-report/redirect', [StockController::class, 'redirector'])->name('stock.redirector');
 	Route::post('/stock-report/export', [StockController::class, 'exportData'])->name('stock.export');
 	Route::get('/stock-dashboard', [StockDashboardController::class, 'index'])->name('stock.dashboard');
-});
 
-// =========================
-// Profil & resource lain (butuh login saja)
-// =========================
-Route::middleware('auth')->group(function () {
-	// Profile
+	// --------- Profil & CRUD Mapping (opsional) ---------
 	Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
 	Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
 	Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-	// CRUD Mapping
 	Route::resource('mapping', MappingController::class);
 });
 
-// Auth scaffolding
-require __DIR__ . '/auth.php';
+/*
+|--------------------------------------------------------------------------
+| Fallback (optional): arahkan tamu ke login
+|--------------------------------------------------------------------------
+*/
+Route::fallback(function () {
+	if (Auth::check()) {
+		abort(404);
+	}
+	return redirect()->route('login');
+});
