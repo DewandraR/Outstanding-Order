@@ -19,10 +19,7 @@ use App\Http\Controllers\StockDashboardController;
 Route::get('/', function () {
     return redirect()->route('dashboard', ['view' => 'po']);
 });
-
-// Route untuk Dashboard Utama dan API-nya
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // [DIUBAH] search -> POST
     Route::post('/dashboard/search', [DashboardController::class, 'search'])->name('dashboard.search');
@@ -45,12 +42,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/so-remark-summary', [DashboardController::class, 'apiSoRemarkSummary'])->name('so.api.remark_summary');
     Route::get('/api/so-remark-items',   [DashboardController::class, 'apiSoRemarkItems'])->name('so.api.remark_items');
     Route::get('/dashboard/api/remark-details', [DashboardController::class, 'apiRemarkDetails'])->name('dashboard.api.remarkDetails');
-    Route::get('/api/so/outs_by_customer', [\App\Http\Controllers\DashboardController::class, 'apiSoOutsByCustomer'])
+    Route::get('/api/so/outs_by_customer', [DashboardController::class, 'apiSoOutsByCustomer'])
         ->name('api.so.outs_by_customer');
-});
 
-// Grup route untuk semua fitur yang memerlukan autentikasi
-Route::middleware('auth')->group(function () {
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -94,6 +88,15 @@ Route::middleware('auth')->group(function () {
     // == DASHBOARD STOK (VISUAL)
     // ==========================================================
     Route::get('/stock-dashboard', [StockDashboardController::class, 'index'])->name('stock.dashboard');
+
+// Route untuk Dashboard Utama dan API-nya
+Route::middleware(['auth', 'verified'])->group(function () {
+    
+});
+
+// Grup route untuk semua fitur yang memerlukan autentikasi
+Route::middleware('auth')->group(function () {
+    
 });
 
 // Route untuk autentikasi (login, register, dll.)

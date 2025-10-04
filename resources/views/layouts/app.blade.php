@@ -181,7 +181,7 @@
             </ul>
 
 
-            {{-- PROFIL USER – diletakkan setelah UL, diberi mt-auto supaya nempel bawah --}}
+            {{-- PROFIL USER – diletakkan setelah UL, diberi mt-auto supaya nempel bawah
             <div class="user-profile mt-auto pt-2">
                 <div class="dropdown dropup w-100">
                     <button class="btn w-100 d-flex align-items-center justify-content-between" type="button"
@@ -210,7 +210,7 @@
                             </form>
                         </li>
                     </ul>
-                </div>
+                </div> --}}
             </div>
         </div> {{-- /flex-grow wrapper --}}
     </aside>
