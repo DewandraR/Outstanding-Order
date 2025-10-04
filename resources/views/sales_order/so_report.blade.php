@@ -17,11 +17,11 @@
     {{-- Root state (dipakai JS – bukan query string) --}}
     <div id="so-root" data-werks="{{ $selectedWerks ?? '' }}" data-auart="{{ $selectedAuart }}"
         data-hkunnr="{{ request('highlight_kunnr', '') }}" data-hvbeln="{{ request('highlight_vbeln', '') }}"
-        data-hposnr="{{ request('highlight_posnr', '') }}" data-auto  ="{{ request('auto', '1') ? '1' : '0' }}"
+        data-hposnr="{{ request('highlight_posnr', '') }}" data-auto="{{ request('auto', '1') ? '1' : '0' }}"
         style="display:none"></div>
 
     {{-- =========================================================
-   HEADER: Pills (SO Type) & Export Overview
+   HEADER: Pills (SO Type) & Actions (Collabs + Export)
 ========================================================= --}}
     <div class="card yz-card shadow-sm mb-3 overflow-visible">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
@@ -49,8 +49,24 @@
                 @endif
             </div>
 
-            {{-- Kanan: Export Items (dropdown) + Export Overview PDF --}}
-            <div class="py-1 d-flex align-items-center">
+            {{-- Kanan: Collabs + Export Items + Export Overview PDF --}}
+            <div class="py-1 d-flex align-items-center gap-2">
+
+                {{-- [NEW] Collabs buttons (fokus hanya SO yang dicentang) --}}
+                <div id="collabs-container" class="d-flex gap-2" style="display:none;">
+                    <button class="btn btn-collabs d-inline-flex align-items-center" type="button" id="btn-collabs">
+                        <i class="fas fa-layer-group me-2"></i>
+                        Buka Item SO Terpilih
+                        <span class="badge rounded-pill bg-collabs ms-2" id="collabs-count-badge">0</span>
+                    </button>
+                    <button class="btn btn-collabs-exit d-inline-flex align-items-center" type="button"
+                        id="btn-collabs-exit" style="display:none;">
+                        <i class="fas fa-compress me-2"></i>
+                        Keluar Mode
+                    </button>
+                </div>
+
+                {{-- Export Items (dropdown) --}}
                 <div class="dropdown" id="export-dropdown-container" style="display:none;">
                     <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn" data-bs-toggle="dropdown"
                         aria-expanded="false">
@@ -65,13 +81,14 @@
                     </ul>
                 </div>
 
-                @if ($selectedWerks && $selectedAuart)
+                {{-- Export Overview PDF --}}
+                {{-- @if ($selectedWerks && $selectedAuart)
                     @php $q = urlencode(Crypt::encrypt(['werks' => $selectedWerks, 'auart' => $selectedAuart])); @endphp
                     <a href="{{ route('so.export.summary') }}?q={{ $q }}" target="_blank"
-                        class="btn btn-outline-success ms-2">
+                        class="btn btn-outline-success">
                         <i class="fas fa-file-pdf me-2"></i> Export Overview PDF
                     </a>
-                @endif
+                @endif --}}
             </div>
 
         </div>
@@ -259,7 +276,6 @@
             display: inline-block;
         }
 
-        /* highlight saat auto-scroll */
         .row-highlighted {
             animation: flashRow 1.2s ease-in-out 3;
         }
@@ -278,7 +294,6 @@
             }
         }
 
-        /* caret rotasi untuk expand */
         .yz-caret {
             display: inline-block;
             transition: transform .18s ease;
@@ -296,14 +311,59 @@
         .yz-row-highlight-negative>td,
         .yz-row-highlight-negative td {
             background-color: #ffe5e5 !important;
-            /* merah muda */
         }
 
-        /* kalau pakai .table-hover, pastikan warna hover tidak menimpa */
         .table-hover tbody tr.yz-row-highlight-negative:hover>td,
         .table-hover tbody tr.yz-row-highlight-negative:hover td {
             background-color: #ffd6d6 !important;
         }
+
+        /* [NEW] Collabs focus helpers */
+        .collabs-hidden {
+            display: none !important;
+        }
+
+        /* [NEW] Tombol Collabs yang lebih cantik */
+        .btn-collabs {
+            --c1: #22c55e;
+            --c2: #16a34a;
+            background: linear-gradient(180deg, var(--c1), var(--c2));
+            color: #fff;
+            border: 0;
+            box-shadow: 0 4px 12px rgba(34, 197, 94, .25);
+        }
+
+        .btn-collabs:hover {
+            filter: brightness(.98);
+            color: #fff;
+        }
+
+        .btn-collabs:focus {
+            outline: 0;
+            box-shadow: 0 0 0 .2rem rgba(34, 197, 94, .35);
+        }
+
+        .btn-collabs-exit {
+            background: #eef2ff;
+            color: #3730a3;
+            border: 1px solid #c7d2fe;
+        }
+
+        .btn-collabs-exit:hover {
+            background: #e0e7ff;
+            color: #312e81;
+        }
+
+        .btn-collabs-exit:focus {
+            outline: 0;
+            box-shadow: 0 0 0 .2rem rgba(99, 102, 241, .25);
+        }
+
+        .bg-collabs {
+            background: #065f46 !important;
+        }
+
+        /* emerald-800 */
     </style>
 @endpush
 
@@ -392,6 +452,29 @@
             const itemsCache = new Map(); // vbeln -> array items
             const itemIdToSO = new Map(); // itemId -> vbeln
 
+            // ===== [NEW] Collabs state & helpers =====
+            const collabsContainer = document.getElementById('collabs-container');
+            const collabsCountSpan = document.getElementById('collabs-count-badge');
+            const btnCollabs = document.getElementById('btn-collabs');
+            const btnCollabsExit = document.getElementById('btn-collabs-exit');
+            let collabsMode = false;
+
+            const countCheckedSO = () =>
+                document.querySelectorAll('.yz-nest-wrap .check-so:checked').length;
+
+            const setCollabsUI = () => {
+                if (collabsContainer) collabsContainer.style.display = (collabsMode || countCheckedSO() > 0) ?
+                    'block' : 'none';
+                if (btnCollabs) btnCollabs.style.display = collabsMode ? 'none' : 'inline-flex';
+                if (btnCollabsExit) btnCollabsExit.style.display = collabsMode ? 'inline-flex' : 'none';
+            };
+
+            const updateCollabsButton = () => {
+                const n = countCheckedSO();
+                if (collabsCountSpan) collabsCountSpan.textContent = n;
+                setCollabsUI();
+            };
+
             // ------- helpers -------
             function updateExportButton() {
                 const count = selectedItems.size;
@@ -479,7 +562,7 @@
                 if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
             }
 
-            // ===== FIX #1: blok klik checkbox di Tabel-2 pada CAPTURE agar tidak bubble ke baris =====
+            // ===== FIX: blok klik checkbox di Tabel-2 pada CAPTURE agar tidak bubble ke baris =====
             document.addEventListener('click', function(e) {
                 if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) {
                     e.stopPropagation();
@@ -546,7 +629,7 @@
           </tr>`;
                 });
 
-                // >>> FOOTER Total (pakai class t2-footer, tidak ada dash)
+                // >>> FOOTER Total
                 html += `</tbody><tfoot class="t2-footer">`;
                 Object.entries(totalsByCurr).forEach(([cur, sum]) => {
                     html += `
@@ -655,7 +738,10 @@
                     if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
 
                     if (wasOpen) return;
-                    if (wrap.dataset.loaded === '1') return;
+                    if (wrap.dataset.loaded === '1') {
+                        updateCollabsButton();
+                        return;
+                    }
 
                     try {
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
@@ -675,6 +761,7 @@
 
                         // Pastikan footer T2 tampil (belum ada T3 yang terbuka)
                         updateT2FooterVisibility(wrap.querySelector('table'));
+                        updateCollabsButton();
 
                         // Klik baris SO -> expand T3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
@@ -682,7 +769,7 @@
                                 // abaikan klik dari checkbox/input agar tidak expand
                                 if (ev.target.closest(
                                         '.check-so, .check-all-sos, .form-check-input'
-                                        )) return;
+                                    )) return;
 
                                 ev.stopPropagation();
                                 const vbeln = soRow.dataset.vbeln;
@@ -706,7 +793,7 @@
                                         soTbody.classList.remove(
                                             'so-focus-mode');
                                         soRow.classList.remove(
-                                        'is-focused');
+                                            'is-focused');
                                     }
                                 }
                                 soRow.querySelector('.yz-caret')?.classList
@@ -714,14 +801,12 @@
 
                                 if (open) {
                                     itemRow.style.display = 'none';
-                                    updateT2FooterVisibility(
-                                    t2Table); // << sembunyikan/ tampilkan sesuai state
+                                    updateT2FooterVisibility(t2Table);
                                     return;
                                 }
 
                                 itemRow.style.display = '';
-                                updateT2FooterVisibility(
-                                t2Table); // << ketika dibuka, footer disembunyikan
+                                updateT2FooterVisibility(t2Table);
 
                                 if (itemRow.dataset.loaded === '1') return;
 
@@ -816,6 +901,7 @@
                             .checked);
                     }
                     updateExportButton();
+                    updateCollabsButton();
                     return;
                 }
 
@@ -831,6 +917,7 @@
                     }
                     updateSODot(vbeln);
                     updateExportButton();
+                    updateCollabsButton();
 
                     const nest = document.querySelector(`tr.js-t2row[data-vbeln='${vbeln}']`)
                         ?.nextElementSibling;
@@ -964,6 +1051,134 @@
                 });
             }
 
+            // ===== [NEW] COLLABS: fokus & keluar mode =====
+            function enterCollabsMode() {
+                collabsMode = true;
+                setCollabsUI();
+
+                // Sembunyikan customer tanpa SO terpilih
+                document.querySelectorAll('.yz-kunnr-row').forEach(krow => {
+                    const nxt = document.getElementById(krow.dataset.kid);
+                    const wrap = nxt?.querySelector('.yz-nest-wrap');
+                    if (!wrap) return;
+
+                    const anyChecked = wrap.querySelector('.check-so:checked');
+                    if (!anyChecked) {
+                        krow.classList.add('collabs-hidden');
+                        nxt.classList.add('collabs-hidden');
+                    } else {
+                        krow.classList.remove('collabs-hidden');
+                        nxt.classList.remove('collabs-hidden');
+                    }
+                });
+
+                // Tampilkan hanya SO terpilih per customer, buka T3, dan tandai sebagai collabsOpen
+                document.querySelectorAll('.yz-nest-wrap').forEach(async (wrap) => {
+                    const t2tbl = wrap.querySelector('table');
+                    // hide semua baris dulu
+                    wrap.querySelectorAll('.js-t2row').forEach(row => {
+                        row.classList.add('collabs-hidden');
+                        const nest = row.nextElementSibling;
+                        if (nest?.classList.contains('yz-nest')) nest.classList.add(
+                            'collabs-hidden');
+                    });
+
+                    const checked = wrap.querySelectorAll('.check-so:checked');
+                    for (const chk of checked) {
+                        const soRow = chk.closest('.js-t2row');
+                        if (!soRow) continue;
+
+                        // tampilkan baris + nest
+                        soRow.classList.remove('collabs-hidden');
+                        const tgt = soRow.nextElementSibling; // tr.yz-nest
+                        const caret = soRow.querySelector('.yz-caret');
+
+                        // Expand & tandai collabsOpen
+                        if (tgt && tgt.style.display === 'none') {
+                            tgt.style.display = '';
+                            tgt.dataset.collabsOpen = '1';
+                            caret?.classList.add('rot');
+                        }
+                        tgt?.classList.remove('collabs-hidden');
+
+                        // Load T3 jika belum ada
+                        if (tgt && tgt.dataset.loaded !== '1') {
+                            const vbeln = (chk.dataset.vbeln || '').trim();
+                            const box = tgt.querySelector('.yz-slot-items');
+                            if (box) {
+                                box.innerHTML = `
+                                  <div class="p-2 text-muted small yz-loader-pulse">
+                                    <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+                                  </div>`;
+                                const u3 = new URL("{{ route('so.api.by_items') }}", window.location
+                                    .origin);
+                                u3.searchParams.set('vbeln', vbeln);
+                                u3.searchParams.set('werks', WERKS);
+                                u3.searchParams.set('auart', AUART);
+
+                                try {
+                                    const r3 = await fetch(u3);
+                                    const j3 = await r3.json();
+                                    if (j3?.ok) {
+                                        j3.data.forEach(x => itemIdToSO.set(String(x.id), vbeln));
+                                        itemsCache.set(vbeln, j3.data);
+                                        box.innerHTML = renderLevel3_Items(j3.data);
+                                        applySelectionsToRenderedItems(box);
+                                        tgt.dataset.loaded = '1';
+                                        updateSoRemarkFlagFromCache(vbeln);
+                                    } else {
+                                        box.innerHTML =
+                                            `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
+                                    }
+                                } catch (_) {
+                                    box.innerHTML =
+                                        `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
+                                }
+                            }
+                        }
+                    }
+
+                    updateT2FooterVisibility(t2tbl);
+                });
+
+                // Scroll ke SO terpilih pertama
+                const first = document.querySelector('.yz-nest-wrap .check-so:checked')?.closest('.js-t2row')
+                    ?.nextElementSibling;
+                first?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+
+            function exitCollabsMode() {
+                collabsMode = false;
+                setCollabsUI();
+
+                // Tampilkan semua yang tersembunyi
+                document.querySelectorAll('.collabs-hidden').forEach(el => el.classList.remove('collabs-hidden'));
+
+                // Tutup T3 yang dibuka oleh collabs saja
+                document.querySelectorAll('tr.yz-nest[data-collabs-open="1"]').forEach(tgt => {
+                    tgt.style.display = 'none';
+                    tgt.dataset.collabsOpen = '';
+                    const soRow = tgt.previousElementSibling;
+                    soRow?.querySelector('.yz-caret')?.classList.remove('rot');
+                });
+
+                // Recompute footer T2
+                document.querySelectorAll('.yz-nest-wrap table').forEach(tbl => updateT2FooterVisibility(tbl));
+            }
+
+            // Hook tombol
+            if (btnCollabs) btnCollabs.addEventListener('click', () => {
+                if (countCheckedSO() === 0) {
+                    alert('Pilih minimal 1 SO di Tabel-2.');
+                    return;
+                }
+                enterCollabsMode();
+            });
+            if (btnCollabsExit) btnCollabsExit.addEventListener('click', () => exitCollabsMode());
+
             // ------- AUTO-EXPAND & AUTO-SCROLL SAMPAI ITEM (Level-3) -------
             (async function autoExpandFromRoot() {
                 const VBELN = VBELN_HL;
@@ -1009,7 +1224,7 @@
                     };
 
                     const soRow = wrap.querySelector(
-                    `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
+                        `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
                     if (!soRow) return {
                         wrap,
                         soRow: null,

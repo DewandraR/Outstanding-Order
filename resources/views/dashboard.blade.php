@@ -345,12 +345,28 @@
                         <h5 class="card-title mb-0 text-primary-emphasis">
                             <i class="fas fa-list-ol me-2"></i>
                             <span id="smallQtyDetailsTitle">Detail Item Outstanding</span>
+                            <small id="smallQtyMeta" class="text-muted ms-2"></small>
                         </h5>
-                        <button type="button" class="btn-close" id="closeDetailsTable" aria-label="Close"></button>
+
+                        <div class="d-flex align-items-center gap-2">
+                            {{-- tombol export PDF --}}
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="exportSmallQtyPdf" disabled>
+                                <i class="fas fa-file-pdf me-1"></i> Export PDF
+                            </button>
+                            {{-- tombol close --}}
+                            <button type="button" class="btn-close" id="closeDetailsTable" aria-label="Close"></button>
+                        </div>
                     </div>
                     <hr class="mt-2">
                     <div id="smallQtyDetailsTable" class="mt-3"></div>
                 </div>
+                <form id="smallQtyExportForm" action="{{ route('dashboard.export.smallQtyPdf') }}" method="POST"
+                    target="_blank" class="d-none">
+                    @csrf
+                    <input type="hidden" name="customerName" id="exp_customerName">
+                    <input type="hidden" name="locationName" id="exp_locationName">
+                    <input type="hidden" name="type" id="exp_type">
+                </form>
             </div>
         </div>
     </div>
@@ -1529,23 +1545,23 @@
                     </div>
                     <hr class="mt-2">
                     ${rows.length ? `
-                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                        <table class="table table-sm table-hover align-middle mb-0">
-                                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                <tr>
-                                                                                    <th class="text-center" style="width:60px;">NO.</th>
-                                                                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                    <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
-                                                                                    <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                                </tr>
-                                                                            </thead>
-                                                                            <tbody>${body}</tbody>
-                                                                        </table>
-                                                                    </div>` : `
-                                                                    <div class="text-muted p-4 text-center">
-                                                                        <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                    </div>`}
+                                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                        <table class="table table-sm table-hover align-middle mb-0">
+                                                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                <tr>
+                                                                                                    <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                    <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                    <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                    <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
+                                                                                                    <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                                </tr>
+                                                                                            </thead>
+                                                                                            <tbody>${body}</tbody>
+                                                                                        </table>
+                                                                                    </div>` : `
+                                                                                    <div class="text-muted p-4 text-center">
+                                                                                        <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                                    </div>`}
                 </div>
             </div>`;
                         document.getElementById('closePoOverdueOverlay')?.addEventListener('click', () => {
@@ -1585,6 +1601,17 @@
                     const detailsTable = document.getElementById('smallQtyDetailsTable');
                     const closeButton = document.getElementById('closeDetailsTable');
                     closeButton?.addEventListener('click', () => detailsContainer.style.display = 'none');
+                    document.getElementById('exportSmallQtyPdf')?.addEventListener('click', function() {
+                        if (this.disabled) return;
+
+                        // isi form tersembunyi
+                        document.getElementById('exp_customerName').value = this.dataset.customerName || '';
+                        document.getElementById('exp_locationName').value = this.dataset.locationName || '';
+                        document.getElementById('exp_type').value = this.dataset.type || '';
+
+                        // submit ke route PDF
+                        document.getElementById('smallQtyExportForm').submit();
+                    });
 
                     new Chart(ctxSmallQty, {
                         type: 'bar',
@@ -1659,52 +1686,81 @@
                                 try {
                                     const response = await fetch(apiUrl);
                                     const result = await response.json();
+
                                     if (result.ok && result.data.length > 0) {
+                                        // ====== hitung jumlah PO & jumlah item ======
+                                        const uniqPO = new Set(result.data.map(r => (r.BSTNK || r.PO || '')
+                                            .toString().trim()).filter(Boolean));
+                                        const totalPO = uniqPO.size;
+                                        const totalItem = result.data.length;
+
+                                        // tampilkan meta ringkas di judul
+                                        document.getElementById('smallQtyMeta').textContent =
+                                            `• ${totalPO} PO • ${totalItem} Item`;
+
+                                        // aktifkan tombol Export + isi dataset untuk form export
+                                        const btnExport = document.getElementById('exportSmallQtyPdf');
+                                        btnExport.disabled = false;
+                                        btnExport.dataset.customerName = customerName;
+                                        btnExport.dataset.locationName =
+                                            locationName; // "Semarang" | "Surabaya"
+                                        btnExport.dataset.type = (filterState.type ||
+                                            ''); // '' | 'lokal' | 'export'
+
+                                        // urutkan item dari outstanding terkecil
                                         result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2) - parseFloat(b
                                             .QTY_BALANCE2));
 
-                                        // Tentukan apakah ada KWMENG > 0
+                                        // apakah ada Qty PO?
                                         const hasQtyPo = result.data.some(item => parseFloat(item.KWMENG) >
                                             0);
+
                                         const tableHeaders = `<tr>
-                                                <th style="width:5%;" class="text-center">No.</th>
-                                                <th class="text-center">PO</th>
-                                                <th class="text-center">SO</th>
-                                                <th class="text-center">Item</th>
-                                                <th>Desc FG</th>
-                                                ${hasQtyPo ? '<th class="text-center">Qty PO</th>' : ''}
-                                                <th class="text-center">Shipped</th>
-                                                <th class="text-center">Outstanding</th>
-                                            </tr>`;
+            <th style="width:5%;" class="text-center">No.</th>
+            <th class="text-center">PO</th>
+            <th class="text-center">SO</th>
+            <th class="text-center">Item</th>
+            <th>Desc FG</th>
+            ${hasQtyPo ? '<th class="text-center">Qty PO</th>' : ''}
+            <th class="text-center">Shipped</th>
+            <th class="text-center">Outstanding</th>
+        </tr>`;
 
                                         let tableBody = result.data.map((item, idx) => {
                                             const qtyPoCell = hasQtyPo ?
                                                 `<td class="text-center">${parseFloat(item.KWMENG) || '0'}</td>` :
                                                 '';
-
+                                            const po = item.BSTNK || item.PO || '-';
                                             return `<tr>
-                                                <td class="text-center">${idx+1}</td>
-                                                <td class="text-center">${item.BSTNK || '-'}</td>
-                                                <td class="text-center">${item.VBELN}</td>
-                                                <td class="text-center">${parseInt(item.POSNR, 10)}</td>
-                                                <td>${item.MAKTX}</td>
-                                                ${qtyPoCell}
-                                                <td class="text-center">${parseFloat(item.QTY_GI) || '0'}</td>
-                                                <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
-                                            </tr>`;
+                <td class="text-center">${idx + 1}</td>
+                <td class="text-center">${po}</td>
+                <td class="text-center">${item.VBELN}</td>
+                <td class="text-center">${parseInt(item.POSNR, 10)}</td>
+                <td>${item.MAKTX}</td>
+                ${qtyPoCell}
+                <td class="text-center">${parseFloat(item.QTY_GI) || '0'}</td>
+                <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
+            </tr>`;
                                         }).join('');
 
-
-                                        let tableHtml = `<div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;"><table class="table table-striped table-hover table-sm align-middle">
-                                            <thead class="table-light">${tableHeaders}</thead>
-                                            <tbody>${tableBody}</tbody></table></div>`;
+                                        const tableHtml = `
+            <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
+                <table class="table table-striped table-hover table-sm align-middle">
+                    <thead class="table-light">${tableHeaders}</thead>
+                    <tbody>${tableBody}</tbody>
+                </table>
+            </div>`;
                                         detailsTable.innerHTML = tableHtml;
                                     } else {
+                                        document.getElementById('smallQtyMeta').textContent = '';
+                                        document.getElementById('exportSmallQtyPdf').disabled = true;
                                         detailsTable.innerHTML =
                                             `<div class="text-center p-5 text-muted">Data item tidak ditemukan.</div>`;
                                     }
                                 } catch (error) {
                                     console.error('Gagal mengambil data detail:', error);
+                                    document.getElementById('smallQtyMeta').textContent = '';
+                                    document.getElementById('exportSmallQtyPdf').disabled = true;
                                     detailsTable.innerHTML =
                                         `<div class="text-center p-5 text-danger">Terjadi kesalahan saat memuat data.</div>`;
                                 }
@@ -1784,23 +1840,23 @@
                                 </div>
                                 <hr class="mt-2">
                                 ${rows.length ? `
-                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                                    <table class="table table-sm table-hover align-middle mb-0">
-                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                            <tr>
-                                                                                                <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
-                                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                                            </tr>
-                                                                                        </thead>
-                                                                                        <tbody>${table}</tbody>
-                                                                                    </table>
-                                                                                </div>` : `
-                                                                                <div class="text-muted p-4 text-center">
-                                                                                    <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                                </div>`}
+                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                    <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                            <tr>
+                                                                                                                <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
+                                                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                                                                            </tr>
+                                                                                                        </thead>
+                                                                                                        <tbody>${table}</tbody>
+                                                                                                    </table>
+                                                                                                </div>` : `
+                                                                                                <div class="text-muted p-4 text-center">
+                                                                                                    <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                                                                </div>`}
                             </div>
                         </div>`;
                     document.getElementById('closePoStatusDetails')?.addEventListener('click', () => {

@@ -187,48 +187,6 @@
                     </div>
                 </li>
             </ul>
-
-            {{-- PROFIL USER / AUTH AREA --}}
-            <div class="user-profile mt-auto pt-2 px-2">
-                {{-- Tampilkan Sign In hanya untuk tamu --}}
-                @guest
-                    <div class="p-3">
-                        <a class="btn btn-success w-100" href="{{ route('login') }}">
-                            <i class="fas fa-sign-in-alt me-2"></i> Sign In
-                        </a>
-                    </div>
-                @endguest
-
-                {{-- Tampilkan Sign Out untuk user login --}}
-                @auth
-                    <div class="dropdown dropup w-100">
-                        <button class="btn w-100 d-flex align-items-center justify-content-between" type="button"
-                            id="userMenuButton" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="d-flex align-items-center">
-                                <i class="fas fa-user-circle fa-lg me-2"></i>
-                                <span class="user-info text-start">
-                                    <span class="user-name d-block">{{ Auth::user()->name }}</span>
-                                    <span class="user-status d-block">Online</span>
-                                </span>
-                            </span>
-                            <i class="fas fa-chevron-up ms-2"></i>
-                        </button>
-                        <ul class="dropdown-menu" aria-labelledby="userMenuButton">
-                            {{-- contoh jika punya halaman profile --}}
-                            {{-- <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="fas fa-user-edit"></i> Profile</a></li>
-                            <li><hr class="dropdown-divider"></li> --}}
-                            <li>
-                                <form method="POST" action="{{ route('logout') }}">
-                                    @csrf
-                                    <button type="submit" class="dropdown-item">
-                                        <i class="fas fa-sign-out-alt"></i> Sign Out
-                                    </button>
-                                </form>
-                            </li>
-                        </ul>
-                    </div>
-                @endauth
-            </div>
         </div> {{-- /flex-grow wrapper --}}
     </aside>
 

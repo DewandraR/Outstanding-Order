@@ -49,7 +49,7 @@ class AuthController extends Controller
         }
 
         // Cegah session fixation
-        $request->session()->regenerate();
+        $request->session()->regenerate(); //CURIGA ERROR DI SINI
 
         return redirect()->intended(route('dashboard'))
             ->with('ok', 'Welcome back, ' . (Auth::user()->name ?? 'user') . '!');

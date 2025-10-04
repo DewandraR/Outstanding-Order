@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Str;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class DashboardController extends Controller
 {
@@ -749,5 +751,85 @@ class DashboardController extends Controller
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);
+    }
+
+    public function exportSmallQtyPdf(Request $request)
+    {
+        $validated = $request->validate([
+            'customerName' => 'required|string',
+            'locationName' => 'required|string|in:Semarang,Surabaya',
+            'type'         => 'nullable|string|in:lokal,export',
+        ]);
+
+        $customerName = $validated['customerName'];
+        $locationName = $validated['locationName'];
+        $type         = $validated['type'] ?? null;
+        $werks        = $locationName === 'Semarang' ? '3000' : '2000';
+
+        // Query sama dengan apiSmallQtyDetails()
+        $q = DB::table('so_yppr079_t1 as t1')
+            ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+            ->leftJoin('maping as m', function ($j) {
+                $j->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                    ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            })
+            ->where('t2.NAME1', $customerName)
+            ->where('t2.IV_WERKS_PARAM', $werks)
+            ->where('t1.QTY_BALANCE2', '>', 0)
+            ->where('t1.QTY_BALANCE2', '<=', 5);
+
+        if ($type === 'lokal') {
+            $q->where(function ($qq) {
+                $qq->where('m.Deskription', 'like', '%Local%')
+                    ->orWhere('m.Deskription', 'like', '%Replace%');
+            });
+        } elseif ($type === 'export') {
+            $q->where('m.Deskription', 'like', '%Export%')
+                ->where('m.Deskription', 'not like', '%Replace%')
+                ->where('m.Deskription', 'not like', '%Local%');
+        }
+
+        $items = $q->select(
+            't2.BSTNK as PO',
+            't2.VBELN as SO',
+            DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
+            't1.MAKTX',
+            't1.KWMENG',
+            't1.QTY_GI',
+            't1.QTY_BALANCE2'
+        )
+            ->orderBy('t2.VBELN')
+            ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
+            ->get();
+
+        $totals = [
+            'total_item' => $items->count(),
+            'total_po'   => $items->pluck('PO')->filter()->unique()->count(),
+        ];
+
+        $meta = [
+            'customerName' => $customerName,
+            'locationName' => $locationName,
+            'type'         => $type,
+            'generatedAt'  => now()->format('d-m-Y'), // <-- tadinya d-m-Y H:i
+        ];
+
+        // Jika dompdf tersedia → stream PDF; kalau tidak, render HTML biasa
+        if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po_report.small-qty-pdf', [
+                'items' => $items,
+                'meta' => $meta,
+                'totals' => $totals,
+            ])->setPaper('a4', 'portrait');
+
+            $filename = 'SmallQty_' . $locationName . '_' . Str::slug($customerName) . '.pdf';
+            return $pdf->stream($filename);   // pakai ->download($filename) jika mau auto-download
+        }
+
+        return view('po_report.small-qty-pdf', [
+            'items' => $items,
+            'meta' => $meta,
+            'totals' => $totals,
+        ]);
     }
 }
