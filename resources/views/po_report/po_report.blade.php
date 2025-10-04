@@ -10,25 +10,25 @@
         $auart = $selected['auart'] ?? null;
         $show = filled($werks) && filled($auart);
         $onlyWerksSelected = filled($werks) && empty($auart);
-        $compact = $compact ?? true; // Default true untuk halaman report
+        $compact = $compact ?? true; // default true
 
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$werks] ?? $werks;
 
-        // Helper pembentuk URL terenkripsi ke /po-report
+        // Helper URL terenkripsi ke /po-report
         $encReport = function (array $params) {
             $payload = array_filter(array_merge(['compact' => 1], $params), fn($v) => !is_null($v) && $v !== '');
             return route('po.report', ['q' => \Crypt::encrypt($payload)]);
         };
     @endphp
 
-    {{-- Anchor untuk JS agar tahu sedang mode TABLE atau bukan --}}
+    {{-- Root state untuk JS --}}
     <div id="yz-root" data-show="{{ $show ? 1 : 0 }}" data-werks="{{ $werks ?? '' }}" data-auart="{{ $auart ?? '' }}"
         style="display:none"></div>
 
     {{-- =========================================================
-    HEADER: PILIH TYPE (tombol Collabs & Export DIHAPUS)
-    ========================================================= --}}
+     HEADER: PILIH TYPE + EXPORT
+========================================================= --}}
     @if (filled($werks))
         @php
             $typesForPlant = collect($mapping[$werks] ?? []);
@@ -60,15 +60,35 @@
                     @endif
                 </div>
 
-                {{-- Kanan dikosongkan (tombol dihapus) --}}
-                <div class="py-1 d-flex align-items-center gap-2"></div>
+                {{-- Kanan: Export Items (muncul saat ada item terpilih) --}}
+                <div class="py-1 d-flex align-items-center gap-2">
+                    <div class="dropdown" id="export-dropdown-container" style="display:none;">
+                        <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn"
+                            data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-file-export me-2"></i>
+                            Export Items (<span id="selected-count">0</span>)
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="export-btn">
+                            <li>
+                                <a class="dropdown-item export-option" href="#" data-type="pdf">
+                                    <i class="fas fa-file-pdf text-danger me-2"></i>Export to PDF
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item export-option" href="#" data-type="excel">
+                                    <i class="fas fa-file-excel text-success me-2"></i>Export to Excel
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     @endif
 
     {{-- =========================================================
-    A. MODE TABEL (LAPORAN PO)
-    ========================================================= --}}
+     A. MODE TABEL (LAPORAN PO)
+========================================================= --}}
     @if ($show && $compact)
         <div class="card yz-card shadow-sm mb-3">
             <div class="card-body p-0 p-md-2">
@@ -96,7 +116,6 @@
                     };
                 @endphp
 
-                {{-- TABEL UTAMA PO REPORT --}}
                 <div class="table-responsive yz-table px-md-3">
                     <table class="table table-hover mb-0 align-middle yz-grid">
                         <thead class="yz-header-customer">
@@ -171,7 +190,6 @@
                     </table>
                 </div>
 
-                {{-- Pagination --}}
                 @if ($rows->hasPages())
                     <div class="px-3 pt-3">
                         {{ $rows->onEachSide(1)->links('pagination::bootstrap-5') }}
@@ -179,20 +197,14 @@
                 @endif
             </div>
         </div>
-
-        {{-- =========================================================
-    B. HANYA Plant dipilih → minta user pilih AUART
-    ========================================================= --}}
     @elseif($onlyWerksSelected)
+        {{-- Hanya plant dipilih --}}
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-2"></i>
             Silakan pilih <strong>Type</strong> pada tombol hijau di atas.
         </div>
-
-        {{-- =========================================================
-    C. BELUM ADA YANG DIPILIH
-    ========================================================= --}}
     @else
+        {{-- Belum ada yang dipilih --}}
         <div class="alert alert-warning">
             <i class="fas fa-exclamation-triangle me-2"></i>
             Silakan pilih <strong>Plant</strong> dari sidebar untuk menampilkan Laporan PO.
@@ -204,7 +216,6 @@
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
-        /* sembunyikan footer total Tabel-1 saat customer focus mode */
         tbody.customer-focus-mode~tfoot.yz-footer-customer {
             display: none !important;
         }
@@ -220,6 +231,7 @@
         .yz-caret {
             display: inline-block;
             transition: transform .18s ease;
+            user-select: none;
         }
 
         .yz-caret.rot {
@@ -230,7 +242,7 @@
 
 @push('scripts')
     <script>
-        /* ========= UTIL ========= */
+        /* ====================== UTIL ====================== */
         const formatCurrencyForTable = (value, currency) => {
             const n = parseFloat(value);
             if (!Number.isFinite(n)) return '';
@@ -255,51 +267,23 @@
             return s.length ? s : null;
         };
 
-        /* ========= STATE PILIHAN (berbasis item) ========= */
+        /* ====================== STATE EXPORT (berbasis item) ====================== */
         const selectedItems = new Set(); // id item
         const itemIdToSO = new Map(); // id -> vbeln
+        const exportDropdownContainer = document.getElementById('export-dropdown-container');
+        const selectedCountSpan = document.getElementById('selected-count');
+        const updateExportButton = () => {
+            if (selectedCountSpan) selectedCountSpan.textContent = selectedItems.size;
+            if (exportDropdownContainer) exportDropdownContainer.style.display = selectedItems.size > 0 ? 'block' :
+                'none';
+        };
 
-        /* ========= SINKRONISASI CHECKBOX T3 ========= */
-        function syncSelectAllItemsState(container) {
-            const itemCheckboxes = container.querySelectorAll('.check-item');
-            const selectAll = container.querySelector('.check-all-items');
-            if (!selectAll || !itemCheckboxes.length) return;
-            const allChecked = Array.from(itemCheckboxes).every(ch => ch.checked);
-            const anyChecked = Array.from(itemCheckboxes).some(ch => ch.checked);
-            selectAll.checked = !!allChecked;
-            selectAll.indeterminate = !allChecked && anyChecked;
-        }
+        /* Cegah checkbox memicu click baris */
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.form-check-input')) e.stopPropagation();
+        }, true);
 
-        function applySelectionsToRenderedItems(container) {
-            container.querySelectorAll('.check-item').forEach(chk => {
-                const sid = sanitizeId(chk.dataset.id);
-                chk.checked = !!(sid && selectedItems.has(sid));
-            });
-            syncSelectAllItemsState(container);
-        }
-
-        function clearRenderedItemsUnderSO(nest) {
-            if (!nest) return;
-            const box = nest.querySelector('.yz-slot-t3');
-            if (!box) return;
-            box.querySelectorAll('.check-item').forEach(ch => ch.checked = false);
-            const selAll = box.querySelector('.check-all-items');
-            if (selAll) {
-                selAll.checked = false;
-                selAll.indeterminate = false;
-            }
-        }
-
-        /* ========= FOOTER T2 VISIBILITY ========= */
-        function updateT2FooterVisibility(t2Table) {
-            if (!t2Table) return;
-            const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
-                .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
-            const tfoot = t2Table.querySelector('tfoot.t2-footer');
-            if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
-        }
-
-        /* ========= RENDER T2 ========= */
+        /* ====================== RENDER T2 ====================== */
         function renderT2(rows, kunnr) {
             if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
 
@@ -311,24 +295,24 @@
             });
 
             let html = `
-  <div style="width:100%">
-    <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
-    <table class="table table-sm mb-0 yz-mini">
-      <thead class="yz-header-so">
-        <tr>
-          <th style="width:40px" class="text-center">
-            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-          </th>
-          <th style="width:40px;text-align:center;"></th>
-          <th style="min-width:150px;text-align:left;">PO</th>
-          <th style="min-width:100px;text-align:left;">SO</th>
-          <th style="min-width:110px;text-align:right;">Outs. Value</th>
-          <th style="min-width:110px;text-align:center;">Req. Delv Date</th>
-          <th style="min-width:110px;text-align:center;">Overdue (Days)</th>
-          <th style="min-width:120px;text-align:center;">Shortage %</th>
-        </tr>
-      </thead>
-      <tbody>`;
+<div style="width:100%">
+  <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
+  <table class="table table-sm mb-0 yz-mini">
+    <thead class="yz-header-so">
+      <tr>
+        <th style="width:40px" class="text-center">
+          <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+        </th>
+        <th style="width:40px;text-align:center;"></th>
+        <th style="min-width:150px;text-align:left;">PO</th>
+        <th style="min-width:100px;text-align:left;">SO</th>
+        <th style="min-width:110px;text-align:right;">Outs. Value</th>
+        <th style="min-width:110px;text-align:center;">Req. Delv Date</th>
+        <th style="min-width:110px;text-align:center;">Overdue (Days)</th>
+        <th style="min-width:120px;text-align:center;">Shortage %</th>
+      </tr>
+    </thead>
+    <tbody>`;
 
             rows.forEach((r, i) => {
                 const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
@@ -339,9 +323,7 @@
 
                 html += `
       <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-        <td class="text-center">
-          <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}">
-        </td>
+        <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
         <td style="text-align:center;"><span class="yz-caret">▸</span></td>
         <td style="text-align:left;">${r.BSTNK ?? ''}</td>
         <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
@@ -373,30 +355,27 @@
             return html;
         }
 
-        /* ========= RENDER T3 ========= */
+        /* ====================== RENDER T3 ====================== */
         function renderT3(rows) {
             if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
             let out = `
-  <div class="table-responsive">
-    <table class="table table-sm mb-0 yz-mini">
-      <thead class="yz-header-item">
-        <tr>
-          <th style="width:40px;">
-            <input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item">
-          </th>
-          <th style="min-width:80px;text-align:center;">Item</th>
-          <th style="min-width:150px;text-align:center;">Material FG</th>
-          <th style="min-width:300px;">Desc FG</th>
-          <th style="min-width:80px;">Qty PO</th>
-          <th style="min-width:60px;">Shipped</th>
-          <th style="min-width:60px;">Outs. Ship</th>
-          <th style="min-width:80px;">WHFG</th>
-          <th style="min-width:80px;">FG</th>
-          <th style="min-width:100px;">Net Price</th>
-        </tr>
-      </thead>
-      <tbody>`;
-
+<div class="table-responsive">
+  <table class="table table-sm mb-0 yz-mini">
+    <thead class="yz-header-item">
+      <tr>
+        <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+        <th style="min-width:80px;text-align:center;">Item</th>
+        <th style="min-width:150px;text-align:center;">Material FG</th>
+        <th style="min-width:300px;">Desc FG</th>
+        <th style="min-width:80px;">Qty PO</th>
+        <th style="min-width:60px;">Shipped</th>
+        <th style="min-width:60px;">Outs. Ship</th>
+        <th style="min-width:80px;">WHFG</th>
+        <th style="min-width:80px;">FG</th>
+        <th style="min-width:100px;">Net Price</th>
+      </tr>
+    </thead>
+    <tbody>`;
             rows.forEach(r => {
                 const sid = sanitizeId(r.id);
                 const checked = sid && selectedItems.has(sid) ? 'checked' : '';
@@ -415,12 +394,20 @@
       </tr>`;
                 if (sid) itemIdToSO.set(sid, String(r.VBELN));
             });
-
             out += `</tbody></table></div>`;
             return out;
         }
 
-        /* ========= MAIN ========= */
+        /* Footer T2 hide/show saat T3 dibuka/ditutup */
+        function updateT2FooterVisibility(t2Table) {
+            if (!t2Table) return;
+            const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
+                .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
+            const tfoot = t2Table.querySelector('tfoot.t2-footer');
+            if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
+        }
+
+        /* ====================== MAIN ====================== */
         document.addEventListener('DOMContentLoaded', () => {
             // Label responsif Tabel-1
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
@@ -438,15 +425,7 @@
             const WERKS = (root.dataset.werks || '').trim() || null;
             const AUART = (root.dataset.auart || '').trim() || null;
 
-            /* ===== Cegah checkbox T2 memicu toggle baris (biar tidak masuk focus mode) ===== */
-            document.body.addEventListener('click', (e) => {
-                if (e.target.classList.contains('check-so') || e.target.classList.contains(
-                    'check-all-sos')) {
-                    e.stopPropagation();
-                }
-            }, true);
-
-            // Expand Level-1 (Customer) → load T2 (DENGAN focus mode, seperti di Stock)
+            // Expand Level-1 → load T2
             document.querySelectorAll('.yz-kunnr-row').forEach(custRow => {
                 custRow.addEventListener('click', async () => {
                     const kunnr = (custRow.dataset.kunnr || '').trim();
@@ -459,33 +438,28 @@
                     const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
                     const wasOpen = custRow.classList.contains('is-open');
-
-                    // === FOCUS MODE (Customer) ===
                     if (!wasOpen) {
                         tbody.classList.add('customer-focus-mode');
                         custRow.classList.add('is-focused');
                     } else {
                         tbody.classList.remove('customer-focus-mode');
                         custRow.classList.remove('is-focused');
-                        // reset bagian dalamnya (seperti di Stock)
-                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
-                            .remove('so-focus-mode'));
-                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
-                            .remove('is-focused'));
-                        wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
-                            'rot'));
-                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
-                            'none');
                     }
 
                     custRow.classList.toggle('is-open');
                     slot.style.display = wasOpen ? 'none' : '';
 
-                    // Footer Tabel-1
+                    if (wasOpen) {
+                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
+                            'none');
+                        wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
+                            'rot'));
+                    }
+
                     if (tfootEl) {
                         const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')]
                             .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                            null);
+                                null);
                         tfootEl.style.display = anyVisible ? 'none' : '';
                     }
 
@@ -494,9 +468,10 @@
 
                     try {
                         wrap.innerHTML = `
-          <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-            <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
-          </div>`;
+                  <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                    <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+                  </div>`;
+
                         const url = new URL(apiT2, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         if (WERKS) url.searchParams.set('werks', WERKS);
@@ -509,14 +484,14 @@
 
                         wrap.innerHTML = renderT2(js.data, kunnr);
                         wrap.dataset.loaded = '1';
-
+                        updateExportButton();
                         updateT2FooterVisibility(wrap.querySelector('table'));
 
-                        // Klik baris SO → toggle & load T3 (DENGAN focus mode, seperti di Stock)
+                        // Klik baris SO → toggle & load T3 (focus-mode hanya saat klik baris)
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
                                 if (ev.target.closest('.form-check-input'))
-                                    return; // abaikan klik checkbox
+                                    return;
                                 ev.stopPropagation();
 
                                 const vbeln = (soRow.dataset.vbeln || '')
@@ -526,17 +501,16 @@
                                     '.yz-caret');
                                 const tgt = wrap.querySelector('#' + tgtId);
                                 const box = tgt.querySelector(
-                                '.yz-slot-t3');
+                                    '.yz-slot-t3');
                                 const open = tgt.style.display !== 'none';
                                 const tbody2 = soRow.closest('tbody');
                                 const t2tbl = soRow.closest('table');
 
-                                // === FOCUS MODE (SO) ===
                                 if (!open) {
-                                    tbody2?.classList.add('so-focus-mode');
+                                    tbody2.classList.add('so-focus-mode');
                                     soRow.classList.add('is-focused');
                                 } else {
-                                    tbody2?.classList.remove(
+                                    tbody2.classList.remove(
                                         'so-focus-mode');
                                     soRow.classList.remove('is-focused');
                                 }
@@ -552,15 +526,12 @@
                                 caret?.classList.add('rot');
                                 updateT2FooterVisibility(t2tbl);
 
-                                if (tgt.dataset.loaded === '1') {
-                                    applySelectionsToRenderedItems(box);
-                                    return;
-                                }
+                                if (tgt.dataset.loaded === '1') return;
 
                                 box.innerHTML = `
-              <div class="p-2 text-muted small yz-loader-pulse">
-                <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
-              </div>`;
+                          <div class="p-2 text-muted small yz-loader-pulse">
+                            <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
+                          </div>`;
 
                                 const u3 = new URL(apiT3, window.location
                                     .origin);
@@ -579,161 +550,20 @@
                                 box.innerHTML = renderT3(j3.data);
                                 tgt.dataset.loaded = '1';
 
-                                applySelectionsToRenderedItems(box);
+                                // Sinkronkan item yang sudah dipilih
+                                box.querySelectorAll('.check-item').forEach(
+                                    chk => {
+                                        const sid = sanitizeId(chk
+                                            .dataset.id);
+                                        chk.checked = !!(sid &&
+                                            selectedItems.has(sid));
+                                    });
                             });
                         });
 
-                        /* Delegasi perubahan checkbox di T2/T3 (TANPA focus mode) */
+                        /* ========= CHANGE HANDLERS (checkbox) ========= */
                         wrap.addEventListener('change', async (e) => {
-                            // === PILIH SEMUA SO (HEADER T2) ===
-                            if (e.target.classList.contains('check-all-sos')) {
-                                const allSO = wrap.querySelectorAll('.check-so');
-                                for (const chk of allSO) {
-                                    chk.checked = e.target.checked;
-                                    const v = chk.dataset.vbeln;
-
-                                    const soRow = chk.closest('.js-t2row');
-                                    const nest = soRow?.nextElementSibling;
-                                    const caret = soRow?.querySelector('.yz-caret');
-                                    const box = nest?.querySelector('.yz-slot-t3');
-
-                                    if (e.target.checked) {
-                                        // Open + load jika perlu (tanpa ubah focus class)
-                                        if (nest && nest.style.display === 'none') {
-                                            nest.style.display = '';
-                                            caret?.classList.add('rot');
-                                        }
-                                        if (nest && nest.dataset.loaded !== '1') {
-                                            const u3 = new URL(apiT3, window
-                                                .location.origin);
-                                            u3.searchParams.set('vbeln', v);
-                                            if (WERKS) u3.searchParams.set('werks',
-                                                WERKS);
-                                            if (AUART) u3.searchParams.set('auart',
-                                                AUART);
-                                            const r3 = await fetch(u3);
-                                            const j3 = await r3.json();
-                                            if (j3?.ok) {
-                                                box.innerHTML = renderT3(j3.data);
-                                                nest.dataset.loaded = '1';
-                                            } else {
-                                                box.innerHTML =
-                                                    `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
-                                            }
-                                        }
-                                        if (box) {
-                                            box.querySelectorAll('.check-item')
-                                                .forEach(ci => {
-                                                    const sid = sanitizeId(ci
-                                                        .dataset.id);
-                                                    if (!sid) return;
-                                                    ci.checked = true;
-                                                    selectedItems.add(sid);
-                                                });
-                                            const selAll = box.querySelector(
-                                                '.check-all-items');
-                                            if (selAll) {
-                                                selAll.checked = true;
-                                                selAll.indeterminate = false;
-                                            }
-                                        }
-                                    } else {
-                                        // Uncheck → clear rendered + close (tanpa ubah focus class)
-                                        if (box) {
-                                            box.querySelectorAll('.check-item')
-                                                .forEach(ci => {
-                                                    const sid = sanitizeId(ci
-                                                        .dataset.id);
-                                                    if (!sid) return;
-                                                    ci.checked = false;
-                                                    selectedItems.delete(sid);
-                                                });
-                                            const selAll = box.querySelector(
-                                                '.check-all-items');
-                                            if (selAll) {
-                                                selAll.checked = false;
-                                                selAll.indeterminate = false;
-                                            }
-                                        }
-                                        if (nest) {
-                                            nest.style.display = 'none';
-                                            caret?.classList.remove('rot');
-                                        }
-                                    }
-                                }
-                                return;
-                            }
-
-                            // === PILIH SATU SO (CHECKBOX BARIS) ===
-                            if (e.target.classList.contains('check-so')) {
-                                const v = e.target.dataset.vbeln;
-                                const soRow = e.target.closest('.js-t2row');
-                                const nest = soRow?.nextElementSibling;
-                                const caret = soRow?.querySelector('.yz-caret');
-                                const box = nest?.querySelector('.yz-slot-t3');
-
-                                if (e.target.checked) {
-                                    // Open + load jika perlu (tanpa ubah focus class)
-                                    if (nest && nest.style.display === 'none') {
-                                        nest.style.display = '';
-                                        caret?.classList.add('rot');
-                                    }
-                                    if (nest && nest.dataset.loaded !== '1') {
-                                        const u3 = new URL(apiT3, window.location
-                                            .origin);
-                                        u3.searchParams.set('vbeln', v);
-                                        if (WERKS) u3.searchParams.set('werks',
-                                            WERKS);
-                                        if (AUART) u3.searchParams.set('auart',
-                                            AUART);
-
-                                        const r3 = await fetch(u3);
-                                        const j3 = await r3.json();
-                                        if (j3.ok) {
-                                            box.innerHTML = renderT3(j3.data);
-                                            nest.dataset.loaded = '1';
-                                        } else {
-                                            box.innerHTML =
-                                                `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
-                                        }
-                                    }
-                                    if (box) {
-                                        box.querySelectorAll('.check-item').forEach(
-                                            ci => {
-                                                const sid = sanitizeId(ci
-                                                    .dataset.id);
-                                                if (!sid) return;
-                                                ci.checked = true;
-                                                selectedItems.add(sid);
-                                            });
-                                        const selAll = box.querySelector(
-                                            '.check-all-items');
-                                        if (selAll) {
-                                            selAll.checked = true;
-                                            selAll.indeterminate = false;
-                                        }
-                                    }
-                                } else {
-                                    // Uncheck → clear rendered + close (tanpa ubah focus class)
-                                    clearRenderedItemsUnderSO(nest);
-                                    if (box) {
-                                        box.querySelectorAll('.check-item').forEach(
-                                            ci => {
-                                                const sid = sanitizeId(ci
-                                                    .dataset.id);
-                                                if (!sid) return;
-                                                selectedItems.delete(sid);
-                                            });
-                                    }
-                                    if (nest) {
-                                        nest.style.display = 'none';
-                                        caret?.classList.remove('rot');
-                                    }
-                                }
-                                return;
-                            }
-
-                            // === PILIH SEMUA ITEM (HEADER T3) ===
+                            // ======= CHECK-ALL ITEMS (T3) =======
                             if (e.target.classList.contains('check-all-items')) {
                                 const t3 = e.target.closest('table');
                                 t3.querySelectorAll('.check-item').forEach(ch => {
@@ -744,20 +574,186 @@
                                         sid);
                                     else selectedItems.delete(sid);
                                 });
-                                e.target.indeterminate = false;
+                                updateExportButton();
                                 return;
                             }
 
-                            // === PILIH SATU ITEM (T3) ===
+                            // ======= CHECK SINGLE ITEM (T3) =======
                             if (e.target.classList.contains('check-item')) {
                                 const sid = sanitizeId(e.target.dataset.id);
                                 if (!sid) return;
                                 if (e.target.checked) selectedItems.add(sid);
                                 else selectedItems.delete(sid);
+                                updateExportButton();
+                                return;
+                            }
 
-                                const box = e.target.closest('.yz-slot-t3') ||
-                                    document;
-                                syncSelectAllItemsState(box);
+                            // ======= CHECK-ALL SOS (T2) =======
+                            if (e.target.classList.contains('check-all-sos')) {
+                                const allSORows = wrap.querySelectorAll(
+                                    '.js-t2row');
+                                for (const soRow of allSORows) {
+                                    const chk = soRow.querySelector('.check-so');
+                                    const vbeln = chk.dataset.vbeln;
+                                    const nest = soRow
+                                        .nextElementSibling; // tr.yz-nest
+                                    const box = nest.querySelector('.yz-slot-t3');
+                                    const caret = soRow.querySelector('.yz-caret');
+                                    const t2tbl = soRow.closest('table');
+
+                                    chk.checked = e.target.checked;
+
+                                    if (e.target.checked) {
+                                        // OPEN + LOAD + CHECK ITEMS
+                                        if (nest.style.display === 'none') {
+                                            nest.style.display = '';
+                                            caret?.classList.add('rot');
+                                        }
+                                        if (nest.dataset.loaded !== '1') {
+                                            const u3 = new URL(
+                                                "{{ route('dashboard.api.t3') }}",
+                                                window.location.origin);
+                                            if (WERKS) u3.searchParams.set('werks',
+                                                WERKS);
+                                            if (AUART) u3.searchParams.set('auart',
+                                                AUART);
+                                            u3.searchParams.set('vbeln', vbeln);
+                                            const r3 = await fetch(u3);
+                                            const j3 = await r3.json();
+                                            if (j3?.ok) {
+                                                box.innerHTML = renderT3(j3.data);
+                                                nest.dataset.loaded = '1';
+                                            } else {
+                                                box.innerHTML =
+                                                    `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
+                                            }
+                                        }
+                                        box.querySelectorAll('.check-item').forEach(
+                                            ci => {
+                                                const sid = sanitizeId(ci
+                                                    .dataset.id);
+                                                if (!sid) return;
+                                                ci.checked = true;
+                                                selectedItems.add(sid);
+                                            });
+                                    } else {
+                                        // UNCHECK + CLOSE
+                                        if (nest.dataset.loaded === '1') {
+                                            box.querySelectorAll('.check-item')
+                                                .forEach(ci => {
+                                                    const sid = sanitizeId(ci
+                                                        .dataset.id);
+                                                    if (!sid) return;
+                                                    ci.checked = false;
+                                                    selectedItems.delete(sid);
+                                                });
+                                        } else {
+                                            // belum termuat → ambil id supaya bisa dihapus dari set
+                                            const u3 = new URL(
+                                                "{{ route('dashboard.api.t3') }}",
+                                                window.location.origin);
+                                            if (WERKS) u3.searchParams.set('werks',
+                                                WERKS);
+                                            if (AUART) u3.searchParams.set('auart',
+                                                AUART);
+                                            u3.searchParams.set('vbeln', vbeln);
+                                            const r3 = await fetch(u3);
+                                            const j3 = await r3.json();
+                                            if (j3?.ok) {
+                                                j3.data.forEach(it => {
+                                                    const sid = sanitizeId(
+                                                        it.id);
+                                                    if (sid) selectedItems
+                                                        .delete(sid);
+                                                });
+                                            }
+                                        }
+                                        nest.style.display = 'none';
+                                        caret?.classList.remove('rot');
+                                    }
+                                    updateT2FooterVisibility(t2tbl);
+                                }
+                                updateExportButton();
+                                return;
+                            }
+
+                            // ======= CHECK SINGLE SO (T2) =======
+                            if (e.target.classList.contains('check-so')) {
+                                const soRow = e.target.closest('.js-t2row');
+                                const vbeln = e.target.dataset.vbeln;
+                                const nest = soRow.nextElementSibling; // tr.yz-nest
+                                const box = nest.querySelector('.yz-slot-t3');
+                                const caret = soRow.querySelector('.yz-caret');
+                                const t2tbl = soRow.closest('table');
+
+                                if (e.target.checked) {
+                                    if (nest.style.display === 'none') {
+                                        nest.style.display = '';
+                                        caret?.classList.add('rot');
+                                    }
+                                    if (nest.dataset.loaded !== '1') {
+                                        const u3 = new URL(
+                                            "{{ route('dashboard.api.t3') }}",
+                                            window.location.origin);
+                                        if (WERKS) u3.searchParams.set('werks',
+                                            WERKS);
+                                        if (AUART) u3.searchParams.set('auart',
+                                            AUART);
+                                        u3.searchParams.set('vbeln', vbeln);
+                                        const r3 = await fetch(u3);
+                                        const j3 = await r3.json();
+                                        if (j3?.ok) {
+                                            box.innerHTML = renderT3(j3.data);
+                                            nest.dataset.loaded = '1';
+                                        } else {
+                                            box.innerHTML =
+                                                `<div class="alert alert-danger m-2">Gagal memuat detail item</div>`;
+                                        }
+                                    }
+                                    box.querySelectorAll('.check-item').forEach(
+                                        ci => {
+                                            const sid = sanitizeId(ci.dataset
+                                                .id);
+                                            if (!sid) return;
+                                            ci.checked = true;
+                                            selectedItems.add(sid);
+                                        });
+                                } else {
+                                    if (nest.dataset.loaded === '1') {
+                                        box.querySelectorAll('.check-item').forEach(
+                                            ci => {
+                                                const sid = sanitizeId(ci
+                                                    .dataset.id);
+                                                if (!sid) return;
+                                                ci.checked = false;
+                                                selectedItems.delete(sid);
+                                            });
+                                    } else {
+                                        const u3 = new URL(
+                                            "{{ route('dashboard.api.t3') }}",
+                                            window.location.origin);
+                                        if (WERKS) u3.searchParams.set('werks',
+                                            WERKS);
+                                        if (AUART) u3.searchParams.set('auart',
+                                            AUART);
+                                        u3.searchParams.set('vbeln', vbeln);
+                                        const r3 = await fetch(u3);
+                                        const j3 = await r3.json();
+                                        if (j3?.ok) {
+                                            j3.data.forEach(it => {
+                                                const sid = sanitizeId(it
+                                                    .id);
+                                                if (sid) selectedItems
+                                                    .delete(sid);
+                                            });
+                                        }
+                                    }
+                                    nest.style.display = 'none';
+                                    caret?.classList.remove('rot');
+                                }
+
+                                updateT2FooterVisibility(t2tbl);
+                                updateExportButton();
                                 return;
                             }
                         });
@@ -768,6 +764,42 @@
                     }
                 });
             });
+
+            // Export handler
+            if (exportDropdownContainer) {
+                exportDropdownContainer.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('export-option')) return;
+                    e.preventDefault();
+                    if (selectedItems.size === 0) {
+                        alert('Pilih minimal 1 item.');
+                        return;
+                    }
+                    const exportType = e.target.dataset.type;
+
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = "{{ route('po.export') }}";
+                    form.target = '_blank';
+
+                    const add = (name, value) => {
+                        const i = document.createElement('input');
+                        i.type = 'hidden';
+                        i.name = name;
+                        i.value = value;
+                        form.appendChild(i);
+                    };
+
+                    add('_token', "{{ csrf_token() }}");
+                    add('export_type', exportType);
+                    add('werks', "{{ $selected['werks'] ?? '' }}");
+                    add('auart', "{{ $selected['auart'] ?? '' }}");
+                    Array.from(selectedItems).forEach(id => add('item_ids[]', id));
+
+                    document.body.appendChild(form);
+                    form.submit();
+                    document.body.removeChild(form);
+                });
+            }
         });
     </script>
 @endpush
