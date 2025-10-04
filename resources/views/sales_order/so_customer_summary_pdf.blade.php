@@ -19,7 +19,6 @@
         .title {
             font-size: 18px;
             font-weight: 700;
-            text-transform: none;
             background: #e9fbf2;
             padding: 10px 14px;
             border-radius: 8px;
@@ -84,7 +83,11 @@
             text-align: center;
         }
 
-        /* Rounded row feel (simulasi chip/rounded list) */
+        .nowrap {
+            white-space: nowrap;
+        }
+
+        /* “rounded list” feel */
         tbody tr {
             border-left: 1px solid #f1f5f9;
             border-right: 1px solid #f1f5f9;
@@ -103,9 +106,8 @@
     <table>
         <thead>
             <tr>
-                <th class="th-customer" style="width:48%;">CUSTOMER</th>
-                <th style="width:14%;">OVERDUE SO</th>
-                <th style="width:18%;">OVERDUE RATE</th>
+                <th class="th-customer" style="width:60%;">CUSTOMER</th>
+                <th style="width:20%;">OVERDUE SO</th>
                 <th style="width:20%;">VALUE</th>
             </tr>
         </thead>
@@ -118,29 +120,30 @@
                     if ($cur === 'USD') {
                         return '$' . number_format($val, 2, '.', ',');
                     }
-                    return ($cur ?? '') . ' ' . number_format($val, 2, ',', '.');
+                    return ($cur ?: '') . ($cur ? ' ' : '') . number_format($val, 2, ',', '.');
                 };
             @endphp
 
             @forelse($rows as $r)
                 <tr>
                     <td class="td-customer">{{ $r->NAME1 }}</td>
-                    <td>{{ (int) $r->SO_LATE_COUNT }}</td>
-                    <td>{{ is_null($r->LATE_PCT) ? '—' : number_format($r->LATE_PCT, 2) . '%' }}</td>
-                    <td class="text-right">{{ $fmt($r->WAERK, $r->TOTAL_VALUE) }}</td>
+                    <td class="text-center">{{ (int) $r->SO_LATE_COUNT }}</td>
+                    <td class="text-right nowrap">{{ $fmt($r->WAERK, $r->TOTAL_VALUE) }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="4" class="text-center">Tidak ada data.</td>
+                    <td colspan="3" class="text-center">Tidak ada data.</td>
                 </tr>
             @endforelse
         </tbody>
+
         <tfoot>
             <tr>
-                <th colspan="3" class="text-right">Total</th>
-                <th class="text-right">
+                <!-- HANYA 3 KOLOM: gabung 2 kolom pertama untuk label, kolom ke-3 untuk total -->
+                <td colspan="2" class="text-right">Total</td>
+                <td class="text-right nowrap">
                     @php
-                        if ($totals && count($totals)) {
+                        if (!empty($totals)) {
                             $parts = [];
                             foreach ($totals as $cur => $sum) {
                                 $parts[] = $fmt($cur, $sum);
@@ -150,7 +153,7 @@
                             echo '—';
                         }
                     @endphp
-                </th>
+                </td>
             </tr>
         </tfoot>
     </table>

@@ -644,8 +644,6 @@ thead th {
     overflow: auto;
 }
 
-
-
 @keyframes pulse-highlight {
     0% {
         background-color: #dbeafe;
