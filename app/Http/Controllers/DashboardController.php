@@ -397,46 +397,38 @@ class DashboardController extends Controller
     public function apiT3(Request $req)
     {
         $vbeln = trim((string) $req->query('vbeln'));
-        if ($vbeln === '') return response()->json(['ok' => false, 'error' => 'vbeln missing'], 400);
+        if ($vbeln === '') {
+            return response()->json(['ok' => false, 'error' => 'vbeln missing'], 400);
+        }
 
         $werks = $req->query('werks');
         $auart = $req->query('auart');
 
         $rows = DB::table('so_yppr079_t1 as t1')
-            ->join('so_yppr079_t2 as tx', DB::raw('TRIM(CAST(tx.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'))
+            ->leftJoin(
+                'so_yppr079_t2 as t2',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))')
+            )
             ->select(
+                't1.id', // << PENTING untuk export
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR)) as VBELN'),
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
                 't1.MAKTX',
                 't1.KWMENG',
                 't1.QTY_GI',
                 't1.QTY_BALANCE2',
+                't1.KALAB',   // WHFG
+                't1.KALAB2',  // FG  << supaya kolom FG di Blade terisi
                 't1.NETPR',
-                't1.TOTPR',
-                't1.NETWR',
-                't1.WAERK',
-                't1.KALAB'
+                't1.WAERK'
             )
-            ->where(function ($q) use ($vbeln) {
-                $q->where('t1.VBELN', $vbeln)
-                    ->orWhereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
-                    ->orWhereRaw('CAST(TRIM(t1.VBELN) AS UNSIGNED) = CAST(TRIM(?) AS UNSIGNED)', [$vbeln]);
-            })
-            ->when(strlen((string)$werks) > 0, function ($q) use ($werks) {
-                $q->where(function ($qq) use ($werks) {
-                    $qq->where('t1.WERKS', $werks)->orWhere('t1.IV_WERKS_PARAM', $werks)
-                        ->orWhereRaw('TRIM(CAST(t1.WERKS AS CHAR)) = TRIM(?)', [$werks])
-                        ->orWhereRaw('TRIM(CAST(t1.IV_WERKS_PARAM AS CHAR)) = TRIM(?)', [$werks]);
-                });
-            })
-            ->when(strlen((string)$auart) > 0, function ($q) use ($auart) {
-                $q->where(function ($qq) use ($auart) {
-                    $qq->where('t1.AUART', $auart)->orWhere('t1.IV_AUART_PARAM', $auart)
-                        ->orWhereRaw('TRIM(t1.AUART) = TRIM(?)', [$auart])
-                        ->orWhereRaw('TRIM(t1.IV_AUART_PARAM) = TRIM(?)', [$auart]);
-                });
-            })
-            ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
+            ->whereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
+            ->when($werks, fn($q) => $q->where('t1.IV_WERKS_PARAM', $werks))
+            ->when($auart, fn($q) => $q->where('t1.IV_AUART_PARAM', $auart))
+            ->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);

@@ -27,7 +27,7 @@
         style="display:none"></div>
 
     {{-- =========================================================
-        HEADER: PILIH TYPE (SELALU tampil jika plant dipilih)
+    HEADER: PILIH TYPE & EXPORT BUTTONS
     ========================================================= --}}
     @if (filled($werks))
         @php
@@ -35,9 +35,11 @@
             $selectedAuart = trim((string) ($auart ?? ''));
         @endphp
 
-        <div class="card yz-card shadow-sm mb-3">
+        <div class="card yz-card shadow-sm mb-3 overflow-visible">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-                <div class="py-1 w-100">
+
+                {{-- Kiri: pills PO Type --}}
+                <div class="py-1">
                     @if ($typesForPlant->count())
                         <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
                             @foreach ($typesForPlant as $t)
@@ -58,12 +60,31 @@
                         <i class="fas fa-info-circle me-2"></i> Silakan pilih Plant terlebih dahulu dari sidebar.
                     @endif
                 </div>
+
+                {{-- Kanan: Export Items (muncul saat ada item terpilih) --}}
+                <div class="py-1 d-flex align-items-center">
+                    <div class="dropdown" id="export-dropdown-container" style="display:none;">
+                        <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn"
+                            data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-file-export me-2"></i>
+                            Export Items (<span id="selected-count">0</span>)
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="export-btn">
+                            <li><a class="dropdown-item export-option" href="#" data-type="pdf">
+                                    <i class="fas fa-file-pdf text-danger me-2"></i>Export to PDF
+                                </a></li>
+                            <li><a class="dropdown-item export-option" href="#" data-type="excel">
+                                    <i class="fas fa-file-excel text-success me-2"></i>Export to Excel
+                                </a></li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     @endif
 
     {{-- =========================================================
-        A. MODE TABEL (LAPORAN PO) – KODE UTAMA PO REPORT
+    A. MODE TABEL (LAPORAN PO) – KODE UTAMA PO REPORT
     ========================================================= --}}
     @if ($show && $compact)
         <div class="card yz-card shadow-sm mb-3">
@@ -74,7 +95,6 @@
                     </h5>
                 </div>
 
-                {{-- SISA KODE PHP UNTUK PERHITUNGAN TOTAL DAN FORMAT MATA UANG --}}
                 @php
                     $totalsByCurr = [];
                     foreach ($rows as $r) {
@@ -178,7 +198,7 @@
         </div>
 
         {{-- =========================================================
-        B. HANYA Plant dipilih → minta user pilih AUART
+    B. HANYA Plant dipilih → minta user pilih AUART
     ========================================================= --}}
     @elseif($onlyWerksSelected)
         <div class="alert alert-info">
@@ -187,7 +207,7 @@
         </div>
 
         {{-- =========================================================
-        C. BELUM ADA YANG DIPILIH
+    C. BELUM ADA YANG DIPILIH
     ========================================================= --}}
     @else
         <div class="alert alert-warning">
@@ -200,28 +220,76 @@
 
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
+    <style>
+        tbody.customer-focus-mode~tfoot.yz-footer-customer {
+            display: none !important;
+        }
+
+        .yz-row-highlight-negative>td {
+            background: #ffe5e5 !important;
+        }
+
+        .table-hover tbody tr.yz-row-highlight-negative:hover>td {
+            background: #ffd6d6 !important;
+        }
+
+        .yz-caret {
+            display: inline-block;
+            transition: transform .18s ease;
+        }
+
+        .yz-caret.rot {
+            transform: rotate(90deg);
+        }
+    </style>
 @endpush
 
 @push('scripts')
     <script>
-        /** Format currency utk tabel */
+        /* ========= UTIL ========= */
         const formatCurrencyForTable = (value, currency) => {
             const n = parseFloat(value);
             if (!Number.isFinite(n)) return '';
-            const options = {
+            const opt = {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             };
-            if (currency === 'IDR') return `Rp ${n.toLocaleString('id-ID', options)}`;
-            if (currency === 'USD') return `$${n.toLocaleString('en-US', options)}`;
-            return `${currency} ${n.toLocaleString('id-ID', options)}`;
+            if (currency === 'IDR') return `Rp ${n.toLocaleString('id-ID', opt)}`;
+            if (currency === 'USD') return `$${n.toLocaleString('en-US', opt)}`;
+            return `${currency} ${n.toLocaleString('id-ID', opt)}`;
+        };
+        const formatNumber = (num, d = 0) => {
+            const n = parseFloat(num);
+            if (!Number.isFinite(n)) return '';
+            return n.toLocaleString('id-ID', {
+                minimumFractionDigits: d,
+                maximumFractionDigits: d
+            });
+        };
+        const sanitizeId = (v) => {
+            const s = String(v ?? '').replace(/\D+/g, '');
+            return s.length ? s : null;
         };
 
-        /** Render Tabel-2 (Overview PO per SO) */
+        /* ========= STATE EXPORT ========= */
+        const selectedItems = new Set(); // berisi string id yang sudah disanitasi
+        const itemIdToSO = new Map(); // id -> vbeln
+        const exportDropdownContainer = document.getElementById('export-dropdown-container');
+        const selectedCountSpan = document.getElementById('selected-count');
+        const updateExportButton = () => {
+            selectedCountSpan.textContent = selectedItems.size;
+            if (exportDropdownContainer) exportDropdownContainer.style.display = selectedItems.size > 0 ? 'block' :
+                'none';
+        };
+
+        /* Tangkal klik checkbox agar tidak ikut expand */
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.form-check-input')) e.stopPropagation();
+        }, true);
+
+        /* ========= RENDER T2 ========= */
         function renderT2(rows, kunnr) {
-            if (!rows?.length) {
-                return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
-            }
+            if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
 
             const totalsByCurr = {};
             rows.forEach(r => {
@@ -232,18 +300,19 @@
 
             let html = `
   <div style="width:100%">
-    <h5 class="yz-table-title-nested yz-title-so">
-      <i class="fas fa-file-invoice me-2"></i>Overview PO
-    </h5>
+    <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
     <table class="table table-sm mb-0 yz-mini">
       <thead class="yz-header-so">
         <tr>
+          <th style="width:40px" class="text-center">
+            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+          </th>
           <th style="width:40px;text-align:center;"></th>
           <th style="min-width:150px;text-align:left;">PO</th>
           <th style="min-width:100px;text-align:left;">SO</th>
-          <th style="min-width:100px;text-align:right;">Outs. Value</th>
-          <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
-          <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
+          <th style="min-width:110px;text-align:right;">Outs. Value</th>
+          <th style="min-width:110px;text-align:center;">Req. Delv Date</th>
+          <th style="min-width:110px;text-align:center;">Overdue (Days)</th>
           <th style="min-width:120px;text-align:center;">Shortage %</th>
         </tr>
       </thead>
@@ -251,23 +320,24 @@
 
             rows.forEach((r, i) => {
                 const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                const overdueDays = r.Overdue;
-                const rowHighlightClass = overdueDays < 0 ? 'yz-row-highlight-negative' : '';
-                const edatuDisplay = r.FormattedEdatu || '';
-                const shortageDisplay = `${(r.ShortagePercentage || 0).toFixed(2)}%`;
+                const over = r.Overdue;
+                const rowCls = over < 0 ? 'yz-row-highlight-negative' : '';
+                const edatu = r.FormattedEdatu || '';
+                const shrt = `${(r.ShortagePercentage||0).toFixed(2)}%`;
 
                 html += `
-      <tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+      <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+        <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
         <td style="text-align:center;"><span class="yz-caret">▸</span></td>
         <td style="text-align:left;">${r.BSTNK ?? ''}</td>
         <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
         <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-        <td style="text-align:center;">${edatuDisplay}</td>
-        <td style="text-align:center;">${overdueDays ?? 0}</td>
-        <td style="text-align:center;">${shortageDisplay}</td>
+        <td style="text-align:center;">${edatu}</td>
+        <td style="text-align:center;">${over ?? 0}</td>
+        <td style="text-align:center;">${shrt}</td>
       </tr>
       <tr id="${rid}" class="yz-nest" style="display:none;">
-        <td colspan="7" class="p-0">
+        <td colspan="8" class="p-0">
           <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
             <div class="yz-slot-t3 p-2"></div>
           </div>
@@ -275,12 +345,11 @@
       </tr>`;
             });
 
-            // FOOTER: beri class t2-footer, kosongkan kolom non-value
             html += `</tbody><tfoot class="t2-footer">`;
             Object.entries(totalsByCurr).forEach(([cur, sum]) => {
                 html += `
       <tr class="table-light">
-        <th></th>
+        <th></th><th></th>
         <th colspan="2" style="text-align:left;">Total (${cur || 'N/A'})</th>
         <th style="text-align:right;">${formatCurrencyForTable(sum, cur)}</th>
         <th></th><th></th><th></th>
@@ -290,45 +359,54 @@
             return html;
         }
 
-        /** Render Tabel-3 (items) */
+        /* ========= RENDER T3 =========
+           - Tanpa "Outs. Ship Value"
+           - Tambah FG (KALAB2) di sebelah WHFG */
         function renderT3(rows) {
             if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
             let out = `
-    <div class="table-responsive">
-      <table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-item">
-          <tr>
-            <th style="min-width:80px; text-align:center;">Item</th>
-            <th style="min-width:150px; text-align:center;">Material FG</th>
-            <th style="min-width:300px">Desc FG</th>
-            <th style="min-width:80px">Qty PO</th>
-            <th style="min-width:60px">Shipped</th>
-            <th style="min-width:60px">Outs. Ship</th>
-            <th style="min-width:80px">WHFG</th>
-            <th style="min-width:100px">Net Price</th>
-            <th style="min-width:80px">Outs. Ship Value</th>
-          </tr>
-        </thead>
-        <tbody>`;
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 yz-mini">
+      <thead class="yz-header-item">
+        <tr>
+          <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+          <th style="min-width:80px;text-align:center;">Item</th>
+          <th style="min-width:150px;text-align:center;">Material FG</th>
+          <th style="min-width:300px;">Desc FG</th>
+          <th style="min-width:80px;">Qty PO</th>
+          <th style="min-width:60px;">Shipped</th>
+          <th style="min-width:60px;">Outs. Ship</th>
+          <th style="min-width:80px;">WHFG</th>
+          <th style="min-width:80px;">FG</th>
+          <th style="min-width:100px;">Net Price</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
             rows.forEach(r => {
+                const sid = sanitizeId(r.id);
+                const checked = sid && selectedItems.has(sid) ? 'checked' : '';
                 out += `
-      <tr>
+      <tr data-item-id="${sid ?? ''}" data-vbeln="${r.VBELN}">
+        <td><input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}></td>
         <td style="text-align:center;">${r.POSNR ?? ''}</td>
         <td style="text-align:center;">${r.MATNR ?? ''}</td>
         <td>${r.MAKTX ?? ''}</td>
-        <td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td>
-        <td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td>
-        <td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td>
-        <td>${parseFloat(r.KALAB).toLocaleString('id-ID')}</td>
+        <td>${formatNumber(r.KWMENG)}</td>
+        <td>${formatNumber(r.QTY_GI)}</td>
+        <td>${formatNumber(r.QTY_BALANCE2)}</td>
+        <td>${formatNumber(r.KALAB)}</td>
+        <td>${formatNumber(r.KALAB2)}</td>
         <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
-        <td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
       </tr>`;
+                if (sid) itemIdToSO.set(sid, String(r.VBELN));
             });
+
             out += `</tbody></table></div>`;
             return out;
         }
 
-        /** Helper: sembunyikan footer Tabel-2 saat ada Tabel-3 yang terbuka */
+        /* Footer T2 hide/show saat T3 dibuka */
         function updateT2FooterVisibility(t2Table) {
             if (!t2Table) return;
             const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
@@ -337,71 +415,61 @@
             if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            // Hilangkan toggle currency (jika ada)
-            document.querySelectorAll('.yz-currency-toggle').forEach(el => el.remove());
-
-            // Label responsive untuk Tabel-1
-            const customerRows = document.querySelectorAll('.yz-kunnr-row');
-            customerRows.forEach(row => {
+        /* ========= MAIN ========= */
+        document.addEventListener('DOMContentLoaded', () => {
+            // Label responsif Tabel-1
+            document.querySelectorAll('.yz-kunnr-row').forEach(row => {
                 row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
                 row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Overdue PO');
                 row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Outs. Value');
             });
 
-            const rootElement = document.getElementById('yz-root');
-            const showTable = rootElement ? !!parseInt(rootElement.dataset.show) : false;
-
+            const root = document.getElementById('yz-root');
+            const showTable = root ? !!parseInt(root.dataset.show) : false;
             if (!showTable) return;
 
             const apiT2 = "{{ route('dashboard.api.t2') }}";
             const apiT3 = "{{ route('dashboard.api.t3') }}";
-            const apiDecryptPayload = "{{ route('dashboard.api.decrypt_payload') }}";
-            const WERKS = (rootElement.dataset.werks || '').trim() || null;
-            const AUART = (rootElement.dataset.auart || '').trim() || null;
+            const WERKS = (root.dataset.werks || '').trim() || null;
+            const AUART = (root.dataset.auart || '').trim() || null;
 
-            // Expand Tabel-1 → load Tabel-2
-            document.querySelectorAll('.yz-kunnr-row').forEach(row => {
-                row.addEventListener('click', async () => {
-                    const kunnr = (row.dataset.kunnr || '').trim();
-                    const kid = row.dataset.kid;
+            // Expand Level-1 → load T2
+            document.querySelectorAll('.yz-kunnr-row').forEach(custRow => {
+                custRow.addEventListener('click', async () => {
+                    const kunnr = (custRow.dataset.kunnr || '').trim();
+                    const kid = custRow.dataset.kid;
                     const slot = document.getElementById(kid);
                     const wrap = slot?.querySelector('.yz-nest-wrap');
 
-                    const tbody = row.closest('tbody');
-                    const tableEl = row.closest('table');
+                    const tbody = custRow.closest('tbody');
+                    const tableEl = custRow.closest('table');
                     const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
-                    const wasOpen = row.classList.contains('is-open');
-
+                    const wasOpen = custRow.classList.contains('is-open');
                     if (!wasOpen) {
                         tbody.classList.add('customer-focus-mode');
-                        row.classList.add('is-focused');
+                        custRow.classList.add('is-focused');
                     } else {
                         tbody.classList.remove('customer-focus-mode');
-                        row.classList.remove('is-focused');
+                        custRow.classList.remove('is-focused');
                     }
 
-                    row.classList.toggle('is-open');
+                    custRow.classList.toggle('is-open');
                     slot.style.display = wasOpen ? 'none' : '';
 
                     if (wasOpen) {
                         wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
                             'none');
-                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
-                            .remove('so-focus-mode'));
-                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
-                            .remove('is-focused'));
-                        wrap?.querySelectorAll('.js-t2row .yz-caret.rot').forEach(c => c
-                            .classList.remove('rot'));
+                        wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
+                            'rot'));
                     }
 
-                    // Footer Tabel-1 tampil/ sembunyi sesuai nested
+                    // Footer Tabel-1
                     if (tfootEl) {
-                        const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
+                        const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')]
                             .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                            null);
-                        tfootEl.style.display = anyVisibleNest ? 'none' : '';
+                                null);
+                        tfootEl.style.display = anyVisible ? 'none' : '';
                     }
 
                     if (wasOpen) return;
@@ -412,63 +480,63 @@
           <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
             <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
           </div>`;
-
                         const url = new URL(apiT2, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         if (WERKS) url.searchParams.set('werks', WERKS);
                         if (AUART) url.searchParams.set('auart', AUART);
 
                         const res = await fetch(url);
-                        if (!res.ok) throw new Error('Network response was not ok');
                         const js = await res.json();
-                        if (!js.ok) throw new Error(js.error || 'Gagal memuat data PO');
+                        if (!res.ok || !js.ok) throw new Error(js.error ||
+                            'Gagal memuat data PO');
 
                         wrap.innerHTML = renderT2(js.data, kunnr);
                         wrap.dataset.loaded = '1';
-
-                        // Pastikan state footer T2 benar saat pertama render
+                        updateExportButton();
                         updateT2FooterVisibility(wrap.querySelector('table'));
 
-                        // Klik Tabel-2 → toggle & load Tabel-3
-                        wrap.querySelectorAll('.js-t2row').forEach(row2 => {
-                            row2.addEventListener('click', async (ev) => {
+                        // Klik baris SO → toggle & load T3
+                        wrap.querySelectorAll('.js-t2row').forEach(soRow => {
+                            soRow.addEventListener('click', async (ev) => {
+                                if (ev.target.closest('.form-check-input'))
+                                    return; // abaikan klik checkbox
                                 ev.stopPropagation();
 
-                                const vbeln = (row2.dataset.vbeln || '')
+                                const vbeln = (soRow.dataset.vbeln || '')
                                     .trim();
-                                const tgtId = row2.dataset.tgt;
-                                const caret = row2.querySelector(
+                                const tgtId = soRow.dataset.tgt;
+                                const caret = soRow.querySelector(
                                     '.yz-caret');
                                 const tgt = wrap.querySelector('#' + tgtId);
-                                const body = tgt.querySelector(
+                                const box = tgt.querySelector(
                                     '.yz-slot-t3');
                                 const open = tgt.style.display !== 'none';
-                                const tbody2 = row2.closest('tbody');
-                                const t2Table = row2.closest('table');
+                                const tbody2 = soRow.closest('tbody');
+                                const t2tbl = soRow.closest('table');
 
                                 if (!open) {
                                     tbody2.classList.add('so-focus-mode');
-                                    row2.classList.add('is-focused');
+                                    soRow.classList.add('is-focused');
                                 } else {
                                     tbody2.classList.remove(
-                                    'so-focus-mode');
-                                    row2.classList.remove('is-focused');
+                                        'so-focus-mode');
+                                    soRow.classList.remove('is-focused');
                                 }
 
                                 if (open) {
                                     tgt.style.display = 'none';
                                     caret?.classList.remove('rot');
-                                    updateT2FooterVisibility(t2Table);
+                                    updateT2FooterVisibility(t2tbl);
                                     return;
                                 }
 
                                 tgt.style.display = '';
                                 caret?.classList.add('rot');
-                                updateT2FooterVisibility(t2Table);
+                                updateT2FooterVisibility(t2tbl);
 
                                 if (tgt.dataset.loaded === '1') return;
 
-                                body.innerHTML = `
+                                box.innerHTML = `
               <div class="p-2 text-muted small yz-loader-pulse">
                 <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
               </div>`;
@@ -482,80 +550,210 @@
                                     AUART);
 
                                 const r3 = await fetch(u3);
-                                if (!r3.ok) throw new Error(
-                                    'Network response was not ok for item details'
-                                    );
                                 const j3 = await r3.json();
-                                if (!j3.ok) throw new Error(j3.error ||
+                                if (!r3.ok || !j3.ok) throw new Error(j3
+                                    .error ||
                                     'Gagal memuat detail item');
 
-                                body.innerHTML = renderT3(j3.data);
+                                box.innerHTML = renderT3(j3.data);
                                 tgt.dataset.loaded = '1';
+
+                                // Sinkronkan checkbox item yang sudah terpilih
+                                box.querySelectorAll('.check-item').forEach(
+                                    chk => {
+                                        const sid = sanitizeId(chk
+                                            .dataset.id);
+                                        chk.checked = !!(sid &&
+                                            selectedItems.has(sid));
+                                    });
                             });
                         });
-                    } catch (e) {
-                        console.error(e);
+
+                        /* Delegasi perubahan checkbox di embed T2/T3 (di dalam wrap) */
+                        wrap.addEventListener('change', async (e) => {
+                            // Check-all SO
+                            if (e.target.classList.contains('check-all-sos')) {
+                                const allSO = wrap.querySelectorAll('.check-so');
+                                for (const chk of allSO) {
+                                    chk.checked = e.target.checked;
+                                    const v = chk.dataset.vbeln;
+
+                                    // kalau T3 sudah di DOM
+                                    const nest = wrap.querySelector(
+                                            `.js-t2row[data-vbeln='${v}']`)
+                                        ?.nextElementSibling;
+                                    const box = nest?.querySelector('.yz-slot-t3');
+                                    if (box && nest.dataset.loaded === '1') {
+                                        box.querySelectorAll('.check-item').forEach(
+                                            ci => {
+                                                const sid = sanitizeId(ci
+                                                    .dataset.id);
+                                                if (!sid) return;
+                                                ci.checked = e.target.checked;
+                                                if (e.target.checked)
+                                                    selectedItems.add(sid);
+                                                else selectedItems.delete(sid);
+                                            });
+                                        continue;
+                                    }
+
+                                    // belum di-load → fetch cepat untuk daftar id
+                                    const u3 = new URL(apiT3, window.location
+                                        .origin);
+                                    u3.searchParams.set('vbeln', v);
+                                    if (WERKS) u3.searchParams.set('werks', WERKS);
+                                    if (AUART) u3.searchParams.set('auart', AUART);
+                                    const r3 = await fetch(u3);
+                                    const j3 = await r3.json();
+                                    if (j3.ok) {
+                                        j3.data.forEach(it => {
+                                            const sid = sanitizeId(it.id);
+                                            if (!sid) return;
+                                            if (e.target.checked)
+                                                selectedItems.add(sid);
+                                            else selectedItems.delete(sid);
+                                            itemIdToSO.set(sid, String(it
+                                                .VBELN));
+                                        });
+                                    }
+                                }
+                                updateExportButton();
+                                return;
+                            }
+
+                            // Check SO baris tunggal
+                            if (e.target.classList.contains('check-so')) {
+                                const v = e.target.dataset.vbeln;
+                                const nest = wrap.querySelector(
+                                        `.js-t2row[data-vbeln='${v}']`)
+                                    ?.nextElementSibling;
+                                const box = nest?.querySelector('.yz-slot-t3');
+
+                                if (box && nest.dataset.loaded === '1') {
+                                    box.querySelectorAll('.check-item').forEach(
+                                        ci => {
+                                            const sid = sanitizeId(ci.dataset
+                                                .id);
+                                            if (!sid) return;
+                                            ci.checked = e.target.checked;
+                                            if (e.target.checked) selectedItems
+                                                .add(sid);
+                                            else selectedItems.delete(sid);
+                                        });
+                                    updateExportButton();
+                                    return;
+                                }
+
+                                // fetch cepat
+                                const u3 = new URL(apiT3, window.location.origin);
+                                u3.searchParams.set('vbeln', v);
+                                if (WERKS) u3.searchParams.set('werks', WERKS);
+                                if (AUART) u3.searchParams.set('auart', AUART);
+                                const r3 = await fetch(u3);
+                                const j3 = await r3.json();
+                                if (j3.ok) {
+                                    j3.data.forEach(it => {
+                                        const sid = sanitizeId(it.id);
+                                        if (!sid) return;
+                                        if (e.target.checked) selectedItems
+                                            .add(sid);
+                                        else selectedItems.delete(sid);
+                                        itemIdToSO.set(sid, String(it
+                                            .VBELN));
+                                    });
+                                }
+                                updateExportButton();
+                                return;
+                            }
+
+                            // Check-all items (di T3)
+                            if (e.target.classList.contains('check-all-items')) {
+                                const t3 = e.target.closest('table');
+                                t3.querySelectorAll('.check-item').forEach(ch => {
+                                    const sid = sanitizeId(ch.dataset.id);
+                                    if (!sid) return;
+                                    ch.checked = e.target.checked;
+                                    if (e.target.checked) selectedItems.add(
+                                        sid);
+                                    else selectedItems.delete(sid);
+                                });
+                                updateExportButton();
+                                return;
+                            }
+
+                            // Check single item
+                            if (e.target.classList.contains('check-item')) {
+                                const sid = sanitizeId(e.target.dataset.id);
+                                if (!sid) return;
+                                if (e.target.checked) selectedItems.add(sid);
+                                else selectedItems.delete(sid);
+                                updateExportButton();
+                                return;
+                            }
+                        });
+
+                    } catch (err) {
                         wrap.innerHTML =
-                            `<div class="alert alert-danger m-3">${e.message}</div>`;
+                            `<div class="alert alert-danger m-3">${err.message}</div>`;
                     }
                 });
             });
 
-            // Highlight hasil pencarian dari Search PO
-            const handleSearchHighlight = () => {
-                const urlParams = new URLSearchParams(window.location.search);
-                const encryptedPayload = urlParams.get('q');
-                if (!encryptedPayload) return;
+            // Export handler
+            if (exportDropdownContainer) {
+                exportDropdownContainer.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('export-option')) return;
+                    e.preventDefault();
+                    if (selectedItems.size === 0) {
+                        alert('Pilih minimal 1 item.');
+                        return;
+                    }
 
-                fetch(apiDecryptPayload, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute(
-                                'content')
-                        },
-                        body: JSON.stringify({
-                            q: encryptedPayload
-                        })
-                    })
-                    .then(res => res.json())
-                    .then(result => {
-                        if (!result.ok || !result.data) return;
+                    const exportType = e.target.dataset.type;
 
-                        const params = result.data;
-                        const highlightKunnr = params.highlight_kunnr;
-                        const highlightVbeln = params.highlight_vbeln;
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = "{{ route('po.export') }}";
+                    form.target = '_blank';
 
-                        if (highlightKunnr && highlightVbeln) {
-                            const customerRow = document.querySelector(
-                                `.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
-                            if (customerRow) {
-                                customerRow.click();
-                                let attempts = 0,
-                                    maxAttempts = 50;
-                                const interval = setInterval(() => {
-                                    const soRow = document.querySelector(
-                                        `.js-t2row[data-vbeln="${highlightVbeln}"]`);
-                                    if (soRow) {
-                                        clearInterval(interval);
-                                        soRow.classList.add('row-highlighted');
-                                        soRow.addEventListener('click', () => soRow.classList
-                                            .remove('row-highlighted'), {
-                                                once: true
-                                            });
-                                        setTimeout(() => soRow.scrollIntoView({
-                                            behavior: 'smooth',
-                                            block: 'center'
-                                        }), 500);
-                                    }
-                                    attempts++;
-                                    if (attempts > maxAttempts) clearInterval(interval);
-                                }, 100);
-                            }
-                        }
-                    }).catch(console.error);
-            };
-            handleSearchHighlight();
+                    const csrf = document.createElement('input');
+                    csrf.type = 'hidden';
+                    csrf.name = '_token';
+                    csrf.value = "{{ csrf_token() }}";
+                    form.appendChild(csrf);
+
+                    const t = document.createElement('input');
+                    t.type = 'hidden';
+                    t.name = 'export_type';
+                    t.value = exportType;
+                    form.appendChild(t);
+
+                    const w = document.createElement('input');
+                    w.type = 'hidden';
+                    w.name = 'werks';
+                    w.value = "{{ $selected['werks'] ?? '' }}";
+                    form.appendChild(w);
+
+                    const a = document.createElement('input');
+                    a.type = 'hidden';
+                    a.name = 'auart';
+                    a.value = "{{ $selected['auart'] ?? '' }}";
+                    form.appendChild(a);
+
+                    // kirim id yang sudah disanitasi
+                    Array.from(selectedItems).forEach(id => {
+                        const i = document.createElement('input');
+                        i.type = 'hidden';
+                        i.name = 'item_ids[]';
+                        i.value = id;
+                        form.appendChild(i);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                    document.body.removeChild(form);
+                });
+            }
         });
     </script>
 @endpush

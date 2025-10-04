@@ -6,37 +6,31 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
-use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
+use App\Exports\PoItemsExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class PoReportController extends Controller
 {
-    // Index untuk menampilkan halaman PO Report (mode tabel)
+    /** Halaman report (tabel) */
     public function index(Request $request)
     {
-        $decryptedParams = [];
+        // terima q terenkripsi
         if ($request->has('q')) {
             try {
-                $decryptedParams = Crypt::decrypt($request->query('q'));
-                if (!is_array($decryptedParams)) {
-                    $decryptedParams = [];
-                }
+                $data = Crypt::decrypt($request->query('q'));
+                if (is_array($data)) $request->merge($data);
             } catch (DecryptException $e) {
                 return redirect()->route('dashboard')->withErrors('Link Report tidak valid.');
             }
         }
 
-        // Merge hasil dekripsi ke $request
-        if (!empty($decryptedParams)) {
-            $request->merge($decryptedParams);
-        }
+        $werks   = $request->query('werks');
+        $auart   = $request->query('auart');
+        $compact = $request->boolean('compact', true);
+        $show    = filled($werks) && filled($auart);
 
-        $werks = $request->query('werks');
-        $auart = $request->query('auart');
-        $compact = $request->boolean('compact', true); // Selalu true di halaman report
-        $show = filled($werks) && filled($auart);
-        $rows = collect();
-
-        // Ambil data mapping untuk navigation pills di header
+        // mapping untuk pills
         $mapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
@@ -45,51 +39,33 @@ class PoReportController extends Controller
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
         $selectedDescription = '';
-        $selectedMapping = $mapping[$werks]->firstWhere('IV_AUART', $auart) ?? null;
-        if ($selectedMapping) {
-            $selectedDescription = $selectedMapping->Deskription ?? '';
+        if ($werks && $auart) {
+            $selectedDescription = DB::table('maping')
+                ->where('IV_WERKS', $werks)->where('IV_AUART', $auart)
+                ->value('Deskription') ?? '';
         }
+
+        // auto pilih default auart jika hanya plant
         if ($request->filled('werks') && !$request->filled('auart') && !$request->has('q')) {
-            $typesForPlant = collect($mapping[$werks] ?? []);
-
-            // Helper cocokkan deskripsi AUART (case-insensitive)
-            $like = fn($str) => fn($row) => str_contains(strtolower((string)($row->Deskription ?? '')), $str);
-
-            // 1) Prioritas: mengandung "kmi" dan "export"
-            $default = $typesForPlant->first(function ($row) {
-                $d = strtolower((string)($row->Deskription ?? ''));
+            $types = collect($mapping[$werks] ?? []);
+            $default = $types->first(function ($row) {
+                $d = strtolower((string)$row->Deskription);
                 return str_contains($d, 'kmi') && str_contains($d, 'export')
                     && !str_contains($d, 'replace') && !str_contains($d, 'local');
-            });
-
-            // 2) Jika tidak ada, pilih yang "Export" (bukan Replace/Local)
-            if (!$default) {
-                $default = $typesForPlant->first(function ($row) {
-                    $d = strtolower((string)($row->Deskription ?? ''));
-                    return str_contains($d, 'export')
-                        && !str_contains($d, 'replace') && !str_contains($d, 'local');
-                });
-            }
-
-            // 3) Jika masih tidak ada, ambil item pertama (fallback terakhir)
-            if (!$default) {
-                $default = $typesForPlant->first();
-            }
+            }) ?? $types->first(function ($row) {
+                $d = strtolower((string)$row->Deskription);
+                return str_contains($d, 'export') && !str_contains($d, 'replace') && !str_contains($d, 'local');
+            }) ?? $types->first();
 
             if ($default) {
-                // Redirect ke route report dengan payload terenkripsi
-                $payload = [
-                    'werks'   => $werks,
-                    'auart'   => $default->IV_AUART,
-                    'compact' => 1, // tetap mode tabel kompak
-                ];
+                $payload = ['werks' => $werks, 'auart' => $default->IV_AUART, 'compact' => 1];
                 return redirect()->route('po.report', ['q' => Crypt::encrypt($payload)]);
             }
         }
 
-        // ====== Logika Report (Mode Tabel) - CUMA JALAN JIKA $show=true ======
+        $rows = collect();
         if ($show) {
-            // Parser tanggal yang sama persis seperti di DashboardController lama
+            // Parser tanggal aman
             $safeEdatu = "COALESCE(
                 STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
                 STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
@@ -99,8 +75,8 @@ class PoReportController extends Controller
                 STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
             )";
 
-            // Query yang sama persis dengan yang ada di DashboardController
-            $query = DB::table('so_yppr079_t2 as t2')
+            // Query overview customer (mirip dashboard)
+            $rows = DB::table('so_yppr079_t2 as t2')
                 ->leftJoin(DB::raw('(
                     SELECT t2_inner.KUNNR, SUM(t1.TOTPR) AS TOTAL_TOTPR
                     FROM so_yppr079_t2 AS t2_inner
@@ -123,24 +99,93 @@ class PoReportController extends Controller
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->where('t2.IV_AUART_PARAM', $auart)
                 ->groupBy('t2.KUNNR')
-                ->orderBy('NAME1');
-
-            $rows = $query->paginate(25)->withQueryString();
+                ->orderBy('NAME1')
+                ->paginate(25)->withQueryString();
         }
 
-        return view('po_report.po_report', [ // <<< GANTI POINTER VIEW DI SINI
-            'mapping' => $mapping,
-            'selected' => ['werks' => $werks, 'auart' => $auart],
-            'selectedDescription' => $selectedDescription,
-            'rows' => $rows,
-            'compact' => $compact,
-            'show' => $show,
-            // Jika Anda ingin mempertahankan highlight dari search
-            'highlight_kunnr' => $request->query('highlight_kunnr'),
-            'highlight_vbeln' => $request->query('highlight_vbeln'),
+        return view('po_report.po_report', [
+            'mapping'              => $mapping,
+            'selected'             => ['werks' => $werks, 'auart' => $auart],
+            'selectedDescription'  => $selectedDescription,
+            'rows'                 => $rows,
+            'compact'              => $compact,
+            'show'                 => $show,
         ]);
     }
 
-    // CATATAN: Karena fungsi apiT2 dan apiT3 adalah generic logic untuk menampilkan nested data (L2 dan L3), 
-    // kita biarkan mereka di DashboardController dan hanya mengubah route name.
+    /** Export item terpilih ke PDF/Excel */
+    public function exportData(Request $request)
+    {
+        // Validasi dasar (tanpa memaksa integer di sini; kita sanitasi manual)
+        $request->validate([
+            'item_ids'    => 'required|array|min:1',
+            'export_type' => 'required|string|in:pdf,excel',
+            'werks'       => 'required|string',
+            'auart'       => 'required|string',
+        ]);
+
+        // Sanitasi ID → hanya digit
+        $ids = collect($request->input('item_ids', []))
+            ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
+            ->filter(fn($v) => $v > 0)
+            ->unique()->values()->all();
+
+        if (empty($ids)) {
+            return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
+        }
+
+        $werks      = $request->input('werks');
+        $auart      = $request->input('auart');
+        $exportType = $request->input('export_type');
+
+        // Ambil item by id + info header (PO, SO, Customer)
+        $items = DB::table('so_yppr079_t1 as t1')
+            ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
+            ->select(
+                't1.id',
+                't1.VBELN as SO',
+                't2.BSTNK as PO',
+                't2.NAME1 as CUSTOMER',
+                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
+                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
+                't1.MAKTX',
+                't1.KWMENG',
+                't1.QTY_GI',
+                't1.QTY_BALANCE2',
+                't1.KALAB',     // WHFG
+                't1.KALAB2',    // FG
+                't1.NETPR',
+                't1.WAERK'
+            )
+            ->whereIn('t1.id', $ids)
+            ->orderBy('t1.VBELN')->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
+            ->get();
+
+        if ($items->isEmpty()) {
+            return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
+        }
+
+        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+        $locationName = $locationMap[$werks] ?? $werks;
+        $auartDesc    = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
+
+        if ($exportType === 'excel') {
+            $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".xlsx";
+            return Excel::download(new PoItemsExport($items), $fileName);
+        }
+
+        // PDF
+        $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".pdf";
+        $pdf = Pdf::loadView('po_report.po_pdf_template', [
+            'items'            => $items,
+            'locationName'     => $locationName,
+            'auartDescription' => $auartDesc,
+            'werks'            => $werks,
+            'auart'            => $auart,
+            'today'            => now(),
+        ])
+            ->setPaper('a4', 'landscape');
+
+        return $pdf->stream($fileName);
+    }
 }
