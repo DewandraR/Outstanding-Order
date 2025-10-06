@@ -20,6 +20,40 @@
             $payload = array_filter(array_merge(['compact' => 1], $params), fn($v) => !is_null($v) && $v !== '');
             return route('po.report', ['q' => \Crypt::encrypt($payload)]);
         };
+
+        // ====== Helper total untuk FOOTER Tabel-1 ======
+        // Ambil koleksi item dari paginator kalau $rows adalah paginator
+        $rowsCol = method_exists($rows ?? null, 'getCollection') ? $rows->getCollection() : collect($rows ?? []);
+
+        // total Outs. Qty halaman (Σ outstanding qty per customer)
+        $totalQtyAll = (float) $rowsCol->sum(fn($r) => (float) ($r->TOTAL_OUTS_QTY ?? 0));
+
+        // total "Outs. Value" (semua outstanding value) per currency
+        $pageTotalsAll = $rowsCol
+            ->groupBy(fn($r) => $r->WAERK ?? '')
+            ->map(fn($g) => (float) $g->sum(fn($x) => (float) ($x->TOTAL_ALL_VALUE ?? 0)));
+
+        // total "Overdue Value" (hanya yang telat) per currency
+        $pageTotalsOverdue = $rowsCol
+            ->groupBy(fn($r) => $r->WAERK ?? '')
+            ->map(fn($g) => (float) $g->sum(fn($x) => (float) ($x->TOTAL_OVERDUE_VALUE ?? 0)));
+
+        $formatTotals = function ($totals) {
+            if (!$totals || count($totals) === 0) {
+                return '—';
+            }
+            $parts = [];
+            foreach ($totals as $cur => $sum) {
+                if ($cur === 'IDR') {
+                    $parts[] = 'Rp ' . number_format($sum, 2, ',', '.');
+                } elseif ($cur === 'USD') {
+                    $parts[] = '$' . number_format($sum, 2, '.', ',');
+                } else {
+                    $parts[] = ($cur ?? '') . ' ' . number_format($sum, 2, ',', '.');
+                }
+            }
+            return implode(' | ', $parts);
+        };
     @endphp
 
     {{-- Root state untuk JS --}}
@@ -27,7 +61,7 @@
         style="display:none"></div>
 
     {{-- =========================================================
-     HEADER: PILIH TYPE + EXPORT
+   HEADER: PILIH TYPE + EXPORT
 ========================================================= --}}
     @if (filled($werks))
         @php
@@ -87,7 +121,7 @@
     @endif
 
     {{-- =========================================================
-     A. MODE TABEL (LAPORAN PO)
+   A. MODE TABEL (LAPORAN PO)
 ========================================================= --}}
     @if ($show && $compact)
         <div class="card yz-card shadow-sm mb-3">
@@ -98,37 +132,31 @@
                     </h5>
                 </div>
 
-                @php
-                    $totalsByCurr = [];
-                    foreach ($rows as $r) {
-                        $cur = $r->WAERK ?? '';
-                        $val = (float) $r->TOTPR;
-                        $totalsByCurr[$cur] = ($totalsByCurr[$cur] ?? 0) + $val;
-                    }
-                    $formatTotal = function ($val, $cur) {
-                        if ($cur === 'IDR') {
-                            return 'Rp ' . number_format($val, 2, ',', '.');
-                        }
-                        if ($cur === 'USD') {
-                            return '$' . number_format($val, 2, '.', ',');
-                        }
-                        return ($cur ? $cur . ' ' : '') . number_format($val, 2, ',', '.');
-                    };
-                @endphp
-
                 <div class="table-responsive yz-table px-md-3">
                     <table class="table table-hover mb-0 align-middle yz-grid">
                         <thead class="yz-header-customer">
                             <tr>
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
-                                <th style="min-width:120px; text-align:center;">Overdue PO</th>
-                                <th style="min-width:150px;">Outs. Value</th>
+                                <th class="text-center" style="min-width:120px;">Overdue PO</th>
+                                <th class="text-center" style="min-width:120px;">Outs. Qty</th>
+                                <th class="text-center" style="min-width:150px;">Outs. Value</th>
+                                <th class="text-center" style="min-width:160px;">Overdue Value</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($rows as $r)
-                                @php $kid = 'krow_'.$r->KUNNR.'_'.$loop->index; @endphp
+                                @php
+                                    $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
+
+                                    // Kolom baru dari controller:
+                                    // - $r->TOTAL_OUTS_QTY (Σ QTY_BALANCE2 semua item outstanding customer)
+                                    // - $r->TOTAL_ALL_VALUE (Σ TOTPR semua outstanding customer)
+                                    // - $r->TOTAL_OVERDUE_VALUE (Σ TOTPR outstanding yang telat saja)
+                                    $outsQtyAll = (float) ($r->TOTAL_OUTS_QTY ?? 0);
+                                    $outsValueAll = (float) ($r->TOTAL_ALL_VALUE ?? 0);
+                                    $overdueValue = (float) ($r->TOTAL_OVERDUE_VALUE ?? 0);
+                                @endphp
                                 <tr class="yz-kunnr-row" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}"
                                     title="Klik untuk melihat detail pesanan">
                                     <td class="sticky-col-mobile-disabled">
@@ -138,30 +166,40 @@
                                         <span class="fw-bold">{{ $r->NAME1 }}</span>
                                     </td>
                                     <td class="text-center">{{ $r->SO_LATE_COUNT }}</td>
-                                    <td class="data-raw-totpr">
-                                        <span class="customer-totpr">
-                                            @php
-                                                if ($r->WAERK === 'IDR') {
-                                                    echo 'Rp ' . number_format($r->TOTPR, 2, ',', '.');
-                                                } elseif ($r->WAERK === 'USD') {
-                                                    echo '$' . number_format($r->TOTPR, 2, '.', ',');
-                                                } else {
-                                                    echo ($r->WAERK ?? '') .
-                                                        ' ' .
-                                                        number_format($r->TOTPR, 2, ',', '.');
-                                                }
-                                            @endphp
-                                        </span>
+                                    <td class="text-center">{{ number_format($outsQtyAll, 0, ',', '.') }}</td>
+                                    <td class="text-center">
+                                        @php
+                                            if (($r->WAERK ?? '') === 'IDR') {
+                                                echo 'Rp ' . number_format($outsValueAll, 2, ',', '.');
+                                            } elseif (($r->WAERK ?? '') === 'USD') {
+                                                echo '$' . number_format($outsValueAll, 2, '.', ',');
+                                            } else {
+                                                echo ($r->WAERK ?? '') .
+                                                    ' ' .
+                                                    number_format($outsValueAll, 2, ',', '.');
+                                            }
+                                        @endphp
+                                    </td>
+                                    <td class="text-center">
+                                        @php
+                                            if (($r->WAERK ?? '') === 'IDR') {
+                                                echo 'Rp ' . number_format($overdueValue, 2, ',', '.');
+                                            } elseif (($r->WAERK ?? '') === 'USD') {
+                                                echo '$' . number_format($overdueValue, 2, '.', ',');
+                                            } else {
+                                                echo ($r->WAERK ?? '') .
+                                                    ' ' .
+                                                    number_format($overdueValue, 2, ',', '.');
+                                            }
+                                        @endphp
                                     </td>
                                 </tr>
                                 <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                                    <td colspan="4" class="p-0">
+                                    <td colspan="6" class="p-0">
                                         <div class="yz-nest-wrap">
                                             <div
                                                 class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                                <div class="spinner-border spinner-border-sm me-2" role="status">
-                                                    <span class="visually-hidden">Loading...</span>
-                                                </div>
+                                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                                 Memuat data…
                                             </div>
                                         </div>
@@ -169,7 +207,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" class="text-center p-5">
+                                    <td colspan="6" class="text-center p-5">
                                         <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
                                         <h5 class="text-muted">Data tidak ditemukan</h5>
                                         <p>Tidak ada data yang cocok untuk filter yang Anda pilih.</p>
@@ -177,27 +215,27 @@
                                 </tr>
                             @endforelse
                         </tbody>
+
                         <tfoot class="yz-footer-customer">
-                            @foreach ($totalsByCurr as $cur => $sum)
-                                <tr class="table-light">
-                                    <th></th>
-                                    <th class="text-start">Total ({{ $cur ?: 'N/A' }})</th>
-                                    <th class="text-center"></th>
-                                    <th class="text-center">{{ $formatTotal($sum, $cur) }}</th>
-                                </tr>
-                            @endforeach
+                            <tr>
+                                <th colspan="2" class="text-end">Total</th>
+                                <th class="text-center"></th>
+                                <th class="text-center">{{ number_format($totalQtyAll, 0, ',', '.') }}</th>
+                                <th class="text-center">{{ $formatTotals($pageTotalsAll ?? []) }}</th>
+                                <th class="text-center">{{ $formatTotals($pageTotalsOverdue ?? []) }}</th>
+                            </tr>
                         </tfoot>
                     </table>
                 </div>
 
-                @if ($rows->hasPages())
+                @if (method_exists($rows, 'hasPages') && $rows->hasPages())
                     <div class="px-3 pt-3">
                         {{ $rows->onEachSide(1)->links('pagination::bootstrap-5') }}
                     </div>
                 @endif
             </div>
         </div>
-    @elseif($onlyWerksSelected)
+    @elseif ($onlyWerksSelected)
         {{-- Hanya plant dipilih --}}
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-2"></i>
@@ -237,25 +275,33 @@
         .yz-caret.rot {
             transform: rotate(90deg);
         }
+
+        .so-selected-dot {
+            height: 8px;
+            width: 8px;
+            background: #0d6efd;
+            border-radius: 50%;
+            display: none;
+        }
     </style>
 @endpush
 
 @push('scripts')
     <script>
         /* ====================== UTIL ====================== */
-        const formatCurrencyForTable = (value, currency) => {
-            const n = parseFloat(value);
+        const fmtMoney = (v, c) => {
+            const n = parseFloat(v);
             if (!Number.isFinite(n)) return '';
-            const opt = {
+            const o = {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             };
-            if (currency === 'IDR') return `Rp ${n.toLocaleString('id-ID', opt)}`;
-            if (currency === 'USD') return `$${n.toLocaleString('en-US', opt)}`;
-            return `${currency} ${n.toLocaleString('id-ID', opt)}`;
+            if (c === 'IDR') return `Rp ${n.toLocaleString('id-ID', o)}`;
+            if (c === 'USD') return `$${n.toLocaleString('en-US', o)}`;
+            return `${(c || '')} ${n.toLocaleString('id-ID', o)}`;
         };
-        const formatNumber = (num, d = 0) => {
-            const n = parseFloat(num);
+        const fmtNum = (v, d = 0) => {
+            const n = parseFloat(v);
             if (!Number.isFinite(n)) return '';
             return n.toLocaleString('id-ID', {
                 minimumFractionDigits: d,
@@ -266,10 +312,17 @@
             const s = String(v ?? '').replace(/\D+/g, '');
             return s.length ? s : null;
         };
+        if (!window.CSS) window.CSS = {};
+        if (typeof window.CSS.escape !== 'function') window.CSS.escape = s => String(s).replace(/([^\w-])/g, '\\$1');
 
         /* ====================== STATE EXPORT (berbasis item) ====================== */
-        const selectedItems = new Set(); // id item
-        const itemIdToSO = new Map(); // id -> vbeln
+        const selectedItems = new Set(); // item ids (from T3)
+        const itemIdToSO = new Map(); // item id -> VBELN
+        const soHasSelectionDot = (vbeln) => {
+            const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
+            document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
+                .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
+        };
         const exportDropdownContainer = document.getElementById('export-dropdown-container');
         const selectedCountSpan = document.getElementById('selected-count');
         const updateExportButton = () => {
@@ -287,16 +340,20 @@
         function renderT2(rows, kunnr) {
             if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
 
-            const totalsByCurr = {};
-            rows.forEach(r => {
-                const cur = (r.WAERK || '').trim();
-                const val = parseFloat(r.TOTPR) || 0;
-                totalsByCurr[cur] = (totalsByCurr[cur] || 0) + val;
+            // 🔧 SORT: telat (positif) dulu, lalu terbesar → terkecil; sisanya (negatif) otomatis di bawah
+            const sortedRows = [...rows].sort((a, b) => {
+                const oa = Number(a.Overdue ?? 0);
+                const ob = Number(b.Overdue ?? 0);
+                // Positif (telat) selalu di atas negatif (belum jatuh tempo)
+                if ((oa > 0) !== (ob > 0)) return ob > 0 ? 1 : -1; // atau cukup return ob - oa; tapi ini eksplisit
+                // Jika sama-sama positif → yang lebih besar (lebih lama telat) paling atas
+                // Jika sama-sama negatif → nilai lebih tinggi (contoh -1 di atas -14)
+                return ob - oa; // DESC
             });
 
             let html = `
 <div style="width:100%">
-  <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
+  <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding PO</h5>
   <table class="table table-sm mb-0 yz-mini">
     <thead class="yz-header-so">
       <tr>
@@ -304,36 +361,39 @@
           <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
         </th>
         <th style="width:40px;text-align:center;"></th>
-        <th style="min-width:150px;text-align:left;">PO</th>
-        <th style="min-width:100px;text-align:left;">SO</th>
-        <th style="min-width:110px;text-align:right;">Outs. Value</th>
-        <th style="min-width:110px;text-align:center;">Req. Delv Date</th>
-        <th style="min-width:110px;text-align:center;">Overdue (Days)</th>
-        <th style="min-width:120px;text-align:center;">Shortage %</th>
+        <th class="text-start">PO</th>
+        <th class="text-start">SO</th>
+        <th class="text-center">Outs. Qty</th>
+        <th class="text-center">Outs. Value</th>
+        <th class="text-center">Req. Deliv. Date</th>
+        <th class="text-center">Overdue (Days)</th>
+        <th style="width:28px;"></th>
       </tr>
     </thead>
     <tbody>`;
 
-            rows.forEach((r, i) => {
+            sortedRows.forEach((r, i) => {
                 const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                const over = r.Overdue;
-                const rowCls = over < 0 ? 'yz-row-highlight-negative' : '';
+                const over = r.Overdue ?? 0;
+                const rowCls = over > 0 ? 'yz-row-highlight-negative' : '';
                 const edatu = r.FormattedEdatu || '';
-                const shrt = `${(r.ShortagePercentage||0).toFixed(2)}%`;
+                const outsQty = r.outs_qty ?? r.OUTS_QTY ?? 0;
+                const totalVal = r.total_value ?? r.TOTPR ?? 0;
 
                 html += `
       <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
         <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
-        <td style="text-align:center;"><span class="yz-caret">▸</span></td>
-        <td style="text-align:left;">${r.BSTNK ?? ''}</td>
-        <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
-        <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-        <td style="text-align:center;">${edatu}</td>
-        <td style="text-align:center;">${over ?? 0}</td>
-        <td style="text-align:center;">${shrt}</td>
+        <td class="text-center"><span class="yz-caret">▸</span></td>
+        <td class="text-start">${r.BSTNK ?? ''}</td>
+        <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+        <td class="text-center">${fmtNum(outsQty)}</td>
+        <td class="text-center">${fmtMoney(totalVal, r.WAERK)}</td>
+        <td class="text-center">${edatu}</td>
+        <td class="text-center">${over}</td>
+        <td class="text-center"><span class="so-selected-dot"></span></td>
       </tr>
       <tr id="${rid}" class="yz-nest" style="display:none;">
-        <td colspan="8" class="p-0">
+        <td colspan="9" class="p-0">
           <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
             <div class="yz-slot-t3 p-2"></div>
           </div>
@@ -341,17 +401,7 @@
       </tr>`;
             });
 
-            html += `</tbody><tfoot class="t2-footer">`;
-            Object.entries(totalsByCurr).forEach(([cur, sum]) => {
-                html += `
-      <tr class="table-light">
-        <th></th><th></th>
-        <th colspan="2" style="text-align:left;">Total (${cur || 'N/A'})</th>
-        <th style="text-align:right;">${formatCurrencyForTable(sum, cur)}</th>
-        <th></th><th></th><th></th>
-      </tr>`;
-            });
-            html += `</tfoot></table></div>`;
+            html += `</tbody></table></div>`;
             return html;
         }
 
@@ -360,19 +410,19 @@
             if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
             let out = `
 <div class="table-responsive">
-  <table class="table table-sm mb-0 yz-mini">
+  <table class="table table-sm table-hover mb-0 yz-mini">
     <thead class="yz-header-item">
       <tr>
         <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-        <th style="min-width:80px;text-align:center;">Item</th>
-        <th style="min-width:150px;text-align:center;">Material FG</th>
-        <th style="min-width:300px;">Desc FG</th>
-        <th style="min-width:80px;">Qty PO</th>
-        <th style="min-width:60px;">Shipped</th>
-        <th style="min-width:60px;">Outs. Ship</th>
-        <th style="min-width:80px;">WHFG</th>
-        <th style="min-width:80px;">FG</th>
-        <th style="min-width:100px;">Net Price</th>
+        <th>Item</th>
+        <th>Material FG</th>
+        <th>Desc FG</th>
+        <th>Qty PO</th>
+        <th>Shipped</th>
+        <th>Outs. Ship</th>
+        <th>WHFG</th>
+        <th>FG</th>
+        <th>Net Price</th>
       </tr>
     </thead>
     <tbody>`;
@@ -382,15 +432,15 @@
                 out += `
       <tr data-item-id="${sid ?? ''}" data-vbeln="${r.VBELN}">
         <td><input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}></td>
-        <td style="text-align:center;">${r.POSNR ?? ''}</td>
-        <td style="text-align:center;">${r.MATNR ?? ''}</td>
+        <td>${r.POSNR ?? ''}</td>
+        <td>${r.MATNR ?? ''}</td>
         <td>${r.MAKTX ?? ''}</td>
-        <td>${formatNumber(r.KWMENG)}</td>
-        <td>${formatNumber(r.QTY_GI)}</td>
-        <td>${formatNumber(r.QTY_BALANCE2)}</td>
-        <td>${formatNumber(r.KALAB)}</td>
-        <td>${formatNumber(r.KALAB2)}</td>
-        <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
+        <td>${fmtNum(r.KWMENG)}</td>
+        <td>${fmtNum(r.QTY_GI)}</td>
+        <td>${fmtNum(r.QTY_BALANCE2)}</td>
+        <td>${fmtNum(r.KALAB)}</td>
+        <td>${fmtNum(r.KALAB2)}</td>
+        <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
       </tr>`;
                 if (sid) itemIdToSO.set(sid, String(r.VBELN));
             });
@@ -413,7 +463,9 @@
             document.querySelectorAll('.yz-kunnr-row').forEach(row => {
                 row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
                 row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Overdue PO');
-                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Outs. Value');
+                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Outs. Qty');
+                row.querySelector('td:nth-child(5)')?.setAttribute('data-label', 'Outs. Value');
+                row.querySelector('td:nth-child(6)')?.setAttribute('data-label', 'Overdue Value');
             });
 
             const root = document.getElementById('yz-root');
@@ -454,14 +506,23 @@
                             'none');
                         wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
                             'rot'));
+                        // 🔧 perbaikan utama: bersihkan state fokus Tabel-2
+                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
+                            .remove('so-focus-mode'));
+                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
+                            .remove('is-focused'));
+                        wrap?.querySelectorAll('.check-so').forEach(chk => (chk.checked =
+                            false));
                     }
 
                     if (tfootEl) {
-                        const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')]
-                            .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                                null);
+                        const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')].some(
+                            tr => tr.style.display !== 'none' && tr.offsetParent !== null
+                        );
                         tfootEl.style.display = anyVisible ? 'none' : '';
                     }
+                    wrap?.querySelectorAll('table').forEach(tbl => updateT2FooterVisibility(
+                        tbl));
 
                     if (wasOpen) return;
                     if (wrap.dataset.loaded === '1') return;
@@ -487,7 +548,7 @@
                         updateExportButton();
                         updateT2FooterVisibility(wrap.querySelector('table'));
 
-                        // Klik baris SO → toggle & load T3 (focus-mode hanya saat klik baris)
+                        // Klik baris SO → toggle & load T3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             soRow.addEventListener('click', async (ev) => {
                                 if (ev.target.closest('.form-check-input'))
@@ -503,14 +564,14 @@
                                 const box = tgt.querySelector(
                                     '.yz-slot-t3');
                                 const open = tgt.style.display !== 'none';
-                                const tbody2 = soRow.closest('tbody');
                                 const t2tbl = soRow.closest('table');
+                                const soTbody = soRow.closest('tbody');
 
                                 if (!open) {
-                                    tbody2.classList.add('so-focus-mode');
+                                    soTbody.classList.add('so-focus-mode');
                                     soRow.classList.add('is-focused');
                                 } else {
-                                    tbody2.classList.remove(
+                                    soTbody.classList.remove(
                                         'so-focus-mode');
                                     soRow.classList.remove('is-focused');
                                 }
@@ -574,6 +635,13 @@
                                         sid);
                                     else selectedItems.delete(sid);
                                 });
+                                // update dot SO
+                                const anyItem = t3.querySelector('.check-item');
+                                if (anyItem) {
+                                    const v = itemIdToSO.get(String(anyItem.dataset
+                                        .id));
+                                    if (v) soHasSelectionDot(v);
+                                }
                                 updateExportButton();
                                 return;
                             }
@@ -584,27 +652,26 @@
                                 if (!sid) return;
                                 if (e.target.checked) selectedItems.add(sid);
                                 else selectedItems.delete(sid);
+                                const v = itemIdToSO.get(String(sid));
+                                if (v) soHasSelectionDot(v);
                                 updateExportButton();
                                 return;
                             }
 
-                            // ======= CHECK-ALL SOS (T2) =======
+                            // ======= CHECK-ALL SO (T2) =======
                             if (e.target.classList.contains('check-all-sos')) {
-                                const allSORows = wrap.querySelectorAll(
-                                    '.js-t2row');
-                                for (const soRow of allSORows) {
+                                const allSO = wrap.querySelectorAll('.js-t2row');
+                                for (const soRow of allSO) {
                                     const chk = soRow.querySelector('.check-so');
+                                    chk.checked = e.target.checked;
+
                                     const vbeln = chk.dataset.vbeln;
-                                    const nest = soRow
-                                        .nextElementSibling; // tr.yz-nest
+                                    const nest = soRow.nextElementSibling;
                                     const box = nest.querySelector('.yz-slot-t3');
                                     const caret = soRow.querySelector('.yz-caret');
                                     const t2tbl = soRow.closest('table');
 
-                                    chk.checked = e.target.checked;
-
                                     if (e.target.checked) {
-                                        // OPEN + LOAD + CHECK ITEMS
                                         if (nest.style.display === 'none') {
                                             nest.style.display = '';
                                             caret?.classList.add('rot');
@@ -637,7 +704,6 @@
                                                 selectedItems.add(sid);
                                             });
                                     } else {
-                                        // UNCHECK + CLOSE
                                         if (nest.dataset.loaded === '1') {
                                             box.querySelectorAll('.check-item')
                                                 .forEach(ci => {
@@ -648,7 +714,6 @@
                                                     selectedItems.delete(sid);
                                                 });
                                         } else {
-                                            // belum termuat → ambil id supaya bisa dihapus dari set
                                             const u3 = new URL(
                                                 "{{ route('dashboard.api.t3') }}",
                                                 window.location.origin);
@@ -672,6 +737,7 @@
                                         caret?.classList.remove('rot');
                                     }
                                     updateT2FooterVisibility(t2tbl);
+                                    soHasSelectionDot(vbeln);
                                 }
                                 updateExportButton();
                                 return;
@@ -753,6 +819,7 @@
                                 }
 
                                 updateT2FooterVisibility(t2tbl);
+                                soHasSelectionDot(vbeln);
                                 updateExportButton();
                                 return;
                             }
@@ -768,27 +835,27 @@
             // Export handler
             if (exportDropdownContainer) {
                 exportDropdownContainer.addEventListener('click', (e) => {
-                    if (!e.target.classList.contains('export-option')) return;
+                    const opt = e.target.closest('.export-option');
+                    if (!opt) return;
                     e.preventDefault();
                     if (selectedItems.size === 0) {
                         alert('Pilih minimal 1 item.');
                         return;
                     }
-                    const exportType = e.target.dataset.type;
+                    const exportType = opt.dataset.type;
 
                     const form = document.createElement('form');
                     form.method = 'POST';
                     form.action = "{{ route('po.export') }}";
                     form.target = '_blank';
 
-                    const add = (name, value) => {
+                    const add = (n, v) => {
                         const i = document.createElement('input');
                         i.type = 'hidden';
-                        i.name = name;
-                        i.value = value;
+                        i.name = n;
+                        i.value = v;
                         form.appendChild(i);
                     };
-
                     add('_token', "{{ csrf_token() }}");
                     add('export_type', exportType);
                     add('werks', "{{ $selected['werks'] ?? '' }}");

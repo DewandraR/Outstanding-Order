@@ -699,4 +699,34 @@ class SODashboardController extends Controller
 
         return $chartData;
     }
+
+    public function apiSoRemarkDelete(Request $request)
+    {
+        $request->validate([
+            'vbeln' => 'required|string',   // SO
+            'posnr' => 'required|string',   // HARUS 6 digit
+            'werks' => 'nullable|string|in:2000,3000',
+            'auart' => 'nullable|string',
+        ]);
+
+        $vbeln  = trim($request->vbeln);
+        $posnr6 = str_pad(trim($request->posnr), 6, '0', STR_PAD_LEFT);
+        $werks  = $request->filled('werks') ? trim($request->werks) : null;
+        $auart  = $request->filled('auart') ? trim($request->auart) : null;
+
+        // Query hanya ke item_remarks
+        $q = DB::table('item_remarks')
+            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$vbeln])
+            ->whereRaw('LPAD(TRIM(CAST(POSNR AS CHAR)), 6, "0") = ?', [$posnr6])
+            ->when($werks, fn($qq) => $qq->where('IV_WERKS_PARAM', $werks))
+            ->when($auart, fn($qq) => $qq->where('IV_AUART_PARAM', $auart));
+
+        // HARD DELETE
+        $deleted = $q->delete();
+
+        if (!$deleted) {
+            return response()->json(['ok' => false, 'error' => 'Data tidak ditemukan.'], 404);
+        }
+        return response()->json(['ok' => true, 'deleted' => (int)$deleted]);
+    }
 }

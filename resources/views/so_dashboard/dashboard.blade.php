@@ -49,50 +49,41 @@
         </div>
 
         <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
+            @php
+                $locations = ['3000' => 'Semarang', '2000' => 'Surabaya'];
+            @endphp
 
-            {{-- Filter Plant (location/werks) --}}
-            <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                <li class="nav-item">
-                    <a class="nav-link {{ !$selectedLocation ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => null, 'type' => $curType]) }}">
-                        All Plant
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => '3000', 'type' => $curType]) }}">
-                        Semarang
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => '2000', 'type' => $curType]) }}">
-                        Surabaya
-                    </a>
-                </li>
-            </ul>
+            @foreach ($locations as $werks => $name)
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-primary dropdown-toggle shadow-sm" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        {{ $name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        @php
+                            // Ambil Order Type unik untuk Plant ini
+                            $werksMapping = $mapping[$werks] ?? collect([]);
+                        @endphp
 
-            {{-- Filter Tipe (Export/Lokal) --}}
-            <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                <li class="nav-item">
-                    <a class="nav-link {{ !$selectedType ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => $curLoc, 'type' => null]) }}">
-                        All Type
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => $curLoc, 'type' => 'export']) }}">
-                        Export
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => $curLoc, 'type' => 'lokal']) }}">
-                        Lokal
-                    </a>
-                </li>
-            </ul>
+                        @forelse ($werksMapping as $t)
+                            @php
+                                $auartCode = trim((string) $t->IV_AUART);
+                                // Ciptakan payload terenkripsi ke SO Report (so.index)
+                                $reportUrl = route('so.index', [
+                                    'q' => \Crypt::encrypt(['werks' => $werks, 'auart' => $auartCode]),
+                                ]);
+                            @endphp
+                            <li>
+                                <a class="dropdown-item" href="{{ $reportUrl }}">
+                                    <i class="fas fa-file-alt me-2"></i> {{ $t->Deskription }}
+                                </a>
+                            </li>
+                        @empty
+                            <li><span class="dropdown-item text-muted disabled">No Order Types Found</span></li>
+                        @endforelse
+                    </ul>
+                </div>
+            @endforeach
         </div>
     </div>
     <hr class="mt-0 mb-4">
@@ -971,22 +962,22 @@
           </div>
           <hr class="mt-2">
           ${(rows && rows.length) ? `
-                                                      <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
-                                                          <table class="table table-sm table-hover align-middle mb-0">
-                                                              <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                                                  <tr>
-                                                                      <th class="text-center" style="width:60px;">NO.</th>
-                                                                      <th class="text-center" style="min-width:120px;">PO</th>
-                                                                      <th class="text-center" style="min-width:120px;">SO</th>
-                                                                      <th>CUSTOMER</th>
-                                                                      <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                                      <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                                      <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                                  </tr>
-                                                              </thead>
-                                                              <tbody>${table}</tbody>
-                                                          </table>
-                                                      </div>` :
+                                                                                                          <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
+                                                                                                              <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                  <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                                                                                                      <tr>
+                                                                                                                          <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                          <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                          <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                          <th>CUSTOMER</th>
+                                                                                                                          <th class="text-center" style="min-width:100px;">PLANT</th>
+                                                                                                                          <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
+                                                                                                                          <th class="text-center" style="min-width:120px;">DUE DATE</th>
+                                                                                                                      </tr>
+                                                                                                                  </thead>
+                                                                                                                  <tbody>${table}</tbody>
+                                                                                                              </table>
+                                                                                                          </div>` :
               `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
             }
         </div>
@@ -1217,22 +1208,22 @@
                         </div>
                 <hr class="mt-2">
                 ${(rows && rows.length) ? `
-                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                        <table class="table table-sm table-hover align-middle mb-0">
-                                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                <tr>
-                                                                                    <th class="text-center" style="width:60px;">NO.</th>
-                                                                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                    <th>Customer</th>
-                                                                                    <th class="text-center" style="min-width:100px;">Plant</th>
-                                                                                    <th class="text-center" style="min-width:140px;">Order Type</th>
-                                                                                    <th class="text-center" style="min-width:120px;">Due Date</th>
-                                                                                </tr>
-                                                                            </thead>
-                                                                            <tbody>${body}</tbody>
-                                                                        </table>
-                                                                    </div>` :
+                                                                                                                        <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                                                                                            <table class="table table-sm table-hover align-middle mb-0">
+                                                                                                                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                                                                                                    <tr>
+                                                                                                                                        <th class="text-center" style="width:60px;">NO.</th>
+                                                                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
+                                                                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
+                                                                                                                                        <th>Customer</th>
+                                                                                                                                        <th class="text-center" style="min-width:100px;">Plant</th>
+                                                                                                                                        <th class="text-center" style="min-width:140px;">Order Type</th>
+                                                                                                                                        <th class="text-center" style="min-width:120px;">Due Date</th>
+                                                                                                                                    </tr>
+                                                                                                                                </thead>
+                                                                                                                                <tbody>${body}</tbody>
+                                                                                                                            </table>
+                                                                                                                        </div>` :
               `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada Potensial bottleneck (dalam 7 hari ke depan).</div>`}
               </div>
             </div>
@@ -1306,7 +1297,8 @@
                     }
 
                     const body = rows.map((r, i) => {
-                        const item = stripZeros(r.POSNR);
+                        const item = stripZeros(r.POSNR); // untuk ditampilkan
+                        const posnr6 = String(r.POSNR ?? '').trim().padStart(6, '0'); // untuk API
                         const werks = (r.IV_WERKS_PARAM || '').trim();
                         const auart = String(r.IV_AUART_PARAM || '').trim();
                         const plant = __plantName(werks);
@@ -1333,6 +1325,17 @@
     <td class="text-center">${plant || '-'}</td>
     <td class="text-center">${otName}</td>
     <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+    <td class="text-center">
+    <button type="button"
+            class="btn btn-sm btn-outline-danger js-del-remark"
+            title="Hapus remark"
+            data-vbeln="${so}"
+            data-posnr="${posnr6}"
+            data-werks="${werks}"
+            data-auart="${auart}">
+      <i class="fas fa-trash"></i>
+    </button>
+  </td>
 </tr>`;
                     }).join('');
 
@@ -1347,6 +1350,7 @@
                         <th class="text-center" style="min-width:110px;">Plant</th>
                         <th class="text-center" style="min-width:160px;">Order Type</th>
                         <th style="min-width:220px;">Remark</th>
+                        <th class="text-center" style="width:70px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>${body}</tbody>
@@ -1383,6 +1387,7 @@
                 }
 
                 listBox.addEventListener('click', (ev) => {
+                    if (ev.target.closest('.js-del-remark')) return; // JANGAN redirect kalau klik hapus
                     const tr = ev.target.closest('.js-remark-row');
                     if (!tr || !tr.dataset.payload) return;
 
@@ -1414,6 +1419,52 @@
 
                     document.body.appendChild(form);
                     form.submit();
+                });
+
+                listBox.addEventListener('click', async (ev) => {
+                    const btn = ev.target.closest('.js-del-remark');
+                    if (!btn) return;
+                    ev.stopPropagation();
+
+                    const vbeln = btn.dataset.vbeln || '';
+                    const posnr = btn.dataset.posnr || '';
+                    const werks = btn.dataset.werks || '';
+                    const auart = btn.dataset.auart || '';
+
+                    // Konfirmasi
+                    const ok = confirm(`Hapus remark untuk SO ${vbeln} / Item ${posnr}?`);
+                    if (!ok) return;
+
+                    // UX: disable sementara
+                    btn.disabled = true;
+
+                    try {
+                        const res = await fetch(`{{ route('so.api.remark_delete') }}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector(
+                                    'meta[name="csrf-token"]').getAttribute('content'),
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: JSON.stringify({
+                                vbeln: vbeln,
+                                posnr: posnr,
+                                werks: werks,
+                                auart: auart,
+                                // mode: 'delete' // <- pakai ini jika ingin hard delete baris
+                            })
+                        });
+
+                        const json = await res.json();
+                        if (!json.ok) throw new Error(json.error || 'Gagal menghapus remark.');
+
+                        // Reload daftar supaya konsisten
+                        await loadList();
+                    } catch (e) {
+                        alert(e.message || 'Gagal menghapus remark.');
+                        btn.disabled = false;
+                    }
                 });
 
                 loadList();

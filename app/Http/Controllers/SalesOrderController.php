@@ -34,7 +34,7 @@ class SalesOrderController extends Controller
      */
     public function index(Request $request)
     {
-        // 1) Terima q terenkripsi lalu merge ke query
+        // 1) decrypt q
         if ($request->filled('q')) {
             try {
                 $data = Crypt::decrypt($request->query('q'));
@@ -44,36 +44,29 @@ class SalesOrderController extends Controller
             }
         }
 
-        // 2) Jika pilih plant tapi belum ada auart → redirect ke default (pakai q terenkripsi)
+        // 2) redirect ke default auart jika perlu
         if ($request->filled('werks') && !$request->filled('auart')) {
             $mapping = DB::table('maping')
                 ->select('IV_WERKS', 'IV_AUART', 'Deskription')
                 ->where('IV_WERKS', $request->werks)
-                ->orderBy('IV_AUART')
-                ->get();
+                ->orderBy('IV_AUART')->get();
 
-            $defaultType = $mapping->first(function ($item) {
-                return str_contains(strtolower($item->Deskription), 'export');
-            }) ?? $mapping->first();
-
+            $defaultType = $mapping->first(fn($i) => str_contains(strtolower($i->Deskription), 'export')) ?? $mapping->first();
             if ($defaultType) {
                 $payload = array_filter($request->except('q'), fn($v) => !is_null($v) && $v !== '');
                 $payload['auart'] = trim($defaultType->IV_AUART);
-
                 return redirect()->route('so.index', ['q' => Crypt::encrypt($payload)]);
             }
         }
 
-        // 3) Baca filter utama
         $werks = $request->query('werks');
         $auart = $request->query('auart');
 
-        // 4) Data untuk pills (SO Type per plant)
+        // 4) data pills
         $mapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
-            ->get()
-            ->groupBy('IV_WERKS')
+            ->get()->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
         $rows = collect();
@@ -82,25 +75,34 @@ class SalesOrderController extends Controller
         $grandTotals = collect();
 
         if ($werks && $auart) {
-            // Deskripsi tipe terpilih
-            $selectedMapping = DB::table('maping')
-                ->where('IV_WERKS', $werks)
-                ->where('IV_AUART', $auart)
-                ->first();
+            // deskripsi tipe terpilih
+            $selectedMapping = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->first();
             $selectedDescription = $selectedMapping->Deskription ?? '';
 
-            // Parser tanggal aman
+            // parser tanggal aman
             $safeEdatu = "COALESCE(
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
         )";
-
             $safeEdatuInner = "COALESCE(
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
         )";
 
-            // Total value overdue per customer (hanya PACKG ≠ 0)
+            /** Subquery A: agregat SEMUA outstanding (qty & value) per customer */
+            $allAggSubquery = DB::table('so_yppr079_t1 as t1a')
+                ->join('so_yppr079_t2 as t2a', 't2a.VBELN', '=', 't1a.VBELN')
+                ->select(
+                    't2a.KUNNR',
+                    DB::raw('CAST(SUM(CAST(t1a.PACKG AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
+                    DB::raw('CAST(SUM(CAST(t1a.TOTPR2 AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE')
+                )
+                ->where('t1a.IV_WERKS_PARAM', $werks)
+                ->where('t1a.IV_AUART_PARAM', $auart)
+                ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+                ->groupBy('t2a.KUNNR');
+
+            /** Subquery B: agregat hanya OVERDUE value per customer */
             $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
                 ->join('so_yppr079_t1 as t1', function ($j) {
                     $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
@@ -111,30 +113,26 @@ class SalesOrderController extends Controller
                 )
                 ->where('t2_inner.IV_WERKS_PARAM', $werks)
                 ->where('t2_inner.IV_AUART_PARAM', $auart)
-                ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')                // hanya outstanding
-                ->whereRaw("{$safeEdatuInner} < CURDATE()")                       // hanya overdue
+                ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
+                ->whereRaw("{$safeEdatuInner} < CURDATE()")
                 ->groupBy('t2_inner.KUNNR');
 
             // Overview Customer (tanpa paginate)
             $rows = DB::table('so_yppr079_t2 as t2')
-                ->leftJoinSub(
-                    $overdueValueSubquery,
-                    'overdue_values',
-                    fn($join) =>
-                    $join->on('t2.KUNNR', '=', 'overdue_values.KUNNR')
-                )
+                ->leftJoinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
+                ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
                     DB::raw('MAX(t2.WAERK) AS WAERK'),
-                    DB::raw('COALESCE(MAX(overdue_values.TOTAL_OVERDUE_VALUE), 0) AS TOTAL_VALUE'),
-                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT"),
-                    DB::raw("
-                    ROUND(
-                        (COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END)
-                         / NULLIF(COUNT(DISTINCT t2.VBELN),0)) * 100, 2
-                    ) AS LATE_PCT
-                ")
+                    // **Baru**: qty semua outstanding
+                    DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0) AS TOTAL_OUTS_QTY'),
+                    // **Baru**: value semua outstanding
+                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE),0) AS TOTAL_ALL_VALUE'),
+                    // **Baru**: value overdue
+                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE),0) AS TOTAL_OVERDUE_VALUE'),
+                    // jumlah SO yang telat (untuk kolom Overdue SO)
+                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
                 )
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->where('t2.IV_AUART_PARAM', $auart)
@@ -150,23 +148,20 @@ class SalesOrderController extends Controller
                 ->orderBy('NAME1', 'asc')
                 ->get();
 
-            // Total per mata uang (juga grand total karena no paginate)
-            $pageTotals = $rows->groupBy('WAERK')->map(fn($g) => $g->sum('TOTAL_VALUE'));
+            // (opsional) tetap isi untuk kompatibilitas lama
+            $pageTotals = $rows->groupBy('WAERK')->map(fn($g) => $g->sum('TOTAL_OVERDUE_VALUE'));
             $grandTotals = $pageTotals;
         }
 
-        // 5) Data highlight untuk auto-expand sampai tabel-3
+        // 5) data highlight
         $highlight = [
             'kunnr' => trim((string)$request->query('highlight_kunnr', '')),
             'vbeln' => trim((string)$request->query('highlight_vbeln', '')),
-            'posnr' => trim((string)$request->query('highlight_posnr', '')), // opsional
+            'posnr' => trim((string)$request->query('highlight_posnr', '')),
         ];
-        $autoExpand = $request->boolean(
-            'auto',
-            !empty($highlight['kunnr']) && !empty($highlight['vbeln'])
-        );
+        $autoExpand = $request->boolean('auto', !empty($highlight['kunnr']) && !empty($highlight['vbeln']));
 
-        // 6) Kirim ke view
+        // 6) kirim ke view
         return view('sales_order.so_report', [
             'mapping'             => $mapping,
             'rows'                => $rows,
@@ -174,7 +169,6 @@ class SalesOrderController extends Controller
             'selectedDescription' => $selectedDescription,
             'pageTotals'          => $pageTotals,
             'grandTotals'         => $grandTotals,
-            // ⬇️ penting untuk auto-expand
             'highlight'           => $highlight,
             'autoExpand'          => $autoExpand,
         ]);
@@ -194,7 +188,6 @@ class SalesOrderController extends Controller
         $werks = $request->werks;
         $auart = $request->auart;
 
-        // Subquery: hitung jumlah remark per SO (hanya untuk item outstanding / PACKG != 0)
         $remarksSub = DB::table('item_remarks as ir')
             ->join('so_yppr079_t1 as t1r', function ($j) {
                 $j->on('t1r.IV_WERKS_PARAM', '=', 'ir.IV_WERKS_PARAM')
@@ -205,32 +198,32 @@ class SalesOrderController extends Controller
             ->where('ir.IV_WERKS_PARAM', $werks)
             ->where('ir.IV_AUART_PARAM', $auart)
             ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
-            ->whereRaw('CAST(t1r.PACKG AS DECIMAL(18,3)) <> 0') // konsisten dg filter item Anda
+            ->whereRaw('CAST(t1r.PACKG AS DECIMAL(18,3)) <> 0')
             ->select('ir.VBELN', DB::raw('COUNT(*) AS remark_count'))
             ->groupBy('ir.VBELN');
 
         $rows = DB::table('so_yppr079_t1 as t1')
             ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
-            ->leftJoinSub($remarksSub, 'rk', function ($join) {
-                $join->on('rk.VBELN', '=', 't1.VBELN');
-            })
+            ->leftJoinSub($remarksSub, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't1.VBELN'))
             ->select(
                 't1.VBELN',
                 't2.EDATU',
                 't1.WAERK',
-                DB::raw('SUM(t1.TOTPR2) as total_value'),
+                // total value: semua outstanding (tidak hanya overdue)
+                DB::raw('SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))) as total_value'),
+                // outs qty: jumlah OUTS SO (PACKG) per SO
+                DB::raw('SUM(CAST(t1.PACKG  AS DECIMAL(18,3))) as outs_qty'),
                 DB::raw('COUNT(DISTINCT t1.id) as item_count'),
-                // <-- kolom baru untuk FE Tabel-2
-                DB::raw('COALESCE(MAX(rk.remark_count), 0) AS remark_count')
+                DB::raw('COALESCE(MAX(rk.remark_count),0) AS remark_count')
             )
             ->where('t1.KUNNR', $request->kunnr)
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->where('t1.IV_AUART_PARAM', $auart)
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0') // hanya outstanding
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
             ->groupBy('t1.VBELN', 't2.EDATU', 't1.WAERK')
             ->get();
 
-        // Hitung overdue seperti sebelumnya
+        // hitung overdue & format tanggal
         $today = now()->startOfDay();
         foreach ($rows as $row) {
             $overdue = 0;
@@ -239,29 +232,37 @@ class SalesOrderController extends Controller
                 try {
                     $edatuDate = \Carbon\Carbon::parse($row->EDATU)->startOfDay();
                     $formattedEdatu = $edatuDate->format('d-m-Y');
-                    $delta   = $today->diffInDays($edatuDate, false);
-                    $overdue = ($delta < 0) ? abs($delta) : -$delta;
-                } catch (\Exception $e) { /* ignore */
+
+                    // negatif bila masih ada sisa hari (belum jatuh tempo), positif bila sudah lewat
+                    $delta = $today->diffInDays($edatuDate, false); // future = +, past = -
+                    if ($delta < 0) {
+                        // sudah lewat
+                        $overdue = abs($delta);       // +1, +2, ...
+                    } elseif ($delta > 0) {
+                        // belum jatuh tempo
+                        $overdue = -$delta;           // -1, -2, ...
+                    } else {
+                        // hari ini → anggap belum lewat
+                        $overdue = 0;                 // akan diposisikan di grup negatif/0
+                    }
+                } catch (\Exception $e) {
                 }
             }
-            $row->Overdue        = $overdue;
+            $row->Overdue = $overdue;
             $row->FormattedEdatu = $formattedEdatu;
         }
 
-        // Urutkan dari yang paling telat
+        // sort
         $sorted = collect($rows)->sort(function ($a, $b) {
-            $aOver = $a->Overdue >= 0;
-            $bOver = $b->Overdue >= 0;
-            if ($aOver !== $bOver) return $aOver ? -1 : 1;     // overdue (positif) dulu
-            // Sama-sama overdue atau sama-sama belum overdue -> urut desc
-            return $b->Overdue <=> $a->Overdue;
+            $aOver = $a->Overdue > 0;
+            $bOver = $b->Overdue > 0;
+            if ($aOver !== $bOver) return $aOver ? -1 : 1; // overdue (+) di atas
+            return $b->Overdue <=> $a->Overdue;            // desc di dalam grup
         })->values();
-        return response()->json([
-            'ok'   => true,
-            'data' => $sorted,
-        ]);
-    }
 
+        // >>> JANGAN LUPA RETURN JSON <<<
+        return response()->json(['ok' => true, 'data' => $sorted], 200);
+    }
     /**
      * API: Ambil item untuk 1 SO (Level 3), termasuk remark.
      */

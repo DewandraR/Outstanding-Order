@@ -328,7 +328,21 @@ class DashboardController extends Controller
                 't2.BSTNK',
                 't2.WAERK',
                 't2.EDATU',
-                DB::raw('(SELECT COALESCE(SUM(t1.TOTPR), 0) FROM so_yppr079_t1 as t1 WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))) as TOTPR')
+                // total value all (semua outstanding items)
+                DB::raw("(SELECT COALESCE(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))),0)
+                  FROM so_yppr079_t1 AS t1
+                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
+                    " . (strlen((string)$auart) ? " AND t1.IV_AUART_PARAM = " . DB::getPdo()->quote($auart) : "") . "
+                 ) AS total_value"),
+                // outs qty (Σ QTY_BALANCE2 > 0) per SO
+                DB::raw("(SELECT COALESCE(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))),0)
+                  FROM so_yppr079_t1 AS t1
+                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
+                    " . (strlen((string)$auart) ? " AND t1.IV_AUART_PARAM = " . DB::getPdo()->quote($auart) : "") . "
+                    AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
+                 ) AS outs_qty"),
             ])
             ->distinct()
             ->where(function ($q) use ($kunnr) {
@@ -362,13 +376,16 @@ class DashboardController extends Controller
             $row->FormattedEdatu = '';
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
-                    $edatuDate = \DateTime::createFromFormat('Y-m-d', $row->EDATU) ?: \DateTime::createFromFormat('d-m-Y', $row->EDATU);
+                    $edatuDate = \DateTime::createFromFormat('Y-m-d', $row->EDATU)
+                        ?: \DateTime::createFromFormat('d-m-Y', $row->EDATU);
+
                     if ($edatuDate) {
                         $row->FormattedEdatu = $edatuDate->format('d-m-Y');
                         $edatuDate->setTime(0, 0, 0);
+
                         $diff = $today->diff($edatuDate);
-                        $overdue = (int)$diff->days;
-                        if ($diff->invert) $overdue = -$overdue;
+                        // ✅ Sudah lewat (invert=1) → positif; Belum lewat (invert=0) → negatif
+                        $overdue = $diff->invert ? (int)$diff->days : -(int)$diff->days;
                     }
                 } catch (\Exception $e) {
                     $overdue = 0;

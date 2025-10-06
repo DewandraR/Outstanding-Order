@@ -23,11 +23,7 @@ class StockDashboardController extends Controller
                 abort(404);
             }
         }
-        // 2) fallback: kalau masih ada ?location=..., redirect ke ?q=...
-        elseif ($request->filled('location')) {
-            $clean = ['location' => $request->query('location')];
-            return redirect()->route('stock.dashboard', ['q' => Crypt::encrypt($clean)]);
-        }
+        // KODE ELSEIF INI DIHAPUS
 
         // ===== BASE QUERY =====
         $baseWhfg = DB::table('so_yppr079_t1 as s')

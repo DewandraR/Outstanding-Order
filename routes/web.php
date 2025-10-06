@@ -91,6 +91,8 @@ Route::post('/outstanding-so/export', [SalesOrderController::class, 'exportData'
 Route::post('/api/so-save-remark', [SalesOrderController::class, 'apiSaveRemark'])->name('so.api.save_remark');
 Route::get('/outstanding-so/export/summary', [SalesOrderController::class, 'exportCustomerSummary'])
 	->name('so.export.summary');
+Route::delete('/so/api/remark/delete', [\App\Http\Controllers\SODashboardController::class, 'apiSoRemarkDelete'])
+	->name('so.api.remark_delete');
 
 // --------- Stock report & dashboard ---------
 Route::get('/stock-report', [StockController::class, 'index'])->name('stock.index');

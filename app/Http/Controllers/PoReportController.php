@@ -67,39 +67,66 @@ class PoReportController extends Controller
         if ($show) {
             // Parser tanggal aman
             $safeEdatu = "COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-            )";
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
             $safeEdatuInner = "COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-            )";
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+        STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
 
-            // Query overview customer (mirip dashboard)
+            // A) Agregat SEMUA outstanding per customer
+            $allAggSubquery = DB::table('so_yppr079_t1 as t1a')
+                ->join('so_yppr079_t2 as t2a', 't2a.VBELN', '=', 't1a.VBELN')
+                ->select(
+                    't2a.KUNNR',
+                    DB::raw('CAST(SUM(CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
+                    DB::raw('CAST(SUM(CAST(t1a.TOTPR        AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE')
+                )
+                ->where('t1a.IV_WERKS_PARAM', $werks)
+                ->where('t1a.IV_AUART_PARAM', $auart)
+                ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
+                ->groupBy('t2a.KUNNR');
+
+            // B) Agregat OVERDUE value per customer
+            $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
+                ->join('so_yppr079_t1 as t1', function ($j) {
+                    $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
+                })
+                ->select(
+                    't2_inner.KUNNR',
+                    DB::raw('CAST(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE')
+                )
+                ->where('t2_inner.IV_WERKS_PARAM', $werks)
+                ->where('t2_inner.IV_AUART_PARAM', $auart)
+                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
+                ->whereRaw("{$safeEdatuInner} < CURDATE()")
+                ->groupBy('t2_inner.KUNNR');
+
+            // Overview Customer (bisa paginate jika mau)
             $rows = DB::table('so_yppr079_t2 as t2')
-                ->leftJoin(DB::raw('(
-                    SELECT t2_inner.KUNNR, SUM(t1.TOTPR) AS TOTAL_TOTPR
-                    FROM so_yppr079_t2 AS t2_inner
-                    LEFT JOIN so_yppr079_t1 AS t1
-                      ON TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2_inner.VBELN AS CHAR))
-                    WHERE t2_inner.IV_WERKS_PARAM = ' . DB::getPdo()->quote($werks) . '
-                      AND t2_inner.IV_AUART_PARAM  = ' . DB::getPdo()->quote($auart) . '
-                      AND ' . $safeEdatuInner . ' < CURDATE()
-                    GROUP BY t2_inner.KUNNR
-                ) AS totpr_sum'), 't2.KUNNR', '=', 'totpr_sum.KUNNR')
+                ->leftJoinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
+                ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
-                    DB::raw('COALESCE(MAX(totpr_sum.TOTAL_TOTPR), 0) AS TOTPR'),
                     DB::raw('MAX(t2.WAERK) AS WAERK'),
-                    DB::raw('COUNT(DISTINCT TRIM(CAST(t2.VBELN AS CHAR))) AS SO_COUNT'),
-                    DB::raw("SUM(CASE WHEN {$safeEdatu} < CURDATE() THEN 1 ELSE 0 END) AS SO_LATE_COUNT"),
-                    DB::raw("ROUND((SUM(CASE WHEN {$safeEdatu} < CURDATE() THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT TRIM(CAST(t2.VBELN AS CHAR))), 0)) * 100, 2) AS LATE_PCT")
+                    DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0)      AS TOTAL_OUTS_QTY'),
+                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE),0)     AS TOTAL_ALL_VALUE'),
+                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE),0) AS TOTAL_OVERDUE_VALUE'),
+                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
                 )
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->where('t2.IV_AUART_PARAM', $auart)
+                ->whereExists(function ($q) {
+                    $q->select(DB::raw(1))
+                        ->from('so_yppr079_t1 as t1_check')
+                        ->whereColumn('t1_check.VBELN', 't2.VBELN')
+                        ->where('t1_check.QTY_BALANCE2', '!=', 0);
+                })
+                ->whereNotNull('t2.NAME1')->where('t2.NAME1', '!=', '')
                 ->groupBy('t2.KUNNR')
-                ->orderBy('NAME1')
+                ->orderBy('NAME1', 'asc')
                 ->paginate(25)->withQueryString();
         }
 

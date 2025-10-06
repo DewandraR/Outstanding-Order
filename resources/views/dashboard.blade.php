@@ -15,11 +15,13 @@
         $curLoc = $selectedLocation ?? null; // '2000' | '3000' | null
         $curType = $selectedType ?? null; // 'lokal' | 'export' | null
 
-        // Helper pembentuk URL terenkripsi ke /dashboard
-        $encDash = function (array $params) use ($curView) {
-            $payload = array_filter(array_merge(['view' => $curView], $params), fn($v) => !is_null($v) && $v !== '');
-            unset($payload['compact']);
-            return route('dashboard', ['q' => \Crypt::encrypt($payload)]);
+        // Ambil data mapping untuk dropdown
+        $allMapping = $mapping;
+
+        // Helper pembentuk URL terenkripsi ke PO Report (po.report)
+        $encReport = function (array $params) {
+            $payload = array_filter(array_merge(['compact' => 1], $params), fn($v) => !is_null($v) && $v !== '');
+            return route('po.report', ['q' => \Crypt::encrypt($payload)]);
         };
     @endphp
 
@@ -43,76 +45,47 @@
             <p class="text-muted mb-0">Displaying Outstanding Value Data</p>
         </div>
 
+        {{-- DROPDOWN FILTER BARU --}}
         <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
+            @php
+                $locations = ['3000' => 'Semarang', '2000' => 'Surabaya'];
+            @endphp
 
-            {{-- Filter Plant (location/werks) – terenkripsi --}}
-            <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                <li class="nav-item">
-                    <a class="nav-link {{ !$selectedLocation ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => null, 'type' => $curType]) }}">
-                        All Plant
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedLocation == '3000' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => '3000', 'type' => $curType]) }}">
-                        Semarang
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedLocation == '2000' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => '2000', 'type' => $curType]) }}">
-                        Surabaya
-                    </a>
-                </li>
-            </ul>
+            @foreach ($locations as $werks_code => $name)
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-primary dropdown-toggle shadow-sm" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        {{ $name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        @php
+                            // Ambil Order Type unik untuk Plant ini
+                            $werksMapping = $allMapping[$werks_code] ?? collect([]);
+                        @endphp
 
-            {{-- Filter Work Center (AUART) – juga terenkripsi. Note: $availableAuart tidak didefinisikan di controller PO Anda, jadi dibiarkan kosong agar tidak error. --}}
-            @if (!empty($availableAuart) && $availableAuart->count() > 1)
-                <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                    <li class="nav-item">
-                        <a class="nav-link {{ !$auart ? 'active' : '' }}"
-                            href="{{ $encDash(['location' => $curLoc, 'type' => $curType, 'auart' => null]) }}">
-                            All Work Center
-                        </a>
-                    </li>
-                    @foreach ($availableAuart as $wc)
-                        <li class="nav-item">
-                            <a class="nav-link {{ $auart == $wc->IV_AUART ? 'active' : '' }}"
-                                href="{{ $encDash(['location' => $curLoc, 'type' => $curType, 'auart' => $wc->IV_AUART]) }}">
-                                {{ $wc->Deskription }}
-                            </a>
-                        </li>
-                    @endforeach
-                </ul>
-            @endif
-
-            {{-- Filter Tipe (Export/Lokal) – terenkripsi --}}
-            <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                <li class="nav-item">
-                    <a class="nav-link {{ !$selectedType ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => $curLoc, 'type' => null]) }}">
-                        All Type
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedType == 'export' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => $curLoc, 'type' => 'export']) }}">
-                        Export
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedType == 'lokal' ? 'active' : '' }}"
-                        href="{{ $encDash(['location' => $curLoc, 'type' => 'lokal']) }}">
-                        Lokal
-                    </a>
-                </li>
-            </ul>
+                        @forelse ($werksMapping as $t)
+                            @php
+                                $auartCode = trim((string) $t->IV_AUART);
+                                // Ciptakan payload terenkripsi ke PO Report (po.report)
+                                $reportUrl = $encReport(['werks' => $werks_code, 'auart' => $auartCode]);
+                            @endphp
+                            <li>
+                                <a class="dropdown-item" href="{{ $reportUrl }}">
+                                    <i class="fas fa-file-alt me-2"></i> {{ $t->Deskription }}
+                                </a>
+                            </li>
+                        @empty
+                            <li><span class="dropdown-item text-muted disabled">No Order Types Found</span></li>
+                        @endforelse
+                    </ul>
+                </div>
+            @endforeach
         </div>
+        {{-- END DROPDOWN FILTER BARU --}}
     </div>
     <hr class="mt-0 mb-4">
 
-    {{-- ==================== DASHBOARD PO CONTENT ==================== --}}
+    {{-- ==================== DASHBOARD PO CONTENT (TETAP) ==================== --}}
     <div class="row g-4 mb-4"> {{-- <== PEMBUNGKUS ROW SUPAYA GRID RAPI --}}
         <div class="col-md-6 col-xl-3">
             <div id="kpi-po-outs-usd" data-currency="USD" class="card yz-kpi-card h-100 shadow-sm clickable"
@@ -468,8 +441,8 @@
         });
 
         /* =========================================================
-           HELPER UMUM
-           ======================================================== */
+        	HELPER UMUM
+        	======================================================== */
         const formatFullCurrency = (value, currency) => {
             const n = parseFloat(value);
             if (isNaN(n)) return '';
@@ -495,21 +468,21 @@
             const style = document.createElement('style');
             style.id = 'yzToggleCss';
             style.textContent = `
-        .yz-card-toolbar {
-        position: absolute;
-        top: .75rem;
-        right: .75rem;
-        z-index: 3;
-        }
-        .yz-card-header-pad {
-            padding-right: 96px !important; 
-        }
-        .yz-card-toolbar .btn {
-            padding: .15rem .5rem;
-            font-size: .75rem;
-            line-height: 1.1;
-        }
-    `;
+            .yz-card-toolbar {
+            position: absolute;
+            top: .75rem;
+            right: .75rem;
+            z-index: 3;
+            }
+            .yz-card-header-pad {
+                padding-right: 96px !important;  
+            }
+            .yz-card-toolbar .btn {
+                padding: .15rem .5rem;
+                font-size: .75rem;
+                line-height: 1.1;
+            }
+        `;
             document.head.appendChild(style);
         }
 
@@ -552,6 +525,8 @@
             }
             const ctx = document.getElementById(canvasId);
             if (!ctx) return;
+            const prev = Chart.getChart(canvasId);
+            if (prev) prev.destroy();
 
             const labels = chartData.map(d => {
                 const customerName = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
@@ -652,8 +627,8 @@
         };
 
         /* =========================================================
-           SCRIPT UTAMA - DISESUAIKAN UNTUK HANYA PO
-           ======================================================== */
+        	SCRIPT UTAMA - DISESUAIKAN UNTUK HANYA PO
+        	======================================================== */
         (() => {
             injectToggleStyles();
             const rootElement = document.getElementById('yz-root');
@@ -681,317 +656,455 @@
                 function renderT2(rows, kunnr) {
                     if (!rows?.length)
                         return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
-                    const totalsByCurr = {};
-                    rows.forEach(r => {
-                        const cur = (r.WAERK || '').trim();
-                        const val = parseFloat(r.TOTPR) || 0;
-                        totalsByCurr[cur] = (totalsByCurr[cur] || 0) + val;
+
+                    // 🔧 SORT: telat (positif) dulu, lalu terbesar → terkecil; sisanya (negatif) otomatis di bawah
+                    const sortedRows = [...rows].sort((a, b) => {
+                        const oa = Number(a.Overdue ?? 0);
+                        const ob = Number(b.Overdue ?? 0);
+                        // Positif (telat) selalu di atas negatif (belum jatuh tempo)
+                        if ((oa > 0) !== (ob > 0)) return ob > 0 ? 1 : -
+                            1; // atau cukup return ob - oa; tapi ini eksplisit
+                        // Jika sama-sama positif → yang lebih besar (lebih lama telat) paling atas
+                        // Jika sama-sama negatif → nilai lebih tinggi (contoh -1 di atas -14)
+                        return ob - oa; // DESC
                     });
 
-                    let html = `<div style="width:100%"><h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Overview PO</h5>
-    <table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-so">
-            <tr>
-                <th style="width:40px;text-align:center;"></th>
-                <th style="min-width:150px;text-align:left;">PO</th>
-                <th style="min-width:100px;text-align:left;">SO</th>
-                <th style="min-width:100px;text-align:right;">Outs. Value</th>
-                <th style="min-width:100px;text-align:center;">Req. Delv Date</th>
-                <th style="min-width:100px;text-align:center;">Overdue (Days)</th>
-                <th style="min-width:120px;text-align:center;">Shortage %</th>
-            </tr>
-        </thead><tbody>`;
+                    let html = `
+                    <div style="width:100%">
+                    <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding PO</h5>
+                    <table class="table table-sm mb-0 yz-mini">
+                        <thead class="yz-header-so">
+                        <tr>
+                            <th style="width:40px" class="text-center">
+                            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+                            </th>
+                            <th style="width:40px;text-align:center;"></th>
+                            <th class="text-start">PO</th>
+                            <th class="text-start">SO</th>
+                            <th class="text-center">Outs. Qty</th>
+                            <th class="text-center">Outs. Value</th>
+                            <th class="text-center">Req. Deliv. Date</th>
+                            <th class="text-center">Overdue (Days)</th>
+                            <th style="width:28px;"></th>
+                        </tr>
+                        </thead>
+                        <tbody>`;
 
-                    rows.forEach((r, i) => {
+                    sortedRows.forEach((r, i) => {
                         const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                        const overdueDays = r.Overdue;
-                        const rowHighlightClass = overdueDays < 0 ? 'yz-row-highlight-negative' : '';
-                        const edatuDisplay = r.FormattedEdatu || '';
-                        const shortageDisplay = `${(r.ShortagePercentage || 0).toFixed(2)}%`;
-                        html += `<tr class="yz-row js-t2row ${rowHighlightClass}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-            <td style="text-align:center;"><span class="yz-caret">▸</span></td>
-            <td style="text-align:left;">${r.BSTNK ?? ''}</td>
-            <td class="yz-t2-vbeln" style="text-align:left;">${r.VBELN}</td>
-            <td style="text-align:right;">${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-            <td style="text-align:center;">${edatuDisplay}</td>
-            <td style="text-align:center;">${overdueDays ?? 0}</td>
-            <td style="text-align:center;">${shortageDisplay}</td>
-        </tr>
-        <tr id="${rid}" class="yz-nest" style="display:none;">
-            <td colspan="7" class="p-0">
-                <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
-                    <div class="yz-slot-t3 p-2"></div>
-                </div>
-            </td>
-        </tr>`;
+                        const over = r.Overdue ?? 0;
+                        const rowCls = over > 0 ? 'yz-row-highlight-negative' : '';
+                        const edatu = r.FormattedEdatu || '';
+                        const outsQty = r.outs_qty ?? r.OUTS_QTY ?? 0;
+                        const totalVal = r.total_value ?? r.TOTPR ?? 0;
+
+                        html += `
+                        <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+                            <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
+                            <td class="text-center"><span class="yz-caret">▸</span></td>
+                            <td class="text-start">${r.BSTNK ?? ''}</td>
+                            <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+                            <td class="text-center">${fmtNum(outsQty)}</td>
+                            <td class="text-center">${fmtMoney(totalVal, r.WAERK)}</td>
+                            <td class="text-center">${edatu}</td>
+                            <td class="text-center">${over}</td>
+                            <td class="text-center"><span class="so-selected-dot"></span></td>
+                        </tr>
+                        <tr id="${rid}" class="yz-nest" style="display:none;">
+                            <td colspan="9" class="p-0">
+                            <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
+                                <div class="yz-slot-t3 p-2"></div>
+                            </div>
+                            </td>
+                        </tr>`;
                     });
 
-                    html += `</tbody><tfoot>`;
-                    Object.entries(totalsByCurr).forEach(([cur, sum]) => {
-                        html += `<tr class="table-light">
-            <th></th>
-            <th colspan="2" style="text-align:left;">Total (${cur || 'N/A'})</th>
-            <th style="text-align:right;">${formatCurrencyForTable(sum, cur)}</th>
-            <th style="text-align:center;">—</th>
-            <th style="text-align:center;">—</th>
-            <th style="text-align:center;">—</th>
-        </tr>`;
-                    });
-                    html += `</tfoot></table></div>`;
+                    html += `</tbody></table></div>`;
                     return html;
                 }
 
                 function renderT3(rows) {
                     if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
-                    let out = `<div class="table-responsive"><table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-item">
-            <tr>
-                <th style="min-width:80px; text-align:center;">Item</th>
-                <th style="min-width:150px; text-align:center;">Material FG</th>
-                <th style="min-width:300px">Desc FG</th>
-                <th style="min-width:80px">Qty PO</th>
-                <th style="min-width:60px">Shipped</th>
-                <th style="min-width:60px">Outs. Ship</th>
-                <th style="min-width:80px">WHFG</th>
-                <th style="min-width:100px">Net Price</th>
-                <th style="min-width:80px">Outs. Ship Value</th>
-            </tr>
-        </thead><tbody>`;
+                    let out = `
+                    <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 yz-mini">
+                        <thead class="yz-header-item">
+                        <tr>
+                            <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+                            <th>Item</th>
+                            <th>Material FG</th>
+                            <th>Desc FG</th>
+                            <th>Qty PO</th>
+                            <th>Shipped</th>
+                            <th>Outs. Ship</th>
+                            <th>WHFG</th>
+                            <th>FG</th>
+                            <th>Net Price</th>
+                        </tr>
+                        </thead>
+                        <tbody>`;
                     rows.forEach(r => {
-                        out += `<tr>
-            <td style="text-align:center;">${r.POSNR ?? ''}</td>
-            <td style="text-align:center;">${r.MATNR ?? ''}</td>
-            <td>${r.MAKTX ?? ''}</td>
-            <td>${parseFloat(r.KWMENG).toLocaleString('id-ID')}</td>
-            <td>${parseFloat(r.QTY_GI).toLocaleString('id-ID')}</td>
-            <td>${parseFloat(r.QTY_BALANCE2).toLocaleString('id-ID')}</td>
-            <td>${parseFloat(r.KALAB).toLocaleString('id-ID')}</td>
-            <td>${formatCurrencyForTable(r.NETPR, r.WAERK)}</td>
-            <td>${formatCurrencyForTable(r.TOTPR, r.WAERK)}</td>
-        </tr>`;
+                        const sid = sanitizeId(r.id);
+                        const checked = sid && selectedItems.has(sid) ? 'checked' : '';
+                        out += `
+                        <tr data-item-id="${sid ?? ''}" data-vbeln="${r.VBELN}">
+                            <td><input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}></td>
+                            <td>${r.POSNR ?? ''}</td>
+                            <td>${r.MATNR ?? ''}</td>
+                            <td>${r.MAKTX ?? ''}</td>
+                            <td>${fmtNum(r.KWMENG)}</td>
+                            <td>${fmtNum(r.QTY_GI)}</td>
+                            <td>${fmtNum(r.QTY_BALANCE2)}</td>
+                            <td>${fmtNum(r.KALAB)}</td>
+                            <td>${fmtNum(r.KALAB2)}</td>
+                            <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
+                        </tr>`;
+                        if (sid) itemIdToSO.set(sid, String(r.VBELN));
                     });
                     out += `</tbody></table></div>`;
                     return out;
                 }
 
-                // ====== PO REPORT: Expand/collapse Customer (L1) -> PO (L2) -> Items (L3) ======
-                document.addEventListener('click', function(e) {
-                    // Blokir klik checkbox di T2 agar tidak memicu expand T3
-                    if (e.target.closest('.check-po, .check-all-pos')) {
-                        e.stopPropagation();
-                        e.stopImmediatePropagation?.();
-                    }
-                }, true);
+                /* Footer T2 hide/show saat T3 dibuka/ditutup */
+                function updateT2FooterVisibility(t2Table) {
+                    if (!t2Table) return;
+                    const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')]
+                        .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
+                    const tfoot = t2Table.querySelector('tfoot.t2-footer');
+                    if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
+                }
 
-                document.querySelectorAll('.yz-kunnr-row').forEach(row => {
-                    row.addEventListener('click', async () => {
-                        const kunnr = (row.dataset.kunnr || '').trim();
-                        const kid = row.dataset.kid; // id <tr> nested di bawah customer
-                        const slot = document.getElementById(kid); // <tr class="yz-nest">
-                        const wrap = slot?.querySelector(
-                            '.yz-nest-wrap'); // container L2 di dalam slot
+                // Expand Level-1 → load T2
+                document.querySelectorAll('.yz-kunnr-row').forEach(custRow => {
+                    custRow.addEventListener('click', async () => {
+                        const kunnr = (custRow.dataset.kunnr || '').trim();
+                        const kid = custRow.dataset.kid;
+                        const slot = document.getElementById(kid);
+                        const wrap = slot?.querySelector('.yz-nest-wrap');
 
-                        const tbody = row.closest('tbody');
-                        const tableEl = row.closest('table');
+                        const tbody = custRow.closest('tbody');
+                        const tableEl = custRow.closest('table');
                         const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
 
-                        const wasOpen = row.classList.contains('is-open');
-
-                        // toggle focus-mode pada tbody
+                        const wasOpen = custRow.classList.contains('is-open');
                         if (!wasOpen) {
                             tbody.classList.add('customer-focus-mode');
-                            row.classList.add('is-focused');
+                            custRow.classList.add('is-focused');
                         } else {
                             tbody.classList.remove('customer-focus-mode');
-                            row.classList.remove('is-focused');
-                        }
-
-                        row.classList.toggle('is-open');
-
-                        // tampil/sembunyikan nested T2
-                        slot.style.display = wasOpen ? 'none' : '';
-
-                        // === Jika barusan MENUTUP customer, paksa tutup semua child & bersihkan state
-                        if (wasOpen) {
-                            // tutup semua baris level-3 yang mungkin terbuka di dalam wrap
+                            custRow.classList.remove('is-focused');
                             wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
                                 'none');
-                            // bersihkan kelas fokus/caret di T2
+                            wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
+                                'rot'));
+                            // 🔧 perbaikan utama: bersihkan state fokus Tabel-2
                             wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
                                 .remove('so-focus-mode'));
                             wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
                                 .remove('is-focused'));
-                            wrap?.querySelectorAll('.js-t2row .yz-caret.rot').forEach(c => c
-                                .classList.remove('rot'));
+                            wrap?.querySelectorAll('.check-so').forEach(chk => (chk.checked =
+                                false));
                         }
 
-                        // ---- kontrol visibility total keseluruhan (tfoot) ----
+                        custRow.classList.toggle('is-open');
+                        slot.style.display = wasOpen ? 'none' : '';
+
                         if (tfootEl) {
-                            const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
-                                .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                                    null);
-                            tfootEl.style.display = anyVisibleNest ? 'none' : '';
+                            const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')].some(
+                                tr => tr.style.display !== 'none' && tr.offsetParent !== null
+                            );
+                            tfootEl.style.display = anyVisible ? 'none' : '';
                         }
+                        wrap?.querySelectorAll('table').forEach(tbl => updateT2FooterVisibility(
+                            tbl));
 
-                        if (wasOpen) return; // kalau barusan menutup, selesai
-                        if (wrap.dataset.loaded === '1') return; // sudah pernah dimuat
+                        if (wasOpen) return;
+                        if (wrap.dataset.loaded === '1') return;
 
                         try {
                             wrap.innerHTML = `
-        <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-            <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
-        </div>`;
+                            <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                                <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+                            </div>`;
 
-                            // apiT2 harus sudah didefinisikan sebelumnya (route untuk L2/PO by customer)
                             const url = new URL(apiT2, window.location.origin);
                             url.searchParams.set('kunnr', kunnr);
-                            if (typeof WERKS !== 'undefined' && WERKS) url.searchParams.set('werks',
-                                WERKS);
-                            if (typeof AUART !== 'undefined' && AUART) url.searchParams.set('auart',
-                                AUART);
+                            if (WERKS) url.searchParams.set('werks', WERKS);
+                            if (AUART) url.searchParams.set('auart', AUART);
 
                             const res = await fetch(url);
-                            if (!res.ok) throw new Error('Network response was not ok');
                             const js = await res.json();
-                            if (!js.ok) throw new Error(js.error || 'Gagal memuat data PO');
+                            if (!res.ok || !js.ok) throw new Error(js.error ||
+                                'Gagal memuat data PO');
 
-                            // renderT2: fungsi kamu untuk merender Tabel-2 (PO list)
                             wrap.innerHTML = renderT2(js.data, kunnr);
                             wrap.dataset.loaded = '1';
+                            updateExportButton();
+                            updateT2FooterVisibility(wrap.querySelector('table'));
 
-                            // Bind baris PO (L2) untuk buka/utup Items (L3)
-                            wrap.querySelectorAll('.js-t2row').forEach(row2 => {
-                                row2.addEventListener('click', async (ev) => {
-                                    ev
-                                        .stopPropagation(); // jangan bubbling ke L1
+                            // Klik baris SO → toggle & load T3
+                            wrap.querySelectorAll('.js-t2row').forEach(soRow => {
+                                soRow.addEventListener('click', async (ev) => {
+                                    if (ev.target.closest('.form-check-input'))
+                                        return;
+                                    ev.stopPropagation();
 
-                                    const vbeln = (row2.dataset.vbeln || '')
+                                    const vbeln = (soRow.dataset.vbeln || '')
                                         .trim();
-                                    const tgtId = row2.dataset
-                                        .tgt; // id <tr> nested L3
-                                    const caret = row2.querySelector(
+                                    const tgtId = soRow.dataset.tgt;
+                                    const caret = soRow.querySelector(
                                         '.yz-caret');
-                                    const tgt = wrap.querySelector('#' +
-                                        tgtId); // <tr class="yz-nest">
-                                    const body = tgt.querySelector(
-                                        '.yz-slot-t3'); // container isi items
+                                    const tgt = wrap.querySelector('#' + tgtId);
+                                    const box = tgt.querySelector(
+                                        '.yz-slot-t3');
                                     const open = tgt.style.display !== 'none';
-                                    const tbody2 = row2.closest('tbody');
+                                    const t2tbl = soRow.closest('table');
+                                    const soTbody = soRow.closest('tbody');
 
-                                    // focus-mode untuk L2
                                     if (!open) {
-                                        tbody2.classList.add('so-focus-mode');
-                                        row2.classList.add('is-focused');
+                                        soTbody.classList.add('so-focus-mode');
+                                        soRow.classList.add('is-focused');
                                     } else {
-                                        tbody2.classList.remove(
+                                        soTbody.classList.remove(
                                             'so-focus-mode');
-                                        row2.classList.remove('is-focused');
+                                        soRow.classList.remove('is-focused');
                                     }
 
                                     if (open) {
                                         tgt.style.display = 'none';
                                         caret?.classList.remove('rot');
+                                        updateT2FooterVisibility(t2tbl);
                                         return;
                                     }
 
                                     tgt.style.display = '';
                                     caret?.classList.add('rot');
+                                    updateT2FooterVisibility(t2tbl);
 
                                     if (tgt.dataset.loaded === '1') return;
 
-                                    body.innerHTML = `
-            <div class="p-2 text-muted small yz-loader-pulse">
-                <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
-            </div>`;
+                                    box.innerHTML = `
+                                    <div class="p-2 text-muted small yz-loader-pulse">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
+                                    </div>`;
 
-                                    // apiT3: route untuk items by PO
-                                    const u3 = new URL(apiT3, window.location
+                                    const u3 = new URL(
+                                        "{{ route('dashboard.api.t3') }}",
+                                        window.location
                                         .origin);
                                     u3.searchParams.set('vbeln', vbeln);
-                                    if (typeof WERKS !== 'undefined' && WERKS)
-                                        u3.searchParams.set('werks', WERKS);
-                                    if (typeof AUART !== 'undefined' && AUART)
-                                        u3.searchParams.set('auart', AUART);
+                                    if (WERKS) u3.searchParams.set('werks',
+                                        WERKS);
+                                    if (AUART) u3.searchParams.set('auart',
+                                        AUART);
 
                                     const r3 = await fetch(u3);
-                                    if (!r3.ok) throw new Error(
-                                        'Network response was not ok for item details'
-                                    );
                                     const j3 = await r3.json();
-                                    if (!j3.ok) throw new Error(j3.error ||
+                                    if (!r3.ok || !j3.ok) throw new Error(j3
+                                        .error ||
                                         'Gagal memuat detail item');
 
-                                    // renderT3: fungsi kamu untuk merender Tabel-3 (items)
-                                    body.innerHTML = renderT3(j3.data);
+                                    box.innerHTML = renderT3(j3.data);
                                     tgt.dataset.loaded = '1';
+
+                                    // Sinkronkan item yang sudah dipilih
+                                    box.querySelectorAll('.check-item').forEach(
+                                        chk => {
+                                            const sid = sanitizeId(chk
+                                                .dataset.id);
+                                            chk.checked = !!(sid &&
+                                                selectedItems.has(sid));
+                                        });
                                 });
                             });
-                        } catch (e) {
-                            console.error(e);
+
+                            /* ========= CHANGE HANDLERS (checkbox) - Dibuat di document.body karena adanya auto-expand ========= */
+
+                            // Perlu event listener global untuk check-all dan check-single item
+                            document.body.addEventListener('change', async (e) => {
+                                const target = e.target;
+
+                                // --- CHECK-ALL ITEMS (T3) ---
+                                if (target.classList.contains('check-all-items')) {
+                                    const t3 = target.closest('table');
+                                    t3.querySelectorAll('.check-item').forEach(ch => {
+                                        const sid = sanitizeId(ch.dataset.id);
+                                        if (!sid) return;
+                                        ch.checked = target.checked;
+                                        if (target.checked) selectedItems.add(
+                                            sid);
+                                        else selectedItems.delete(sid);
+                                    });
+                                    const anyItem = t3.querySelector('.check-item');
+                                    if (anyItem) {
+                                        const v = itemIdToSO.get(String(anyItem.dataset
+                                            .id));
+                                        if (v) soHasSelectionDot(v);
+                                    }
+                                    updateExportButton();
+                                    return;
+                                }
+
+                                // --- CHECK SINGLE ITEM (T3) ---
+                                if (target.classList.contains('check-item')) {
+                                    const sid = sanitizeId(target.dataset.id);
+                                    if (!sid) return;
+                                    if (target.checked) selectedItems.add(sid);
+                                    else selectedItems.delete(sid);
+
+                                    const v = itemIdToSO.get(String(sid));
+                                    if (v) soHasSelectionDot(v);
+                                    updateExportButton();
+                                    return;
+                                }
+
+                                // --- CHECK-ALL PO (T2) ---
+                                if (target.classList.contains('check-all-sos')) {
+                                    const t2 = target.closest('table');
+                                    const allSO = t2.querySelectorAll('.js-t2row');
+                                    for (const soRow of allSO) {
+                                        const chk = soRow.querySelector('.check-so');
+                                        chk.checked = target.checked;
+
+                                        const vbeln = chk.dataset.vbeln;
+                                        const nest = soRow.nextElementSibling;
+                                        const box = nest.querySelector('.yz-slot-t3');
+                                        const caret = soRow.querySelector('.yz-caret');
+
+                                        // Load items untuk mengambil ID
+                                        const u3 = new URL(
+                                            "{{ route('dashboard.api.t3') }}",
+                                            window.location.origin);
+                                        if (WERKS) u3.searchParams.set('werks', WERKS);
+                                        if (AUART) u3.searchParams.set('auart', AUART);
+                                        u3.searchParams.set('vbeln', vbeln);
+                                        const r3 = await fetch(u3);
+                                        const j3 = await r3.json();
+                                        if (j3?.ok) {
+                                            j3.data.forEach(it => {
+                                                const sid = sanitizeId(it.id);
+                                                if (!sid) return;
+                                                itemIdToSO.set(sid, vbeln);
+                                                if (target.checked)
+                                                    selectedItems.add(sid);
+                                                else selectedItems.delete(sid);
+                                            });
+                                        }
+
+                                        // UI update: expand/collapse + check T3
+                                        if (target.checked) {
+                                            if (nest.style.display === 'none') {
+                                                nest.style.display = '';
+                                                caret?.classList.add('rot');
+                                            }
+                                            if (nest.dataset.loaded !== '1') {
+                                                if (j3?.ok) {
+                                                    box.innerHTML = renderT3(j3.data);
+                                                    nest.dataset.loaded = '1';
+                                                }
+                                            }
+                                            // Setelah load/ada, centang semua di T3
+                                            box.querySelectorAll('.check-item').forEach(
+                                                ci => ci.checked = true);
+                                            box.querySelector('.check-all-items')
+                                                .checked = true;
+
+                                        } else {
+                                            // Uncheck: collapse + uncheck T3
+                                            nest.style.display = 'none';
+                                            caret?.classList.remove('rot');
+                                            box.querySelectorAll('.check-item').forEach(
+                                                ci => ci.checked = false);
+                                            box.querySelector('.check-all-items')
+                                                .checked = false;
+                                        }
+
+                                        soHasSelectionDot(vbeln);
+                                    }
+                                    updateExportButton();
+                                    return;
+                                }
+
+                                // --- CHECK SINGLE SO (T2) ---
+                                if (target.classList.contains('check-so')) {
+                                    const soRow = target.closest('.js-t2row');
+                                    const vbeln = target.dataset.vbeln;
+                                    const nest = soRow.nextElementSibling;
+                                    const box = nest.querySelector('.yz-slot-t3');
+                                    const caret = soRow.querySelector('.yz-caret');
+                                    const t2tbl = soRow.closest('table');
+
+                                    // 1. Load items untuk ID
+                                    let items;
+                                    try {
+                                        const u3 = new URL(
+                                            "{{ route('dashboard.api.t3') }}",
+                                            window.location.origin);
+                                        if (WERKS) u3.searchParams.set('werks', WERKS);
+                                        if (AUART) u3.searchParams.set('auart', AUART);
+                                        u3.searchParams.set('vbeln', vbeln);
+                                        const r3 = await fetch(u3);
+                                        const j3 = await r3.json();
+                                        if (j3?.ok) {
+                                            items = j3.data;
+                                            items.forEach(it => itemIdToSO.set(
+                                                sanitizeId(it.id), vbeln));
+                                        }
+                                    } catch (e) {
+                                        console.error(
+                                            "Failed to fetch items for SO selection:",
+                                            e);
+                                        return;
+                                    }
+
+                                    // 2. Update Set Global
+                                    if (target.checked) {
+                                        items.forEach(it => selectedItems.add(
+                                            sanitizeId(it.id)));
+                                    } else {
+                                        Array.from(selectedItems).forEach(id => {
+                                            if (itemIdToSO.get(String(id)) ===
+                                                vbeln) selectedItems.delete(id);
+                                        });
+                                    }
+
+                                    // 3. Update UI (expand/collapse)
+                                    if (target.checked) {
+                                        if (nest.style.display === 'none') {
+                                            nest.style.display = '';
+                                            caret?.classList.add('rot');
+                                        }
+                                        if (nest.dataset.loaded !== '1') {
+                                            box.innerHTML = renderT3(items);
+                                            nest.dataset.loaded = '1';
+                                        }
+                                        // Pastikan checkbox di T3 dicentang
+                                        box.querySelectorAll('.check-item').forEach(
+                                            ci => ci.checked = true);
+                                        box.querySelector('.check-all-items').checked =
+                                            true;
+                                    } else {
+                                        // Uncheck: collapse + uncheck T3
+                                        nest.style.display = 'none';
+                                        caret?.classList.remove('rot');
+                                        box.querySelectorAll('.check-item').forEach(
+                                            ci => ci.checked = false);
+                                        box.querySelector('.check-all-items').checked =
+                                            false;
+                                    }
+
+                                    updateT2FooterVisibility(t2tbl);
+                                    soHasSelectionDot(vbeln);
+                                    updateExportButton();
+                                    return;
+                                }
+                            });
+                        } catch (err) {
                             wrap.innerHTML =
-                                `<div class="alert alert-danger m-3">${e.message}</div>`;
+                                `<div class="alert alert-danger m-3">${err.message}</div>`;
                         }
                     });
                 });
-
-
-                // highlight hasil pencarian dari Search PO
-                const handleSearchHighlight = () => {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const encryptedPayload = urlParams.get('q');
-                    if (!encryptedPayload) return;
-
-                    fetch("{{ route('dashboard.api.decrypt_payload') }}", {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute(
-                                    'content')
-                            },
-                            body: JSON.stringify({
-                                q: encryptedPayload
-                            })
-                        })
-                        .then(res => res.json())
-                        .then(result => {
-                            if (!result.ok || !result.data) return;
-
-                            const params = result.data;
-                            const highlightKunnr = params.highlight_kunnr;
-                            const highlightVbeln = params.highlight_vbeln;
-
-                            if (highlightKunnr && highlightVbeln) {
-                                const customerRow = document.querySelector(
-                                    `.yz-kunnr-row[data-kunnr="${highlightKunnr}"]`);
-                                if (customerRow) {
-                                    customerRow.click();
-                                    let attempts = 0,
-                                        maxAttempts = 50;
-                                    const interval = setInterval(() => {
-                                        const soRow = document.querySelector(
-                                            `.js-t2row[data-vbeln="${highlightVbeln}"]`);
-                                        if (soRow) {
-                                            clearInterval(interval);
-                                            soRow.classList.add('row-highlighted');
-                                            soRow.addEventListener('click', () => {
-                                                soRow.classList.remove('row-highlighted');
-                                            }, {
-                                                once: true
-                                            });
-                                            setTimeout(() => soRow.scrollIntoView({
-                                                behavior: 'smooth',
-                                                block: 'center'
-                                            }), 500);
-                                        }
-                                        attempts++;
-                                        if (attempts > maxAttempts) clearInterval(interval);
-                                    }, 100);
-                                }
-                            }
-                        }).catch(console.error);
-                };
-                handleSearchHighlight();
-                return;
             }
 
             /* ---------- MODE DASHBOARD (grafik & kpi) - HANYA PO ---------- */
@@ -1178,13 +1291,13 @@
                     const holder = document.createElement('div');
                     holder.className = 'yz-card-toolbar';
                     holder.innerHTML = `
-        <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
-            <button type="button" data-cur="USD"
-            class="btn ${currentCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
-            <button type="button" data-cur="IDR"
-            class="btn ${currentCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
-        </div>
-        `;
+            <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
+                <button type="button" data-cur="USD"
+                class="btn ${currentCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
+                <button type="button" data-cur="IDR"
+                class="btn ${currentCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
+            </div>
+            `;
                     return holder;
                 };
 
@@ -1207,8 +1320,7 @@
                     headerRow.querySelector('.yz-card-toolbar')?.remove();
 
                     const toolbar = makeToggle();
-                    // Pasang di card-body atau di elemen yang menampung Judul (headerRow)
-                    // Kita pasang di headerRow (div pembungkus judul) 
+                    // Pasang di headerRow (div pembungkus judul)  
                     // dan biarkan CSS absolute yang bekerja.
                     headerRow.appendChild(toolbar);
                     // --- End Perbaikan Utama ---
@@ -1382,8 +1494,8 @@
                 if (!performanceData || performanceData.length === 0) {
                     performanceTbody.innerHTML =
                         `<tr><td colspan="6" class="text-center p-5 text-muted">
-           <i class="fas fa-info-circle fa-2x mb-2"></i><br>Performance data is not available for this filter.
-        </td></tr>`;
+                        <i class="fas fa-info-circle fa-2x mb-2"></i><br>Performance data is not available for this filter.
+                    </td></tr>`;
                 } else {
                     let tableHtml = '';
                     performanceData.forEach(item => {
@@ -1409,12 +1521,12 @@
                         const seg = (count, percent, color, bucket, textTitle) => {
                             if (!count) return '';
                             return `<div class="bar-segment js-overdue-seg"
-                             data-werks="${werks}"
-                             data-auart="${auart}"
-                             data-bucket="${bucket}"
-                             style="width:${percent}%;background-color:${color};cursor:pointer"
-                             data-bs-toggle="tooltip"
-                             title="${textTitle}: ${count} PO">${count}</div>`;
+                                data-werks="${werks}"
+                                data-auart="${auart}"
+                                data-bucket="${bucket}"
+                                style="width:${percent}%;background-color:${color};cursor:pointer"
+                                data-bs-toggle="tooltip"
+                                title="${textTitle}: ${count} PO">${count}</div>`;
                         };
 
                         let barChartHtml = '<div class="bar-chart-container">';
@@ -1429,16 +1541,16 @@
                         barChartHtml += '</div>';
 
                         tableHtml += `<tr>
-            <td><div class="fw-bold">${item.Deskription}</div></td>
-            <td class="text-center">${totalSo}</td>
-            <td class="${classIdr}">${valueIdr}</td>
-            <td class="${classUsd}">${valueUsd}</td>
-            <td class="text-center">
-                <span class="fw-bold ${overdueSo > 0 ? 'text-danger' : ''}">${overdueSo}</span>
-                <small class="text-muted d-block">(${overdueRate}%)</small>
-            </td>
-            <td>${ totalOverdueForBar > 0 ? barChartHtml : '<span class="text-muted small">Tidak ada PO terlambat</span>' }</td>
-        </tr>`;
+                            <td><div class="fw-bold">${item.Deskription}</div></td>
+                            <td class="text-center">${totalSo}</td>
+                            <td class="${classIdr}">${valueIdr}</td>
+                            <td class="${classUsd}">${valueUsd}</td>
+                            <td class="text-center">
+                                <span class="fw-bold ${overdueSo > 0 ? 'text-danger' : ''}">${overdueSo}</span>
+                                <small class="text-muted d-block">(${overdueRate}%)</small>
+                            </td>
+                            <td>${ totalOverdueForBar > 0 ? barChartHtml : '<span class="text-muted small">Tidak ada PO terlambat</span>' }</td>
+                        </tr>`;
                     });
                     performanceTbody.innerHTML = tableHtml;
                     // Re-initialize tooltips
@@ -1470,30 +1582,30 @@
                         'position:absolute;inset:0;background:var(--bs-card-bg,#fff);z-index:10;display:flex;padding:1rem;';
 
                     const showLoading = () => container.innerHTML = `
-        <div class="card yz-chart-card shadow-sm h-100 w-100">
-            <div class="card-body d-flex flex-column">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoOverdueOverlay"><i class="fas fa-times"></i></button>
-                </div>
-                <hr class="mt-2">
-                <div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted">
-                    <div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...
-                </div>
-            </div>
-        </div>`;
+                    <div class="card yz-chart-card shadow-sm h-100 w-100">
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoOverdueOverlay"><i class="fas fa-times"></i></button>
+                            </div>
+                            <hr class="mt-2">
+                            <div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted">
+                                <div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...
+                            </div>
+                        </div>
+                    </div>`;
                     const showError = (msg) => {
                         container.innerHTML = `
-            <div class="card yz-chart-card shadow-sm h-100 w-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoOverdueOverlayError"><i class="fas fa-times"></i></button>
-                    </div>
-                    <hr class="mt-2">
-                    <div class="alert alert-danger mb-0">${msg}</div>
-                </div>
-            </div>`;
+                        <div class="card yz-chart-card shadow-sm h-100 w-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoOverdueOverlayError"><i class="fas fa-times"></i></button>
+                                </div>
+                                <hr class="mt-2">
+                                <div class="alert alert-danger mb-0">${msg}</div>
+                            </div>
+                        </div>`;
                         document.getElementById('closePoOverdueOverlayError')?.addEventListener('click',
                             () => container.style.display = 'none');
                     };
@@ -1528,42 +1640,42 @@
 
                         const rows = json.data || [];
                         const body = rows.map((r, i) => `
-            <tr>
-                <td class="text-center">${i + 1}</td>
-                <td class="text-center">${r.PO ?? '-'}</td>
-                <td class="text-center">${r.SO ?? '-'}</td>
-                <td class="text-center">${r.EDATU ?? '-'}</td>
-                <td class="text-center fw-bold ${(r.OVERDUE_DAYS || 0) > 0 ? 'text-danger' : ''}">${r.OVERDUE_DAYS ?? 0}</td>
-            </tr>`).join('');
+                        <tr>
+                            <td class="text-center">${i + 1}</td>
+                            <td class="text-center">${r.PO ?? '-'}</td>
+                            <td class="text-center">${r.SO ?? '-'}</td>
+                            <td class="text-center">${r.EDATU ?? '-'}</td>
+                            <td class="text-center fw-bold ${(r.OVERDUE_DAYS || 0) > 0 ? 'text-danger' : ''}">${r.OVERDUE_DAYS ?? 0}</td>
+                        </tr>`).join('');
 
                         container.innerHTML = `
-            <div class="card yz-chart-card shadow-sm h-100 w-100">
-                <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoOverdueOverlay"><i class="fas fa-times"></i></button>
-                    </div>
-                    <hr class="mt-2">
-                    ${rows.length ? `
-                                                                                    <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                                        <table class="table table-sm table-hover align-middle mb-0">
-                                                                                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                                <tr>
-                                                                                                    <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                    <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                    <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
-                                                                                                    <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                                                </tr>
-                                                                                            </thead>
-                                                                                            <tbody>${body}</tbody>
-                                                                                        </table>
-                                                                                    </div>` : `
-                                                                                    <div class="text-muted p-4 text-center">
-                                                                                        <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                                    </div>`}
-                </div>
-            </div>`;
+                        <div class="card yz-chart-card shadow-sm h-100 w-100">
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoOverdueOverlay"><i class="fas fa-times"></i></button>
+                                </div>
+                                <hr class="mt-2">
+                                ${rows.length ? `
+                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                    <table class="table table-sm table-hover align-middle mb-0">
+                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                            <tr>
+                                                                <th class="text-center" style="width:60px;">NO.</th>
+                                                                <th class="text-center" style="min-width:120px;">PO</th>
+                                                                <th class="text-center" style="min-width:120px;">SO</th>
+                                                                <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
+                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>${body}</tbody>
+                                                    </table>
+                                                </div>` : `
+                                                <div class="text-muted p-4 text-center">
+                                                    <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                </div>`}
+                            </div>
+                        </div>`;
                         document.getElementById('closePoOverdueOverlay')?.addEventListener('click', () => {
                             container.style.display = 'none';
                         });
@@ -1711,45 +1823,38 @@
                                         result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2) - parseFloat(b
                                             .QTY_BALANCE2));
 
-                                        // apakah ada Qty PO?
-                                        const hasQtyPo = result.data.some(item => parseFloat(item.KWMENG) >
-                                            0);
-
                                         const tableHeaders = `<tr>
-            <th style="width:5%;" class="text-center">No.</th>
-            <th class="text-center">PO</th>
-            <th class="text-center">SO</th>
-            <th class="text-center">Item</th>
-            <th>Desc FG</th>
-            ${hasQtyPo ? '<th class="text-center">Qty PO</th>' : ''}
-            <th class="text-center">Shipped</th>
-            <th class="text-center">Outstanding</th>
-        </tr>`;
+                                            <th style="width:5%;" class="text-center">No.</th>
+                                            <th class="text-center">PO</th>
+                                            <th class="text-center">SO</th>
+                                            <th class="text-center">Item</th>
+                                            <th>Desc FG</th>
+                                            <th class="text-center">Qty PO</th>
+                                            <th class="text-center">Shipped</th>
+                                            <th class="text-center">Outstanding</th>
+                                        </tr>`;
 
                                         let tableBody = result.data.map((item, idx) => {
-                                            const qtyPoCell = hasQtyPo ?
-                                                `<td class="text-center">${parseFloat(item.KWMENG) || '0'}</td>` :
-                                                '';
                                             const po = item.BSTNK || item.PO || '-';
                                             return `<tr>
-                <td class="text-center">${idx + 1}</td>
-                <td class="text-center">${po}</td>
-                <td class="text-center">${item.VBELN}</td>
-                <td class="text-center">${parseInt(item.POSNR, 10)}</td>
-                <td>${item.MAKTX}</td>
-                ${qtyPoCell}
-                <td class="text-center">${parseFloat(item.QTY_GI) || '0'}</td>
-                <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
-            </tr>`;
+                                                <td class="text-center">${idx + 1}</td>
+                                                <td class="text-center">${po}</td>
+                                                <td class="text-center">${item.VBELN}</td>
+                                                <td class="text-center">${parseInt(item.POSNR, 10)}</td>
+                                                <td>${item.MAKTX}</td>
+                                                <td class="text-center">${parseFloat(item.KWMENG) || '0'}</td>
+                                                <td class="text-center">${parseFloat(item.QTY_GI) || '0'}</td>
+                                                <td class="text-center fw-bold text-danger">${parseFloat(item.QTY_BALANCE2)}</td>
+                                            </tr>`;
                                         }).join('');
 
                                         const tableHtml = `
-            <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
-                <table class="table table-striped table-hover table-sm align-middle">
-                    <thead class="table-light">${tableHeaders}</thead>
-                    <tbody>${tableBody}</tbody>
-                </table>
-            </div>`;
+                                            <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
+                                                <table class="table table-striped table-hover table-sm align-middle">
+                                                    <thead class="table-light">${tableHeaders}</thead>
+                                                    <tbody>${tableBody}</tbody>
+                                                </table>
+                                            </div>`;
                                         detailsTable.innerHTML = tableHtml;
                                     } else {
                                         document.getElementById('smallQtyMeta').textContent = '';
@@ -1794,18 +1899,18 @@
 
                 // --- START LOADING ---
                 container.innerHTML = `
-        <div class="card yz-chart-card shadow-sm h-100 w-100">
-            <div class="card-body d-flex flex-column">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled><i class="fas fa-times"></i></button>
-                </div>
-                <hr class="mt-2">
-                <div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted">
-                    <div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...
-                </div>
-            </div>
-        </div>`;
+                <div class="card yz-chart-card shadow-sm h-100 w-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>PO List — ${labelText}</h6>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoStatusDetails"><i class="fas fa-times"></i></button>
+                        </div>
+                        <hr class="mt-2">
+                        <div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...
+                        </div>
+                    </div>
+                </div>`;
 
                 try {
                     // Cek di controller Anda, jika tidak ada route `dashboard.api.poStatusDetails`, ini akan error 404/500
@@ -1840,23 +1945,23 @@
                                 </div>
                                 <hr class="mt-2">
                                 ${rows.length ? `
-                                                                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                                                    <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                                            <tr>
-                                                                                                                <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                                <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                                <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                                <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
-                                                                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
-                                                                                                            </tr>
-                                                                                                        </thead>
-                                                                                                        <tbody>${table}</tbody>
-                                                                                                    </table>
-                                                                                                </div>` : `
-                                                                                                <div class="text-muted p-4 text-center">
-                                                                                                    <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
-                                                                                                </div>`}
+                                                <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
+                                                    <table class="table table-sm table-hover align-middle mb-0">
+                                                        <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                                            <tr>
+                                                                <th class="text-center" style="width:60px;">NO.</th>
+                                                                <th class="text-center" style="min-width:120px;">PO</th>
+                                                                <th class="text-center" style="min-width:120px;">SO</th>
+                                                                <th class="text-center" style="min-width:120px;">Req. Delv Date</th>
+                                                                <th class="text-center" style="min-width:140px;">OVERDUE (DAYS)</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>${table}</tbody>
+                                                    </table>
+                                                </div>` : `
+                                                <div class="text-muted p-4 text-center">
+                                                    <i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.
+                                                </div>`}
                             </div>
                         </div>`;
                     document.getElementById('closePoStatusDetails')?.addEventListener('click', () => {
@@ -1867,16 +1972,16 @@
                 } catch (e) {
                     // --- RENDER ERROR ---
                     container.innerHTML = `
-                        <div class="card yz-chart-card shadow-sm h-100 w-100">
-                            <div class="card-body">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoStatusDetailsError"><i class="fas fa-times"></i></button>
-                                </div>
-                                <hr class="mt-2">
-                                <div class="alert alert-danger mb-0">${e.message}</div>
+                    <div class="card yz-chart-card shadow-sm h-100 w-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="closePoStatusDetailsError"><i class="fas fa-times"></i></button>
                             </div>
-                        </div>`;
+                            <hr class="mt-2">
+                            <div class="alert alert-danger mb-0">${e.message}</div>
+                        </div>
+                    </div>`;
                     document.getElementById('closePoStatusDetailsError')?.addEventListener('click', () => {
                         container.style.display = 'none';
                         container.innerHTML = '';
@@ -1913,11 +2018,11 @@
                 poFilterEl.textContent =
                     `Filter: ${filterState.location ? plantMap[filterState.location] : 'All Plant'} • ${filterState.type || 'All Type'} ${filterState.auart?('• '+filterState.auart):''}`;
                 poTbody.innerHTML = `
-        <tr><td colspan="3">
-            <div class="text-center text-muted py-3">
-                <div class="spinner-border spinner-border-sm me-2"></div> Loading...
-            </div>
-        </td></tr>`;
+                <tr><td colspan="3">
+                    <div class="text-center text-muted py-3">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Loading...
+                    </div>
+                </td></tr>`;
                 poTotalEl.textContent = '–';
             }
 
@@ -1926,10 +2031,10 @@
                 const html = rows.map(r => {
                     total += Number(r.TOTAL_VALUE || 0);
                     return `<tr>
-        <td>${r.NAME1||''}</td>
-        <td class="text-center">${r.ORDER_TYPE||r.AUART||'-'}</td>
-        <td class="text-end">${fmtKPI(r.TOTAL_VALUE, currency)}</td>
-    </tr>`;
+                <td>${r.NAME1||''}</td>
+                <td class="text-center">${r.ORDER_TYPE||r.AUART||'-'}</td>
+                <td class="text-end">${fmtKPI(r.TOTAL_VALUE, currency)}</td>
+            </tr>`;
                 }).join('');
                 poTbody.innerHTML = html;
                 poTotalEl.textContent = fmtKPI(total, currency);

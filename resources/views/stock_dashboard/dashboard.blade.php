@@ -47,6 +47,12 @@
     </script>
     @php
         use Illuminate\Support\Facades\Crypt;
+
+        // Define mapping for dropdown
+        $locations = [
+            '3000' => 'Semarang',
+            '2000' => 'Surabaya',
+        ];
     @endphp
 
     {{-- HEADER & FILTER --}}
@@ -55,28 +61,36 @@
             <h1 class="mb-0 fw-bolder">Stock Dashboard</h1>
             <p class="text-muted mb-0">Live Inventory Analysis as of {{ date('d F Y') }}</p>
         </div>
+
+        {{-- MODIFIED LOCATION DROPDOWNS --}}
         <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
-            <ul class="nav nav-pills shadow-sm p-1" style="border-radius:.75rem;">
-                <li class="nav-item">
-                    <a class="nav-link {{ !$selectedLocation ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">All
-                        Location</a>
-                </li>
-
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedLocation === '3000' ? 'active' : '' }}"
-                        href="{{ route('stock.dashboard', ['q' => Crypt::encrypt(['location' => '3000'])]) }}">
-                        Semarang
-                    </a>
-                </li>
-
-                <li class="nav-item">
-                    <a class="nav-link {{ $selectedLocation === '2000' ? 'active' : '' }}"
-                        href="{{ route('stock.dashboard', ['q' => Crypt::encrypt(['location' => '2000'])]) }}">
-                        Surabaya
-                    </a>
-                </li>
-            </ul>
+            @foreach ($locations as $werks => $name)
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-primary dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown"
+                        aria-expanded="false">
+                        {{ $name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            {{-- Link ke Stock Report WHFG (type=whfg) --}}
+                            @php $whfgUrl = route('stock.index', ['q' => Crypt::encrypt(['werks' => $werks, 'type' => 'whfg'])]); @endphp
+                            <a class="dropdown-item" href="{{ $whfgUrl }}">
+                                <i class="fas fa-warehouse me-2 text-info"></i> WHFG
+                            </a>
+                        </li>
+                        <li>
+                            {{-- Link ke Stock Report Packing (FG) (type=fg) --}}
+                            @php $packingUrl = route('stock.index', ['q' => Crypt::encrypt(['werks' => $werks, 'type' => 'fg'])]); @endphp
+                            <a class="dropdown-item" href="{{ $packingUrl }}">
+                                <i class="fas fa-cubes me-2 text-success"></i> Packing
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            @endforeach
         </div>
+        {{-- END MODIFIED LOCATION DROPDOWNS --}}
+
     </div>
 
     {{-- KPI CARDS --}}

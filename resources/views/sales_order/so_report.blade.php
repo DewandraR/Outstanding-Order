@@ -11,6 +11,36 @@
 
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
+
+        // Helper total untuk FOOTER Tabel-1
+        $rowsCol = collect($rows ?? []);
+        // kolom baru yang diharapkan dari controller
+        $totalQtyAll = (float) $rowsCol->sum(fn($r) => (float) ($r->TOTAL_OUTS_QTY ?? 0));
+        // total all value per currency
+        $pageTotalsAll = $rowsCol
+            ->groupBy(fn($r) => $r->WAERK ?? '')
+            ->map(fn($g) => (float) $g->sum(fn($x) => (float) ($x->TOTAL_ALL_VALUE ?? ($x->TOTAL_VALUE ?? 0))));
+        // total overdue value per currency
+        $pageTotalsOverdue = $rowsCol
+            ->groupBy(fn($r) => $r->WAERK ?? '')
+            ->map(fn($g) => (float) $g->sum(fn($x) => (float) ($x->TOTAL_OVERDUE_VALUE ?? 0)));
+
+        $formatTotals = function ($totals) {
+            if (!$totals || count($totals) === 0) {
+                return '—';
+            }
+            $parts = [];
+            foreach ($totals as $cur => $sum) {
+                if ($cur === 'IDR') {
+                    $parts[] = 'Rp ' . number_format($sum, 2, ',', '.');
+                } elseif ($cur === 'USD') {
+                    $parts[] = '$' . number_format($sum, 2, '.', ',');
+                } else {
+                    $parts[] = ($cur ?? '') . ' ' . number_format($sum, 2, ',', '.');
+                }
+            }
+            return implode(' | ', $parts);
+        };
     @endphp
 
     {{-- ROOT STATE --}}
@@ -22,7 +52,6 @@
     {{-- HEADER --}}
     <div class="card yz-card shadow-sm mb-3 overflow-visible">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-            {{-- Kiri: pills type --}}
             <div class="py-1">
                 @if ($selectedWerks && $typesForPlant->count())
                     <ul class="nav nav-pills yz-auart-pills p-1 flex-wrap" style="border-radius:.75rem;">
@@ -30,10 +59,13 @@
                             @php
                                 $auartCode = trim((string) $t->IV_AUART);
                                 $isActive = $selectedAuart === $auartCode;
+                                // Menggunakan URL terenkripsi yang sama dengan yang dikirim dari Dashboard
+                                $filterUrl = route('so.index', [
+                                    'q' => \Crypt::encrypt(['werks' => $selectedWerks, 'auart' => $auartCode]),
+                                ]);
                             @endphp
                             <li class="nav-item mb-2 me-2">
-                                <a href="javascript:void(0)" class="nav-link pill-green {{ $isActive ? 'active' : '' }}"
-                                    onclick="applySoFilter({werks:'{{ $selectedWerks }}', auart:'{{ $auartCode }}'})">
+                                <a href="{{ $filterUrl }}" class="nav-link pill-green {{ $isActive ? 'active' : '' }}">
                                     {{ $t->Deskription }}
                                 </a>
                             </li>
@@ -45,7 +77,7 @@
                 @endif
             </div>
 
-            {{-- Kanan: Export Items (tanpa tombol collabs apapun) --}}
+            {{-- Kanan: Export Items --}}
             <div class="py-1 d-flex align-items-center gap-2">
                 <div class="dropdown" id="export-dropdown-container" style="display:none;">
                     <button class="btn btn-primary dropdown-toggle" type="button" id="export-btn" data-bs-toggle="dropdown"
@@ -87,12 +119,25 @@
                                 <th style="width:50px;"></th>
                                 <th class="text-start" style="min-width:250px;">Customer</th>
                                 <th class="text-center" style="min-width:120px;">Overdue SO</th>
+                                <th class="text-center" style="min-width:120px;">Outs. Qty</th>
                                 <th class="text-center" style="min-width:150px;">Outs. Value</th>
+                                <th class="text-center" style="min-width:160px;">Overdue Value</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($rows as $r)
-                                @php $kid = 'krow_'.$r->KUNNR.'_'.$loop->index; @endphp
+                                @php
+                                    $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
+
+                                    // Nilai yang diharapkan dari controller:
+                                    // - $r->TOTAL_OUTS_QTY (qty semua outstanding)
+                                    // - $r->TOTAL_ALL_VALUE (value semua outstanding)
+                                    // - $r->TOTAL_OVERDUE_VALUE (value overdue saja)
+                                    // Fallback: jika TOTAL_ALL_VALUE belum ada, gunakan TOTAL_VALUE lama (yang mungkin berisi overdue)
+                                    $outsQtyAll = (float) ($r->TOTAL_OUTS_QTY ?? 0);
+                                    $outsValueAll = (float) ($r->TOTAL_ALL_VALUE ?? ($r->TOTAL_VALUE ?? 0));
+                                    $overdueValue = (float) ($r->TOTAL_OVERDUE_VALUE ?? 0);
+                                @endphp
                                 <tr class="yz-kunnr-row" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}"
                                     title="Klik untuk melihat detail SO">
                                     <td class="sticky-col-mobile-disabled">
@@ -102,22 +147,36 @@
                                         <span class="fw-bold">{{ $r->NAME1 }}</span>
                                     </td>
                                     <td class="text-center">{{ $r->SO_LATE_COUNT }}</td>
+                                    <td class="text-center">{{ number_format($outsQtyAll, 0, ',', '.') }}</td>
                                     <td class="text-center">
                                         @php
-                                            if ($r->WAERK === 'IDR') {
-                                                echo 'Rp ' . number_format($r->TOTAL_VALUE, 2, ',', '.');
-                                            } elseif ($r->WAERK === 'USD') {
-                                                echo '$' . number_format($r->TOTAL_VALUE, 2, '.', ',');
+                                            if (($r->WAERK ?? '') === 'IDR') {
+                                                echo 'Rp ' . number_format($outsValueAll, 2, ',', '.');
+                                            } elseif (($r->WAERK ?? '') === 'USD') {
+                                                echo '$' . number_format($outsValueAll, 2, '.', ',');
                                             } else {
                                                 echo ($r->WAERK ?? '') .
                                                     ' ' .
-                                                    number_format($r->TOTAL_VALUE, 2, ',', '.');
+                                                    number_format($outsValueAll, 2, ',', '.');
+                                            }
+                                        @endphp
+                                    </td>
+                                    <td class="text-center">
+                                        @php
+                                            if (($r->WAERK ?? '') === 'IDR') {
+                                                echo 'Rp ' . number_format($overdueValue, 2, ',', '.');
+                                            } elseif (($r->WAERK ?? '') === 'USD') {
+                                                echo '$' . number_format($overdueValue, 2, '.', ',');
+                                            } else {
+                                                echo ($r->WAERK ?? '') .
+                                                    ' ' .
+                                                    number_format($overdueValue, 2, ',', '.');
                                             }
                                         @endphp
                                     </td>
                                 </tr>
                                 <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                                    <td colspan="5" class="p-0">
+                                    <td colspan="6" class="p-0">
                                         <div class="yz-nest-wrap">
                                             <div
                                                 class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
@@ -129,7 +188,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" class="text-center p-5">
+                                    <td colspan="6" class="text-center p-5">
                                         <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
                                         <h5 class="text-muted">Data tidak ditemukan</h5>
                                     </td>
@@ -137,29 +196,13 @@
                             @endforelse
                         </tbody>
 
-                        @php
-                            $formatTotals = function ($totals) {
-                                if (!$totals || count($totals) === 0) {
-                                    return '—';
-                                }
-                                $parts = [];
-                                foreach ($totals as $cur => $sum) {
-                                    if ($cur === 'IDR') {
-                                        $parts[] = 'Rp ' . number_format($sum, 2, ',', '.');
-                                    } elseif ($cur === 'USD') {
-                                        $parts[] = '$' . number_format($sum, 2, '.', ',');
-                                    } else {
-                                        $parts[] = ($cur ?? '') . ' ' . number_format($sum, 2, ',', '.');
-                                    }
-                                }
-                                return implode(' | ', $parts);
-                            };
-                        @endphp
-
                         <tfoot class="yz-footer-customer">
                             <tr>
-                                <th colspan="3" class="text-end">Total</th>
-                                <th class="text-center">{{ $formatTotals($pageTotals ?? []) }}</th>
+                                <th colspan="2" class="text-end">Total</th>
+                                <th class="text-center"></th>
+                                <th class="text-center">{{ number_format($totalQtyAll, 0, ',', '.') }}</th>
+                                <th class="text-center">{{ $formatTotals($pageTotalsAll ?? []) }}</th>
+                                <th class="text-center">{{ $formatTotals($pageTotalsOverdue ?? []) }}</th>
                             </tr>
                         </tfoot>
                     </table>
@@ -385,14 +428,12 @@
                     .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
             }
 
-            // sinkronkan checkbox di T3 dengan selectedItems (on/off)
             function applySelectionsToRenderedItems(container) {
                 container.querySelectorAll('.check-item').forEach(chk => {
                     chk.checked = selectedItems.has(chk.dataset.id);
                 });
             }
 
-            // sinkronkan header check-all pada box item
             function syncCheckAllHeader(itemBox) {
                 const table = itemBox?.querySelector('table');
                 if (!table) return;
@@ -437,7 +478,6 @@
                 if (tfoot) tfoot.style.display = anyOpen ? 'none' : '';
             }
 
-            // cegah klik checkbox T2 memicu expand row (fokus hanya via klik baris)
             document.addEventListener('click', (e) => {
                 if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
                     .stopPropagation();
@@ -447,60 +487,66 @@
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
-                const totalsByCurr = {};
-                rows.forEach(r => {
-                    const c = (r.WAERK || '').trim();
-                    const v = +r.total_value || 0;
-                    totalsByCurr[c] = (totalsByCurr[c] || 0) + v;
-                });
+
                 let html = `
-        <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
-        <table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-so">
-          <tr>
-            <th style="width:40px;" class="text-center"><input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO"></th>
-            <th style="width:40px;"></th>
-            <th class="text-start">SO</th>
-            <th class="text-center">SO Item Count</th>
-            <th class="text-center">Req. Deliv. Date</th>
-            <th class="text-center">Overdue (Days)</th>
-            <th class="text-center">Outs. Value</th>
-            <th style="width:28px;"></th>
-          </tr>
-        </thead>
-        <tbody>`;
-                rows.forEach((r, i) => {
+    <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
+    <table class="table table-sm mb-0 yz-mini">
+      <thead class="yz-header-so">
+        <tr>
+          <th style="width:40px;" class="text-center">
+            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+          </th>
+          <th style="width:40px;"></th>
+          <th class="text-start">SO</th>
+          <th class="text-center">SO Item Count</th>
+          <th class="text-center">Req. Deliv. Date</th>
+          <th class="text-center">Overdue (Days)</th>
+          <th class="text-center">Outs. Qty</th>
+          <th class="text-center">Outs. Value</th>
+          <th style="width:28px;"></th>
+        </tr>
+      </thead>
+      <tbody>`;
+                const rowsSorted = [...rows].sort((a, b) => {
+                    const oa = Number(a.Overdue || 0);
+                    const ob = Number(b.Overdue || 0);
+                    const aOver = oa > 0;
+                    const bOver = ob > 0;
+                    if (aOver !== bOver) return aOver ? -1 : 1; // overdue (+) dulu
+                    return ob - oa; // desc dalam grup
+                });
+
+                rowsSorted.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const rowHi = r.Overdue > 0 ? 'yz-row-highlight-negative' : '';
                     const hasRemark = Number(r.remark_count || 0) > 0;
+                    const outsQty = (typeof r.outs_qty !== 'undefined') ? r.outs_qty : (r.OUTS_QTY ?? 0);
+
                     html += `
-            <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-              <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
-              <td class="text-center"><span class="yz-caret">▸</span></td>
-              <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-              <td class="text-center">${r.item_count ?? '-'}</td>
-              <td class="text-center">${r.FormattedEdatu || '-'}</td>
-              <td class="text-center">${r.Overdue}</td>
-              <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
-              <td class="text-center">
-                <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
-                <span class="so-selected-dot"></span>
-              </td>
-            </tr>
-            <tr id="${rid}" class="yz-nest" style="display:none;">
-              <td colspan="8" class="p-0">
-                <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-                  <div class="yz-slot-items p-2"></div>
-                </div>
-              </td>
-            </tr>`;
+        <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+          <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"></td>
+          <td class="text-center"><span class="yz-caret">▸</span></td>
+          <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+          <td class="text-center">${r.item_count ?? '-'}</td>
+          <td class="text-center">${r.FormattedEdatu || '-'}</td>
+          <td class="text-center">${r.Overdue}</td>
+          <td class="text-center">${formatNumber(outsQty)}</td>
+          <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
+          <td class="text-center">
+            <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+            <span class="so-selected-dot"></span>
+          </td>
+        </tr>
+        <tr id="${rid}" class="yz-nest" style="display:none;">
+          <td colspan="9" class="p-0">
+            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+              <div class="yz-slot-items p-2"></div>
+            </div>
+          </td>
+        </tr>`;
                 });
-                html += `</tbody><tfoot class="t2-footer">`;
-                Object.entries(totalsByCurr).forEach(([cur, sum]) => {
-                    html +=
-                        `<tr class="table-light"><th colspan="6" class="text-end">Total (${cur||'N/A'})</th><th class="text-center">${formatCurrency(sum,cur)}</th><th></th></tr>`;
-                });
-                html += `</tfoot></table>`;
+
+                html += `</tbody></table>`;
                 return html;
             }
 
@@ -715,14 +761,13 @@
                     else selectedItems.delete(id);
                     const vbeln = itemIdToSO.get(String(id));
                     if (vbeln) updateSODot(vbeln);
-                    // sinkronkan header check-all di box ini
                     const box = e.target.closest('.yz-slot-items');
                     if (box) syncCheckAllHeader(box);
                     updateExportButton();
                     return;
                 }
 
-                // --- check-all SO (T2)  (tanpa mengubah focus-mode)
+                // --- check-all SO (T2)
                 if (e.target.classList.contains('check-all-sos')) {
                     const tbody = e.target.closest('table')?.querySelector('tbody');
                     if (!tbody) return;
@@ -732,7 +777,6 @@
                         chk.checked = e.target.checked;
                         const vbeln = chk.dataset.vbeln;
 
-                        // maintain selection set
                         const items = await ensureItemsLoadedForSO(vbeln);
                         if (e.target.checked) items.forEach(it => selectedItems.add(String(it.id)));
                         else {
@@ -743,7 +787,6 @@
                         }
                         updateSODot(vbeln);
 
-                        // buka/tutup T3 TANPA focus-mode + sinkron header
                         const soRow = chk.closest('.js-t2row');
                         const nest = soRow?.nextElementSibling;
                         const caret = soRow?.querySelector('.yz-caret');
@@ -765,11 +808,9 @@
                                     box.querySelectorAll('.check-item').forEach(ch => ch.checked =
                                         true);
                                 }
-                                // header check-all ikut true
                                 const hdr = box.querySelector('table .check-all-items');
                                 if (hdr) hdr.checked = true;
                             } else {
-                                // uncheck semua tampilan & header jadi false, lalu tutup
                                 if (box) {
                                     box.querySelectorAll('.check-item').forEach(ch => ch.checked =
                                         false);
@@ -786,7 +827,7 @@
                     return;
                 }
 
-                // --- single SO (T2) (tanpa mengubah focus-mode)
+                // --- single SO (T2)
                 if (e.target.classList.contains('check-so')) {
                     const vbeln = e.target.dataset.vbeln;
 
@@ -801,7 +842,6 @@
                     updateSODot(vbeln);
                     updateExportButton();
 
-                    // buka/tutup T3 tanpa fokus-mode + sinkron header check-all
                     const soRow = document.querySelector(
                         `.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
                     const nest = soRow?.nextElementSibling;
