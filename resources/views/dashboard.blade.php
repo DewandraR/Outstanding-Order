@@ -286,9 +286,8 @@
     {{-- HEADER WITH DROPDOWNS --}}
     <div class="d-flex flex-column flex-lg-row justify-content-lg-between align-items-lg-center mb-3 gap-3">
         <div>
-            <h2 class="mb-0 fw-bolder text-primary">Dashboard Overview PO ✨</h2>
-            <p class="text-muted mb-0"><i class="fas fa-chart-line me-1"></i> Monitor data Outstanding Value dan Overdue
-                secara *real-time*.</p>
+            <h2 class="mb-0 fw-bolder text-primary">Dashboard Overview PO</h2>
+            <p class="text-muted mb-0"><i class="fas fa-chart-line me-1"></i> Monitor data Outstanding Value dan Overdue</p>
         </div>
 
         <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">

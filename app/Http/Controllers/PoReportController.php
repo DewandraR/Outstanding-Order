@@ -21,79 +21,85 @@ class PoReportController extends Controller
         // 1) Terima & merge parameter terenkripsi (q) bila ada
         if ($request->has('q')) {
             try {
-                $data = Crypt::decrypt($request->query('q'));
+                $data = \Illuminate\Support\Facades\Crypt::decrypt($request->query('q'));
                 if (is_array($data)) {
                     $request->merge($data);
                 }
-            } catch (DecryptException $e) {
+            } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
                 return redirect()->route('dashboard')->withErrors('Link Report tidak valid.');
             }
         }
 
         // 2) Ambil filter utama
-        $werks   = $request->query('werks');
-        $auart   = $request->query('auart');
+        $werks   = $request->query('werks');                 // '2000' | '3000'
+        $auart   = $request->query('auart');                 // kode AUART
         $compact = $request->boolean('compact', true);
         $show    = filled($werks) && filled($auart);
 
-        // 3) Mapping AUART (tetap tampilkan tanpa "Replace" untuk pills)
+        // 3) Mapping AUART mentah (tanpa mem-filter 'Replace' dulu)
         $rawMapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
             ->get();
 
-        $filteredMapping = $rawMapping->reject(function ($item) {
-            return Str::contains(strtolower($item->Deskription), 'replace');
-        });
+        // 3.a) Siapkan mapping untuk NAV PILLS (tanpa Replace) + label paksa "KMI Export/Local SMG|SBY"
+        $mappingForPills = $rawMapping
+            ->reject(function ($item) {
+                return \Illuminate\Support\Str::contains(strtolower((string)$item->Deskription), 'replace');
+            })
+            ->map(function ($row) {
+                $descLower = strtolower((string)$row->Deskription);
+                $isExport  = \Illuminate\Support\Str::contains($descLower, 'export') && !\Illuminate\Support\Str::contains($descLower, 'local');
+                $isLocal   = \Illuminate\Support\Str::contains($descLower, 'local');
+                $abbr      = $row->IV_WERKS === '3000' ? 'SMG' : ($row->IV_WERKS === '2000' ? 'SBY' : $row->IV_WERKS);
 
-        $mapping = $filteredMapping
+                // Tambahkan properti label untuk pills
+                $row->pill_label = $isExport
+                    ? "KMI Export {$abbr}"
+                    : ($isLocal ? "KMI Local {$abbr}" : ($row->Deskription ?: $row->IV_AUART));
+
+                return $row;
+            })
             ->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
-        $selectedDescription = '';
-        if ($werks && $auart) {
-            $selectedDescription = $rawMapping
-                ->where('IV_WERKS', $werks)->where('IV_AUART', $auart)
-                ->pluck('Deskription')->first() ?? '';
-        }
-
-        // 4) Auto-pilih default AUART jika hanya plant yang dikirim
+        // 4) Auto-pilih default AUART jika hanya plant yang dikirim (tanpa q)
         if ($request->filled('werks') && !$request->filled('auart') && !$request->has('q')) {
             $types = $rawMapping->where('IV_WERKS', $werks);
 
             $exportDefault = $types->first(function ($row) {
-                $d = strtolower((string) $row->Deskription);
+                $d = strtolower((string)$row->Deskription);
                 return str_contains($d, 'export') && !str_contains($d, 'local') && !str_contains($d, 'replace');
             });
 
             $replaceDefault = $types->first(function ($row) {
-                $d = strtolower((string) $row->Deskription);
+                $d = strtolower((string)$row->Deskription);
                 return str_contains($d, 'replace');
             });
 
             $default = $exportDefault
                 ?? $replaceDefault
                 ?? $types->first(function ($row) {
-                    $d = strtolower((string) $row->Deskription);
+                    $d = strtolower((string)$row->Deskription);
                     return str_contains($d, 'local');
                 })
                 ?? $types->first();
 
             if ($default) {
                 $payload = ['werks' => $werks, 'auart' => $default->IV_AUART, 'compact' => 1];
-                return redirect()->route('po.report', ['q' => Crypt::encrypt($payload)]);
+                return redirect()->route('po.report', ['q' => \Illuminate\Support\Facades\Crypt::encrypt($payload)]);
             }
         }
 
         // 5) LOGIKA PENGGABUNGAN Export + Replace
         $exportAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
-                && !Str::contains(strtolower($i->Deskription), 'local')
-                && !Str::contains(strtolower($i->Deskription), 'replace'))
+            ->filter(fn($i) => \Illuminate\Support\Str::contains(strtolower((string)$i->Deskription), 'export')
+                && !\Illuminate\Support\Str::contains(strtolower((string)$i->Deskription), 'local')
+                && !\Illuminate\Support\Str::contains(strtolower((string)$i->Deskription), 'replace'))
             ->pluck('IV_AUART')->unique()->toArray();
 
         $replaceAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'replace'))
+            ->filter(fn($i) => \Illuminate\Support\Str::contains(strtolower((string)$i->Deskription), 'replace'))
             ->pluck('IV_AUART')->unique()->toArray();
 
         $auartList = [$auart];
@@ -101,6 +107,21 @@ class PoReportController extends Controller
             $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
         }
         $auartList = array_unique(array_filter($auartList));
+
+        // 5.a) Tentukan label terpilih (untuk judul/header) TANPA mengandalkan Deskription untuk Export
+        $locationAbbr = $werks === '3000' ? 'SMG' : ($werks === '2000' ? 'SBY' : $werks);
+        $inExport     = in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes);
+        $descFromMap  = $rawMapping->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->pluck('Deskription')->first() ?? '';
+
+        if ($inExport) {
+            $selectedDescription = "KMI Export {$locationAbbr}";
+        } else {
+            if (stripos((string)$descFromMap, 'local') !== false) {
+                $selectedDescription = "KMI Local {$locationAbbr}";
+            } else {
+                $selectedDescription = $descFromMap ?: (string)$auart;
+            }
+        }
 
         // 6) Parser tanggal aman
         $safeEdatu = "COALESCE(
@@ -152,7 +173,6 @@ class PoReportController extends Controller
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
-                    // DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0)  AS TOTAL_OUTS_QTY'), // HILANGKAN INI
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0)  AS TOTAL_ALL_VALUE_IDR'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0)  AS TOTAL_ALL_VALUE_USD'),
                     DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_IDR),0) AS TOTAL_OVERDUE_VALUE_IDR'),
@@ -175,7 +195,7 @@ class PoReportController extends Controller
                 ->paginate(25)->withQueryString();
         }
 
-        // 8) Performance details (satu baris agregat, gabungan Export+Replace jika perlu)
+        // 8) Performance details (agregat; gabungan Export+Replace bila perlu)
         $performanceQueryBase = DB::table('maping as m')
             ->join('so_yppr079_t2 as t2', function ($join) {
                 $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
@@ -196,14 +216,8 @@ COALESCE(
     STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
 )";
 
-        $inExport = in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes);
-        $targetAuarts = $inExport ? array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)) : [$auart];
-
-        $descForRow = $rawMapping
-            ->where('IV_WERKS', $werks)
-            ->where('IV_AUART', $auart)
-            ->pluck('Deskription')
-            ->first();
+        $inExportPerf = in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes);
+        $targetAuarts = $inExportPerf ? array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)) : [$auart];
 
         $perf = (clone $performanceQueryBase)
             ->whereIn('m.IV_AUART', $targetAuarts)
@@ -222,7 +236,7 @@ COALESCE(
         $performanceData = collect();
         if ($perf && (int) ($perf->total_so ?? 0) > 0) {
             $performanceData->push((object) [
-                'Deskription'      => $inExport ? 'KMI Export' : ($descForRow ?: $auart),
+                'Deskription'      => $inExportPerf ? "KMI Export {$locationAbbr}" : ($descFromMap ?: $auart),
                 'IV_WERKS'         => $werks,
                 'IV_AUART'         => $auart, // tetap kirim AUART yang dipilih user (untuk API detail)
                 'total_so'         => (int) $perf->total_so,
@@ -238,7 +252,7 @@ COALESCE(
 
         // 9) Small Quantity (≤5) by Customer — untuk grafik di PO Report
         $smallQtyByCustomer = collect();
-        $totalSmallQtyOutstanding = 0; // <-- Inisialisasi: Sekarang akan menyimpan total ITEM COUNT
+        $totalSmallQtyOutstanding = 0;
         if ($show) {
             $smallQtyBase = DB::table('so_yppr079_t2 as t2')
                 ->join(
@@ -251,9 +265,7 @@ COALESCE(
                 ->whereIn('t2.IV_AUART_PARAM', $auartList)
                 ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
                 ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) <= 5')
-                ->where('t1.QTY_GI', '>', 0); // <<< PENAMBAHAN FILTER t1.QTY_GI > 0
-
-            // Hapus query SUM(QTY_BALANCE2) sebelumnya.
+                ->where('t1.QTY_GI', '>', 0); // hanya yang sudah pernah shipped
 
             $smallQtyByCustomer = (clone $smallQtyBase)
                 ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(t1.POSNR) AS item_count'))
@@ -261,24 +273,24 @@ COALESCE(
                 ->orderBy('t2.NAME1')
                 ->get();
 
-            // Hitung Total Jumlah Item (COUNT(t1.POSNR)) dari keseluruhan data
-            $totalSmallQtyOutstanding = (clone $smallQtyBase)
-                ->count('t1.POSNR');
+            $totalSmallQtyOutstanding = (clone $smallQtyBase)->count('t1.POSNR');
         }
 
         // 10) Kirim ke view
         return view('po_report.po_report', [
-            'mapping'  => $rawMapping->groupBy('IV_WERKS')->map(fn($g) => $g->unique('IV_AUART')->values()),
+            // mapping untuk nav pills (tanpa Replace) + sudah ada properti ->pill_label
+            'mapping'  => $mappingForPills,
             'selected' => ['werks' => $werks, 'auart' => $auart],
-            'selectedDescription' => $selectedDescription,
+            'selectedDescription' => $selectedDescription, // <- untuk judul/header aktif
             'rows'  => $rows,
             'compact'   => $compact,
             'show'  => $show,
             'performanceData' => $performanceData,
             'smallQtyByCustomer' => $smallQtyByCustomer,
-            'totalSmallQtyOutstanding' => $totalSmallQtyOutstanding, // <--- PENTING: Kirim variabel ke view
+            'totalSmallQtyOutstanding' => $totalSmallQtyOutstanding,
         ]);
     }
+
 
 
     /** Export item terpilih ke PDF/Excel */

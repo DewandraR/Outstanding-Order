@@ -107,7 +107,7 @@
                     <div class="kpi-icon bg-primary-subtle text-primary"><i class="fas fa-coins"></i></div>
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.inventory_whfg_value">
-                            <span>Inventory&nbsp;WHFG</span>
+                            <span>WHFG&nbsp;Value</span>
                         </div>
                         <h5 class="mb-0 fw-bolder">{{ $fmtUsd($kpi['whfg_total_value_usd'] ?? null) }}</h5>
                     </div>
@@ -120,7 +120,7 @@
                     <div class="kpi-icon bg-info-subtle text-info"><i class="fas fa-boxes-stacked"></i></div>
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.whfg_stock_qty">
-                            <span>WHFG&nbsp;Stock</span>
+                            <span>Stock&nbsp;WHFG</span>
                         </div>
                         <h3 class="mb-0 fw-bolder">{{ $fmtNum($kpi['whfg_qty'] ?? 0) }}</h3>
                     </div>
@@ -133,7 +133,7 @@
                     <div class="kpi-icon bg-warning-subtle text-warning"><i class="fas fa-sack-dollar"></i></div>
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.inventory_fg_value">
-                            <span>Inventory&nbsp;FG</span>
+                            <span>Packing&nbsp;Value</span>
                         </div>
                         <h5 class="mb-0 fw-bolder">{{ $fmtUsd($kpi['fg_total_value_usd'] ?? null) }}</h5>
                     </div>
@@ -146,7 +146,7 @@
                     <div class="kpi-icon bg-success-subtle text-success"><i class="fas fa-cubes"></i></div>
                     <div class="ms-3">
                         <div class="mb-1 text-muted yz-kpi-title" data-help-key="stock.kpi.packing_stock_qty">
-                            <span>Packing&nbsp;Stock</span>
+                            <span>Stock&nbsp;Packing</span>
                         </div>
                         <h3 class="mb-0 fw-bolder">{{ $fmtNum($kpi['fg_qty'] ?? 0) }}</h3>
                     </div>

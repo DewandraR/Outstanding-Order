@@ -10,7 +10,7 @@
     {{-- CSRF Token untuk form/ajax --}}
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    {{-- Fonts & CSS vendor (samakan dengan struktur asset milikmu) --}}
+    {{-- Fonts & CSS vendor --}}
     <link rel="stylesheet" href="{{ asset('vendor/fonts/poppins/poppins.css') }}">
     <link rel="stylesheet" href="{{ asset('vendor/bootstrap/css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ asset('vendor/fontawesome/css/all.min.css') }}">
@@ -49,59 +49,99 @@
                 // Status route aktif
                 $isDashboard = request()->routeIs('dashboard'); // PO Dashboard (visual)
                 $isSoDashboard = request()->routeIs('so.dashboard'); // SO Dashboard (visual)
-                $isPoReportRoute = request()->routeIs('po.report'); // PO Report (mode tabel)
-                $isSoRoute = request()->routeIs('so.index'); // Outstanding SO report (lama)
-                $isStockRoute = request()->routeIs('stock.index'); // Stock report
                 $isStockDash = request()->routeIs('stock.dashboard'); // Stock dashboard
-
-                $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-
-                // Plant aktif untuk collapsible menu
-                $activeReportPlant = $isPoReportRoute && request()->filled('werks');
             @endphp
 
-            <ul class="sidebar-nav">
-                {{-- Pencarian --}}
-                <li class="nav-item px-2 mt-2 mb-2">
-                    <form action="{{ route('dashboard.search') }}" method="POST" class="sidebar-search-form">
-                        @csrf
-                        <div class="input-group">
-                            <input type="text" class="form-control" name="term" placeholder="Search PO / SO No..."
-                                required value="{{ request('term') ?? ($decryptedQ['search_term'] ?? '') }}"
-                                aria-label="Search SO or PO Number">
-                            <button class="btn btn-search" type="submit">
-                                <i class="fas fa-search"></i>
-                            </button>
-                        </div>
-                    </form>
-                </li>
+            {{-- NAV & SEARCH hanya untuk user login --}}
+            @auth
+                <ul class="sidebar-nav">
+                    {{-- Pencarian --}}
+                    <li class="nav-item px-2 mt-2 mb-2">
+                        <form action="{{ route('dashboard.search') }}" method="POST" class="sidebar-search-form">
+                            @csrf
+                            <div class="input-group">
+                                <input type="text" class="form-control" name="term" placeholder="Search PO / SO No..."
+                                    required value="{{ request('term') ?? ($decryptedQ['search_term'] ?? '') }}"
+                                    aria-label="Search SO or PO Number">
+                                <button class="btn btn-search" type="submit">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
+                        </form>
+                    </li>
 
-                {{-- Dashboard View --}}
-                <li class="nav-heading">Dashboard View</li>
+                    {{-- Dashboard View --}}
+                    <li class="nav-heading">Dashboard View</li>
 
-                {{-- PO Dashboard (visual) --}}
-                <li class="nav-item">
-                    <a class="nav-link {{ $isDashboard ? 'active' : '' }}" href="{{ route('dashboard') }}">
-                        <i class="fas fa-chart-line nav-icon"></i> Outstanding PO
-                    </a>
-                </li>
+                    {{-- PO Dashboard (visual) --}}
+                    <li class="nav-item">
+                        <a class="nav-link {{ $isDashboard ? 'active' : '' }}" href="{{ route('dashboard') }}">
+                            <i class="fas fa-chart-line nav-icon"></i> Outstanding PO
+                        </a>
+                    </li>
 
-                {{-- SO Dashboard (visual) --}}
-                <li class="nav-item">
-                    <a class="nav-link {{ $isSoDashboard ? 'active' : '' }}" href="{{ route('so.dashboard') }}">
-                        <i class="fas fa-chart-pie nav-icon"></i> Outstanding SO
-                    </a>
-                </li>
+                    {{-- SO Dashboard (visual) --}}
+                    <li class="nav-item">
+                        <a class="nav-link {{ $isSoDashboard ? 'active' : '' }}" href="{{ route('so.dashboard') }}">
+                            <i class="fas fa-chart-pie nav-icon"></i> Outstanding SO
+                        </a>
+                    </li>
 
-                {{-- Stock Dashboard --}}
-                <li class="nav-item">
-                    <a class="nav-link {{ $isStockDash ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">
-                        <i class="fas fa-warehouse nav-icon"></i> Stock Dashboard
-                    </a>
-                </li>
+                    {{-- Stock Dashboard --}}
+                    <li class="nav-item">
+                        <a class="nav-link {{ $isStockDash ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">
+                            <i class="fas fa-warehouse nav-icon"></i> Stock Dashboard
+                        </a>
+                    </li>
+                </ul>
+            @endauth
 
+            {{-- AUTH AREA (bawah) --}}
+            <div class="user-profile mt-auto pt-2 px-2">
+                {{-- Tamu: tombol Sign In (+optional Register jika ada) --}}
+                @guest
+                    <div class="p-3">
+                        <a class="btn btn-success w-100 mb-2" href="{{ route('login') }}">
+                            <i class="fas fa-sign-in-alt me-2"></i> Sign In
+                        </a>
+                        @if (Route::has('register'))
+                            <a class="btn btn-outline-light w-100" href="{{ route('register') }}">
+                                <i class="fas fa-user-plus me-2"></i> Register
+                            </a>
+                        @endif
+                    </div>
+                @endguest
 
-            </ul>
+                {{-- User login: dropdown + logout --}}
+                @auth
+                    <div class="dropdown dropup w-100">
+                        <button class="btn w-100 d-flex align-items-center justify-content-between" type="button"
+                            id="userMenuButton" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="d-flex align-items-center">
+                                <i class="fas fa-user-circle fa-lg me-2"></i>
+                                <span class="user-info text-start">
+                                    <span class="user-name d-block">{{ Auth::user()->name }}</span>
+                                    <span class="user-status d-block">Online</span>
+                                </span>
+                            </span>
+                            <i class="fas fa-chevron-up ms-2"></i>
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="userMenuButton">
+                            {{-- contoh jika kelak ada halaman profile --}}
+                            {{-- <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="fas fa-user-edit"></i> Profile</a></li>
+                            <li><hr class="dropdown-divider"></li> --}}
+                            <li>
+                                <form method="POST" action="{{ route('logout') }}">
+                                    @csrf
+                                    <button type="submit" class="dropdown-item">
+                                        <i class="fas fa-sign-out-alt"></i> Sign Out
+                                    </button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
+                @endauth
+            </div>
         </div> {{-- /flex-grow wrapper --}}
     </aside>
 
