@@ -9,53 +9,75 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Exports\PoItemsExport;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Str;
 
 class PoReportController extends Controller
 {
     /** Halaman report (tabel) */
+    // FILE: app/Http/Controllers/PoReportController.php
+
     public function index(Request $request)
     {
-        // terima q terenkripsi
+        // 1) Terima & merge parameter terenkripsi (q) bila ada
         if ($request->has('q')) {
             try {
                 $data = Crypt::decrypt($request->query('q'));
-                if (is_array($data)) $request->merge($data);
+                if (is_array($data)) {
+                    $request->merge($data);
+                }
             } catch (DecryptException $e) {
                 return redirect()->route('dashboard')->withErrors('Link Report tidak valid.');
             }
         }
 
+        // 2) Ambil filter utama
         $werks   = $request->query('werks');
         $auart   = $request->query('auart');
         $compact = $request->boolean('compact', true);
         $show    = filled($werks) && filled($auart);
 
-        // mapping untuk pills
-        $mapping = DB::table('maping')
+        // 3) Mapping AUART (tetap tampilkan tanpa "Replace" untuk pills)
+        $rawMapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
-            ->get()
+            ->get();
+
+        $filteredMapping = $rawMapping->reject(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        });
+
+        $mapping = $filteredMapping
             ->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
         $selectedDescription = '';
         if ($werks && $auart) {
-            $selectedDescription = DB::table('maping')
+            $selectedDescription = $rawMapping
                 ->where('IV_WERKS', $werks)->where('IV_AUART', $auart)
-                ->value('Deskription') ?? '';
+                ->pluck('Deskription')->first() ?? '';
         }
 
-        // auto pilih default auart jika hanya plant
+        // 4) Auto-pilih default AUART jika hanya plant yang dikirim
         if ($request->filled('werks') && !$request->filled('auart') && !$request->has('q')) {
-            $types = collect($mapping[$werks] ?? []);
-            $default = $types->first(function ($row) {
-                $d = strtolower((string)$row->Deskription);
-                return str_contains($d, 'kmi') && str_contains($d, 'export')
-                    && !str_contains($d, 'replace') && !str_contains($d, 'local');
-            }) ?? $types->first(function ($row) {
-                $d = strtolower((string)$row->Deskription);
-                return str_contains($d, 'export') && !str_contains($d, 'replace') && !str_contains($d, 'local');
-            }) ?? $types->first();
+            $types = $rawMapping->where('IV_WERKS', $werks);
+
+            $exportDefault = $types->first(function ($row) {
+                $d = strtolower((string) $row->Deskription);
+                return str_contains($d, 'export') && !str_contains($d, 'local') && !str_contains($d, 'replace');
+            });
+
+            $replaceDefault = $types->first(function ($row) {
+                $d = strtolower((string) $row->Deskription);
+                return str_contains($d, 'replace');
+            });
+
+            $default = $exportDefault
+                ?? $replaceDefault
+                ?? $types->first(function ($row) {
+                    $d = strtolower((string) $row->Deskription);
+                    return str_contains($d, 'local');
+                })
+                ?? $types->first();
 
             if ($default) {
                 $payload = ['werks' => $werks, 'auart' => $default->IV_AUART, 'compact' => 1];
@@ -63,65 +85,88 @@ class PoReportController extends Controller
             }
         }
 
-        $rows = collect();
-        if ($show) {
-            // Parser tanggal aman
-            $safeEdatu = "COALESCE(
+        // 5) LOGIKA PENGGABUNGAN Export + Replace
+        $exportAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
+                && !Str::contains(strtolower($i->Deskription), 'local')
+                && !Str::contains(strtolower($i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $replaceAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $auartList = [$auart];
+        if (in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes)) {
+            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        }
+        $auartList = array_unique(array_filter($auartList));
+
+        // 6) Parser tanggal aman
+        $safeEdatu = "COALESCE(
         STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
         STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
     )";
-            $safeEdatuInner = "COALESCE(
+        $safeEdatuInner = "COALESCE(
         STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
         STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
     )";
 
-            // A) Agregat SEMUA outstanding per customer
+        // 7) Overview Customer (tabel utama)
+        $rows = collect();
+        if ($show) {
+            // A) Agregat semua outstanding per customer (pisah USD & IDR)
             $allAggSubquery = DB::table('so_yppr079_t1 as t1a')
                 ->join('so_yppr079_t2 as t2a', 't2a.VBELN', '=', 't1a.VBELN')
                 ->select(
                     't2a.KUNNR',
                     DB::raw('CAST(SUM(CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
-                    DB::raw('CAST(SUM(CAST(t1a.TOTPR        AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE')
+                    DB::raw("CAST(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE_IDR"),
+                    DB::raw("CAST(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE_USD")
                 )
                 ->where('t1a.IV_WERKS_PARAM', $werks)
-                ->where('t1a.IV_AUART_PARAM', $auart)
+                ->whereIn('t1a.IV_AUART_PARAM', $auartList)
                 ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
                 ->groupBy('t2a.KUNNR');
 
-            // B) Agregat OVERDUE value per customer
+            // B) Agregat overdue value per customer (pisah USD & IDR)
             $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
                 ->join('so_yppr079_t1 as t1', function ($j) {
                     $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
                 })
                 ->select(
                     't2_inner.KUNNR',
-                    DB::raw('CAST(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE')
+                    DB::raw("CAST(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                    DB::raw("CAST(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE_USD")
                 )
                 ->where('t2_inner.IV_WERKS_PARAM', $werks)
-                ->where('t2_inner.IV_AUART_PARAM', $auart)
+                ->whereIn('t2_inner.IV_AUART_PARAM', $auartList)
                 ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
                 ->whereRaw("{$safeEdatuInner} < CURDATE()")
                 ->groupBy('t2_inner.KUNNR');
 
-            // Overview Customer (bisa paginate jika mau)
+            // Kueri utama
             $rows = DB::table('so_yppr079_t2 as t2')
                 ->leftJoinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
                 ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
-                    DB::raw('MAX(t2.WAERK) AS WAERK'),
-                    DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0)      AS TOTAL_OUTS_QTY'),
-                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE),0)     AS TOTAL_ALL_VALUE'),
-                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE),0) AS TOTAL_OVERDUE_VALUE'),
+                    // DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0)  AS TOTAL_OUTS_QTY'), // HILANGKAN INI
+                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0)  AS TOTAL_ALL_VALUE_IDR'),
+                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0)  AS TOTAL_ALL_VALUE_USD'),
+                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_IDR),0) AS TOTAL_OVERDUE_VALUE_IDR'),
+                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_USD),0) AS TOTAL_OVERDUE_VALUE_USD'),
+                    DB::raw("COUNT(DISTINCT t2.VBELN) AS SO_TOTAL_COUNT"),
                     DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
                 )
                 ->where('t2.IV_WERKS_PARAM', $werks)
-                ->where('t2.IV_AUART_PARAM', $auart)
-                ->whereExists(function ($q) {
+                ->whereIn('t2.IV_AUART_PARAM', $auartList)
+                ->whereExists(function ($q) use ($auartList) {
                     $q->select(DB::raw(1))
                         ->from('so_yppr079_t1 as t1_check')
                         ->whereColumn('t1_check.VBELN', 't2.VBELN')
+                        ->whereIn('t1_check.IV_AUART_PARAM', $auartList)
                         ->where('t1_check.QTY_BALANCE2', '!=', 0);
                 })
                 ->whereNotNull('t2.NAME1')->where('t2.NAME1', '!=', '')
@@ -130,22 +175,118 @@ class PoReportController extends Controller
                 ->paginate(25)->withQueryString();
         }
 
+        // 8) Performance details (satu baris agregat, gabungan Export+Replace jika perlu)
+        $performanceQueryBase = DB::table('maping as m')
+            ->join('so_yppr079_t2 as t2', function ($join) {
+                $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
+                    ->on('m.IV_AUART', '=', 't2.IV_AUART_PARAM');
+            })
+            ->leftJoin(
+                'so_yppr079_t1 as t1',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
+            ->where('m.IV_WERKS', $werks)
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0'); // hanya outstanding item
+
+        $safeEdatuPerf = "
+COALESCE(
+    STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+    STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+)";
+
+        $inExport = in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes);
+        $targetAuarts = $inExport ? array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)) : [$auart];
+
+        $descForRow = $rawMapping
+            ->where('IV_WERKS', $werks)
+            ->where('IV_AUART', $auart)
+            ->pluck('Deskription')
+            ->first();
+
+        $perf = (clone $performanceQueryBase)
+            ->whereIn('m.IV_AUART', $targetAuarts)
+            ->select(
+                DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
+                DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
+                DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
+                DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
+            )
+            ->first();
+
+        $performanceData = collect();
+        if ($perf && (int) ($perf->total_so ?? 0) > 0) {
+            $performanceData->push((object) [
+                'Deskription'      => $inExport ? 'KMI Export' : ($descForRow ?: $auart),
+                'IV_WERKS'         => $werks,
+                'IV_AUART'         => $auart, // tetap kirim AUART yang dipilih user (untuk API detail)
+                'total_so'         => (int) $perf->total_so,
+                'total_value_idr'  => (float) $perf->total_value_idr,
+                'total_value_usd'  => (float) $perf->total_value_usd,
+                'overdue_so_count' => (int) $perf->overdue_so_count,
+                'overdue_1_30'     => (int) $perf->overdue_1_30,
+                'overdue_31_60'    => (int) $perf->overdue_31_60,
+                'overdue_61_90'    => (int) $perf->overdue_61_90,
+                'overdue_over_90'  => (int) $perf->overdue_over_90,
+            ]);
+        }
+
+        // 9) Small Quantity (≤5) by Customer — untuk grafik di PO Report
+        $smallQtyByCustomer = collect();
+        $totalSmallQtyOutstanding = 0; // <-- Inisialisasi: Sekarang akan menyimpan total ITEM COUNT
+        if ($show) {
+            $smallQtyBase = DB::table('so_yppr079_t2 as t2')
+                ->join(
+                    'so_yppr079_t1 as t1',
+                    DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                    '=',
+                    DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+                )
+                ->where('t2.IV_WERKS_PARAM', $werks)
+                ->whereIn('t2.IV_AUART_PARAM', $auartList)
+                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
+                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) <= 5')
+                ->where('t1.QTY_GI', '>', 0); // <<< PENAMBAHAN FILTER t1.QTY_GI > 0
+
+            // Hapus query SUM(QTY_BALANCE2) sebelumnya.
+
+            $smallQtyByCustomer = (clone $smallQtyBase)
+                ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(t1.POSNR) AS item_count'))
+                ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
+                ->orderBy('t2.NAME1')
+                ->get();
+
+            // Hitung Total Jumlah Item (COUNT(t1.POSNR)) dari keseluruhan data
+            $totalSmallQtyOutstanding = (clone $smallQtyBase)
+                ->count('t1.POSNR');
+        }
+
+        // 10) Kirim ke view
         return view('po_report.po_report', [
-            'mapping'              => $mapping,
-            'selected'             => ['werks' => $werks, 'auart' => $auart],
-            'selectedDescription'  => $selectedDescription,
-            'rows'                 => $rows,
-            'compact'              => $compact,
-            'show'                 => $show,
+            'mapping'  => $rawMapping->groupBy('IV_WERKS')->map(fn($g) => $g->unique('IV_AUART')->values()),
+            'selected' => ['werks' => $werks, 'auart' => $auart],
+            'selectedDescription' => $selectedDescription,
+            'rows'  => $rows,
+            'compact'   => $compact,
+            'show'  => $show,
+            'performanceData' => $performanceData,
+            'smallQtyByCustomer' => $smallQtyByCustomer,
+            'totalSmallQtyOutstanding' => $totalSmallQtyOutstanding, // <--- PENTING: Kirim variabel ke view
         ]);
     }
+
 
     /** Export item terpilih ke PDF/Excel */
     public function exportData(Request $request)
     {
         // Validasi dasar (tanpa memaksa integer di sini; kita sanitasi manual)
         $request->validate([
-            'item_ids'    => 'required|array|min:1',
+            'item_ids'       => 'required|array|min:1',
             'export_type' => 'required|string|in:pdf,excel',
             'werks'       => 'required|string',
             'auart'       => 'required|string',
@@ -161,8 +302,8 @@ class PoReportController extends Controller
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        $werks      = $request->input('werks');
-        $auart      = $request->input('auart');
+        $werks          = $request->input('werks');
+        $auart          = $request->input('auart');
         $exportType = $request->input('export_type');
 
         // Ambil item by id + info header (PO, SO, Customer)
@@ -180,7 +321,7 @@ class PoReportController extends Controller
                 't1.QTY_GI',
                 't1.QTY_BALANCE2',
                 't1.KALAB',     // WHFG
-                't1.KALAB2',    // FG
+                't1.KALAB2',     // FG
                 't1.NETPR',
                 't1.WAERK'
             )
@@ -192,9 +333,9 @@ class PoReportController extends Controller
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName = $locationMap[$werks] ?? $werks;
-        $auartDesc    = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
+        $locationMap     = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+        $locationName     = $locationMap[$werks] ?? $werks;
+        $auartDesc     = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
         if ($exportType === 'excel') {
             $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".xlsx";
@@ -204,15 +345,124 @@ class PoReportController extends Controller
         // PDF
         $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".pdf";
         $pdf = Pdf::loadView('po_report.po_pdf_template', [
-            'items'            => $items,
-            'locationName'     => $locationName,
-            'auartDescription' => $auartDesc,
-            'werks'            => $werks,
-            'auart'            => $auart,
-            'today'            => now(),
+            'items'              => $items,
+            'locationName'          => $locationName,
+            'auartDescription'      => $auartDesc,
+            'werks'              => $werks,
+            'auart'              => $auart,
+            'today'              => now(),
         ])
             ->setPaper('a4', 'landscape');
 
         return $pdf->stream($fileName);
+    }
+
+    // app/Http/Controllers/PoReportController.php
+
+    /**
+     * Mendapatkan data performance (KPI) berdasarkan KUNNR.
+     * Digunakan untuk meng-update tabel performa saat customer di klik.
+     */
+    public function apiPerformanceByCustomer(Request $request)
+    {
+        $request->validate([
+            'werks' => 'required|string',
+            'auart' => 'required|string',
+            'kunnr' => 'required|string', // Filter baru: Customer Number
+        ]);
+
+        $werks = $request->query('werks');
+        $auart = $request->query('auart');
+        $kunnr = $request->query('kunnr');
+
+        // Pastikan KUNNR aman dari karakter non-digit jika diperlukan
+        // $kunnr = preg_replace('/\D+/', '', (string)$kunnr);
+
+        // LOGIKA PENGGABUNGAN Export + Replace (sama seperti di index)
+        $rawMapping = DB::table('maping')->get();
+        $exportAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
+                && !Str::contains(strtolower($i->Deskription), 'local')
+                && !Str::contains(strtolower($i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $replaceAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $inExport = in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes);
+        $targetAuarts = $inExport ? array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)) : [$auart];
+
+        if (empty($targetAuarts) || !in_array($auart, $targetAuarts)) {
+            $targetAuarts = [$auart];
+        }
+        // END LOGIKA PENGGABUNGAN
+
+        $safeEdatuPerf = "
+        COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+
+        // Ambil Deskription untuk label di frontend
+        $descForRow = $rawMapping
+            ->where('IV_WERKS', $werks)
+            ->where('IV_AUART', $auart)
+            ->pluck('Deskription')
+            ->first();
+
+        // Kueri Performance yang difilter KUNNR
+        $perfQuery = DB::table('so_yppr079_t2 as t2')
+            ->join(
+                'so_yppr079_t1 as t1',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
+            ->where('t2.IV_WERKS_PARAM', $werks)
+            ->whereIn('t2.IV_AUART_PARAM', $targetAuarts)
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // hanya outstanding item
+            ->where('t2.KUNNR', $kunnr) // FILTER UTAMA KUNNR
+            ->select(
+                DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
+                DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
+                DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
+                DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
+            )
+            ->first();
+
+        $performanceData = collect();
+        if ($perfQuery && (int) ($perfQuery->total_so ?? 0) > 0) {
+            $performanceData->push((object) [
+                // Nama Deskripsi tetap diambil dari AUART yang sedang difilter (misalnya 'KMI Export')
+                'Deskription'      => $inExport ? 'KMI Export' : ($descForRow ?: $auart),
+                'IV_WERKS'         => $werks,
+                'IV_AUART'         => $auart,
+                'total_so'         => (int) $perfQuery->total_so,
+                'total_value_idr'  => (float) $perfQuery->total_value_idr,
+                'total_value_usd'  => (float) $perfQuery->total_value_usd,
+                'overdue_so_count' => (int) $perfQuery->overdue_so_count,
+                'overdue_1_30'     => (int) $perfQuery->overdue_1_30,
+                'overdue_31_60'    => (int) $perfQuery->overdue_31_60,
+                'overdue_61_90'    => (int) $perfQuery->overdue_61_90,
+                'overdue_over_90'  => (int) $perfQuery->overdue_over_90,
+            ]);
+        }
+
+        // Nama customer untuk sub-judul
+        $customerName = DB::table('so_yppr079_t2')
+            ->where('KUNNR', $kunnr)->where('IV_WERKS_PARAM', $werks)
+            ->value('NAME1') ?? $kunnr;
+
+        return response()->json([
+            'ok' => true,
+            'data' => $performanceData,
+            'customer_name' => $customerName,
+            'is_export_context' => $inExport,
+        ]);
     }
 }

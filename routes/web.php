@@ -81,6 +81,14 @@ Route::get('/api/so/status-details', [SODashboardController::class, 'apiSoStatus
 // --------- PO Report (mode tabel) ---------
 Route::get('/po-report', [PoReportController::class, 'index'])->name('po.report');
 Route::post('/po/export-data', [PoReportController::class, 'exportData'])->name('po.export');
+// Detail data untuk overlay Small Qty (≤5)
+Route::get('/dashboard/api/small-qty-details', [DashboardController::class, 'apiSmallQtyDetails'])
+	->name('dashboard.api.smallQtyDetails');
+Route::get('api/po/performance-by-customer', [PoReportController::class, 'apiPerformanceByCustomer'])->name('po.api.performanceByCustomer');
+
+// Export PDF Small Qty
+Route::post('/dashboard/export/small-qty-pdf', [DashboardController::class, 'exportSmallQtyPdf'])
+	->name('dashboard.export.smallQtyPdf');
 
 // --------- Outstanding SO (report lama) ---------
 Route::get('/outstanding-so', [SalesOrderController::class, 'index'])->name('so.index');

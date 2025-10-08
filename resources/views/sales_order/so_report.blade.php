@@ -61,7 +61,7 @@
                                 $isActive = $selectedAuart === $auartCode;
                                 // Menggunakan URL terenkripsi yang sama dengan yang dikirim dari Dashboard
                                 $filterUrl = route('so.index', [
-                                    'q' => \Crypt::encrypt(['werks' => $selectedWerks, 'auart' => $auartCode]),
+                                    'q' => Crypt::encrypt(['werks' => $selectedWerks, 'auart' => $auartCode]),
                                 ]);
                             @endphp
                             <li class="nav-item mb-2 me-2">

@@ -121,13 +121,14 @@
             @forelse($rows as $i => $r)
                 <tr class="item-row">
                     <td class="text-center">{{ $i + 1 }}</td>
-                    <td class="text-center">{{ $r->PO ?? ($r->BSTNK ?? '-') }}</td>
-                    <td class="text-center">{{ $r->SO ?? ($r->VBELN ?? '-') }}</td>
+                    <td class="text-center">{{ $r->PO }}</td>
+                    <td class="text-center">{{ $r->SO }}</td>
                     <td class="text-center">{{ (int) $r->POSNR }}</td>
                     <td class="text-left">{{ $r->MAKTX }}</td>
                     <td class="text-right">{{ $fmtInt($r->KWMENG ?? 0) }}</td>
                     <td class="text-right">{{ $fmtInt($r->QTY_GI ?? 0) }}</td>
-                    <td class="text-right"><strong>{{ $fmtInt($r->QTY_BALANCE2 ?? 0) }}</strong></td>
+                    <td class="text-right"><strong>{{ $fmtInt($r->QTY_BALANCE2 ?? 0) }}</strong>
+                    </td>
                 </tr>
             @empty
                 <tr>

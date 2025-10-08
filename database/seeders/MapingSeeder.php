@@ -27,7 +27,7 @@ class MapingSeeder extends Seeder
 
             // Data untuk Semarang
             ['IV_WERKS' => '3000', 'IV_AUART' => 'ZOR2', 'Deskription' => 'KMI Export SMG'],
-            ['IV_WERKS' => '3000', 'IV_AUART' => 'ZOR4 ', 'Deskription' => 'KMI Local SMG'],
+            ['IV_WERKS' => '3000', 'IV_AUART' => 'ZOR4', 'Deskription' => 'KMI Local SMG'],
             ['IV_WERKS' => '3000', 'IV_AUART' => 'ZRP2', 'Deskription' => 'KMI Replace SMG'],
         ]);
     }

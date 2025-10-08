@@ -31,21 +31,28 @@ class DashboardController extends Controller
         }
 
         // 2) Filter khusus PO dashboard
-        $location = $request->query('location');      // '2000' | '3000' | null
-        $type     = $request->query('type');          // 'lokal' | 'export' | null
+        $location      = $request->query('location');      // '2000' | '3000' | null
+        $type          = $request->query('type');          // 'lokal' | 'export' | null
 
         // 3) Mapping untuk sidebar/label
-        $mapping = DB::table('maping')
+        $rawMapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
-            ->get()
+            ->get();
+
+        // MODIFIKASI: Filter 'Replace' dari mapping sebelum grouping (untuk dropdown)
+        $filteredMapping = $rawMapping->reject(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        });
+
+        $mapping = $filteredMapping
             ->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
         // 4) Variabel dashboard
-        $chartData            = [];
-        $selectedLocationName = 'All Locations';
-        $selectedTypeName     = 'All Types';
+        $chartData                     = [];
+        $selectedLocationName         = 'All Locations';
+        $selectedTypeName              = 'All Types';
 
         // ===== PO DASHBOARD =====
         $today = now()->startOfDay();
@@ -61,8 +68,27 @@ class DashboardController extends Controller
 
         // Basis filter sama seperti report (type & lokasi): berbasis T2
         $baseQuery = DB::table('so_yppr079_t2 as t2');
+
+        // =========================================================================
+        // LOGIKA PENGGABUNGAN DATA (EXPORT + REPLACE)
+        // =========================================================================
+
+        // Dapatkan semua AUART 'Replace' dari DB
+        $replaceAuartCodes = $rawMapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        // Dapatkan semua AUART 'Export' (non-Local, non-Replace)
+        $exportAuartCodes = $rawMapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
         if ($type === 'lokal') {
             $selectedTypeName = 'Lokal';
+            // Logic LOKAL tidak berubah: tetap hanya mengambil AUART Lokal
             $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
                 $query->select('IV_AUART', 'IV_WERKS')->from('maping')->where('Deskription', 'like', '%Local%')
                     ->union(
@@ -74,18 +100,30 @@ class DashboardController extends Controller
             });
         } elseif ($type === 'export') {
             $selectedTypeName = 'Export';
-            $baseQuery->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
-                $query->select('IV_AUART', 'IV_WERKS')
-                    ->from('maping')
-                    ->where('Deskription', 'like', '%Export%')
-                    ->where('Deskription', 'not like', '%Replace%')
-                    ->where('Deskription', 'not like', '%Local%');
-            });
+            // Logic EXPORT: gabungkan AUART Export asli dan AUART Replace
+            $auartToQuery = array_merge($exportAuartCodes, $replaceAuartCodes);
+
+            $baseQuery->whereIn('t2.IV_AUART_PARAM', $auartToQuery);
         }
         $baseQuery->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
 
-        // KPI (pecah currency dari t2.WAERK, nilai dari T1.TOTPR)
-        $kpiTotalValue = (clone $baseQuery)
+        // =========================================================================
+        // Perhitungan KPI Awal (Outstanding/Overdue Value & Qty)
+        // =========================================================================
+
+        // 1. Query untuk JUMLAH PO/SO (QTY PO Count) - Mencakup semua baris T2
+        $kpiQtyQuery = (clone $baseQuery)
+            ->selectRaw("
+                t2.IV_WERKS_PARAM as werks,
+                t2.WAERK as currency,
+                COUNT(DISTINCT t2.VBELN) as total_qty, 
+                COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_qty
+            ")
+            ->groupBy('t2.IV_WERKS_PARAM', 't2.WAERK')
+            ->get();
+
+        // 2. Query untuk NILAI (Outstanding Value) - HANYA PO yang memiliki Outstanding Qty
+        $kpiValueQuery = (clone $baseQuery)
             ->leftJoin(
                 'so_yppr079_t1 as t1',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
@@ -93,100 +131,148 @@ class DashboardController extends Controller
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
             )
             ->selectRaw("
-                CAST(SUM(CASE WHEN t2.WAERK = 'USD' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS usd,
-                CAST(SUM(CASE WHEN t2.WAERK = 'IDR' THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) AS idr
+                t2.IV_WERKS_PARAM as werks,
+                t2.WAERK as currency,
+                CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) as total_value,
+                CAST(SUM(CASE WHEN {$safeEdatu} < CURDATE() THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) as overdue_value
             ")
-            ->first();
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Filter Item Outstanding
+            ->groupBy('t2.IV_WERKS_PARAM', 't2.WAERK')
+            ->get();
 
-        $chartData['kpi'] = [
-            'total_outstanding_value_usd' => (float) ($kpiTotalValue->usd ?? 0),
-            'total_outstanding_value_idr' => (float) ($kpiTotalValue->idr ?? 0),
 
-            'total_outstanding_so' => (clone $baseQuery)->distinct()->count('t2.VBELN'),
-            'total_overdue_so'     => (clone $baseQuery)->whereRaw("{$safeEdatu} < ?", [$today])->distinct()->count('t2.VBELN'),
+        // Inisialisasi data KPI
+        $kpi = [
+            'smg_usd_val' => 0,
+            'smg_usd_qty' => 0,
+            'smg_usd_overdue_val' => 0,
+            'smg_usd_overdue_qty' => 0,
+            'smg_idr_val' => 0,
+            'smg_idr_qty' => 0,
+            'smg_idr_overdue_val' => 0,
+            'smg_idr_overdue_qty' => 0,
+            'sby_usd_val' => 0,
+            'sby_usd_qty' => 0,
+            'sby_usd_overdue_val' => 0,
+            'sby_usd_overdue_qty' => 0,
+            'sby_idr_val' => 0,
+            'sby_idr_qty' => 0,
+            'sby_idr_overdue_val' => 0,
+            'sby_idr_overdue_qty' => 0,
         ];
 
+        // Isi data KPI NILAI (Outstanding Value & Overdue Value)
+        foreach ($kpiValueQuery as $row) {
+            $loc_prefix = $row->werks === '3000' ? 'smg' : 'sby';
+            $cur_suffix = strtolower($row->currency);
+
+            $kpi["{$loc_prefix}_{$cur_suffix}_val"] = (float) $row->total_value;
+            $kpi["{$loc_prefix}_{$cur_suffix}_overdue_val"] = (float) $row->overdue_value;
+        }
+
+        // Isi data KPI JUMLAH (Qty PO Count & Overdue Qty Count)
+        foreach ($kpiQtyQuery as $row) {
+            $loc_prefix = $row->werks === '3000' ? 'smg' : 'sby';
+            $cur_suffix = strtolower($row->currency);
+
+            // Total Outstanding Qty (Menggunakan total PO/SO dari T2 tanpa filter QTY_BALANCE2)
+            $kpi["{$loc_prefix}_{$cur_suffix}_qty"] = (int) $row->total_qty;
+            // Overdue Qty (Menggunakan total PO/SO dari T2 yang overdue)
+            $kpi["{$loc_prefix}_{$cur_suffix}_overdue_qty"] = (int) $row->overdue_qty;
+        }
+
+        $chartData['kpi_new'] = $kpi;
+
+        // KPI lama (diperlukan agar script JS lama/lama yang dipertahankan tidak error)
+        $chartData['kpi'] = [
+            'total_outstanding_value_usd' => $kpi['smg_usd_val'] + $kpi['sby_usd_val'],
+            'total_outstanding_value_idr' => $kpi['smg_idr_val'] + $kpi['sby_idr_val'],
+            'total_outstanding_so' => $kpi['smg_usd_qty'] + $kpi['smg_idr_qty'] + $kpi['sby_usd_qty'] + $kpi['sby_idr_qty'],
+            'total_overdue_so'      => $kpi['smg_usd_overdue_qty'] + $kpi['smg_idr_overdue_qty'] + $kpi['sby_usd_overdue_qty'] + $kpi['sby_idr_overdue_qty'],
+        ];
         $chartData['kpi']['overdue_rate'] =
             $chartData['kpi']['total_outstanding_so'] > 0
             ? ($chartData['kpi']['total_overdue_so'] / $chartData['kpi']['total_outstanding_so']) * 100
             : 0;
 
-        // Status ring (overdue/due this week/on time)
+        // Outstanding by Location (DIKOSONGKAN)
+        $chartData['outstanding_by_location'] = [];
+
+        // Status ring (DIKOSONGKAN)
         $chartData['so_status'] = [
-            'overdue'       => $chartData['kpi']['total_overdue_so'],
-            'due_this_week' => (clone $baseQuery)
-                ->whereRaw("{$safeEdatu} BETWEEN ? AND ?", [$today, $today->copy()->addDays(7)])
-                ->distinct()->count('t2.VBELN'),
-            'on_time'       => (clone $baseQuery)
-                ->whereRaw("{$safeEdatu} > ?", [$today->copy()->addDays(7)])
-                ->distinct()->count('t2.VBELN'),
+            'overdue'         => 0,
+            'due_this_week' => 0,
+            'on_time'         => 0,
         ];
 
-        // Outstanding by Location
-        $chartData['outstanding_by_location'] = (clone $baseQuery)
-            ->join(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->select(
-                DB::raw("CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN 'Surabaya' ELSE 'Semarang' END as location"),
-                't2.WAERK as currency',
-                DB::raw('SUM(t1.TOTPR) as total_value'),
-                DB::raw('COUNT(DISTINCT t2.VBELN) as so_count')
-            )
-            ->groupBy('location', 'currency')
-            ->get();
+        // =========================================================================
+        // MODIFIKASI: QUERY GRAFIK YANG DIBAGI PER LOKASI
+        // =========================================================================
 
-        // Top customers (USD)
-        $chartData['top_customers_value_usd'] = (clone $baseQuery)
-            ->join(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
-            ->where('t2.WAERK', 'USD')
-            ->groupBy('t2.NAME1')
-            ->having('total_value', '>', 0)
-            ->orderByDesc('total_value')
-            ->limit(4)
-            ->get();
+        $locationQueries = [
+            'smg' => (clone $baseQuery)->where('t2.IV_WERKS_PARAM', '3000'),
+            'sby' => (clone $baseQuery)->where('t2.IV_WERKS_PARAM', '2000'),
+        ];
 
-        // Top customers (IDR)
-        $chartData['top_customers_value_idr'] = (clone $baseQuery)
-            ->join(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
-            ->where('t2.WAERK', 'IDR')
-            ->groupBy('t2.NAME1')
-            ->having('total_value', '>', 0)
-            ->orderByDesc('total_value')
-            ->limit(4)
-            ->get();
+        // 1. Top customers (USD) - PER LOKASI
+        foreach ($locationQueries as $prefix => $query) {
+            $chartData["top_customers_value_usd_{$prefix}"] = (clone $query)
+                ->join(
+                    'so_yppr079_t1 as t1',
+                    DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                    '=',
+                    DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+                )
+                ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
+                ->where('t2.WAERK', 'USD')
+                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Hanya outstanding item
+                ->groupBy('t2.NAME1')
+                ->having('total_value', '>', 0)
+                ->orderByDesc('total_value')
+                ->limit(4)
+                ->get();
+        }
 
-        // Top customers overdue
-        $chartData['top_customers_overdue'] = (clone $baseQuery)
-            ->select(
-                't2.NAME1',
-                DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'),
-                DB::raw('GROUP_CONCAT(DISTINCT t2.IV_WERKS_PARAM ORDER BY t2.IV_WERKS_PARAM ASC SEPARATOR ", ") as locations'),
-                DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t2.VBELN ELSE NULL END) as smg_count"),
-                DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t2.VBELN ELSE NULL END) as sby_count")
-            )
-            ->whereRaw("{$safeEdatu} < CURDATE()")
-            ->groupBy('t2.NAME1')
-            ->orderByDesc('overdue_count')
-            ->limit(4)
-            ->get();
+        // 2. Top customers (IDR) - PER LOKASI
+        foreach ($locationQueries as $prefix => $query) {
+            $chartData["top_customers_value_idr_{$prefix}"] = (clone $query)
+                ->join(
+                    'so_yppr079_t1 as t1',
+                    DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                    '=',
+                    DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+                )
+                ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
+                ->where('t2.WAERK', 'IDR')
+                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Hanya outstanding item
+                ->groupBy('t2.NAME1')
+                ->having('total_value', '>', 0)
+                ->orderByDesc('total_value')
+                ->limit(4)
+                ->get();
+        }
 
-        // Performance analysis
+        // 3. Top customers overdue - PER LOKASI (Count PO yang overdue)
+        foreach ($locationQueries as $prefix => $query) {
+            $chartData["top_customers_overdue_{$prefix}"] = (clone $query)
+                ->select(
+                    't2.NAME1',
+                    DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'),
+                    // FIX: Gunakan MAX() pada kolom non-agregat untuk memuaskan ONLY_FULL_GROUP_BY
+                    DB::raw("MAX(TRIM(t2.IV_WERKS_PARAM)) as locations"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t2.VBELN ELSE NULL END) as smg_count"),
+                    DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t2.VBELN ELSE NULL END) as sby_count")
+                )
+                ->whereRaw("{$safeEdatu} < CURDATE()") // Filter: PO/SO overdue
+                ->groupBy('t2.NAME1')
+                ->having('overdue_count', '>', 0)
+                ->orderByDesc('overdue_count')
+                ->limit(4)
+                ->get();
+        }
+
+
+        // Performance analysis - AKTIFKAN KEMBALI
         $performanceQueryBase = DB::table('maping as m')
             ->join('so_yppr079_t2 as t2', function ($join) {
                 $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
@@ -197,7 +283,8 @@ class DashboardController extends Controller
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
                 '=',
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            );
+            )
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0'); // Hanya hitung item yang outstanding
 
         $typesToFilter = null;
         if ($type === 'lokal' || $type === 'export') {
@@ -214,6 +301,7 @@ class DashboardController extends Controller
         $performanceQuery = $performanceQueryBase->select(
             'm.Deskription',
             'm.IV_WERKS',
+            'm.IV_AUART',
             DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
             DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
             DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
@@ -224,13 +312,14 @@ class DashboardController extends Controller
             DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
         )
             ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-            ->groupBy('m.IV_WERKS', 'm.Deskription')
+            // FIX: Tambahkan kolom m.IV_WERKS, m.IV_AUART, m.Deskription ke GROUP BY 
+            ->groupBy('m.IV_WERKS', 'm.IV_AUART', 'm.Deskription')
             ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
             ->get();
 
         $chartData['so_performance_analysis'] = $performanceQuery;
 
-        // Small qty by customer
+        // Small qty by customer - TETAP
         $smallQtyByCustomerQuery = (clone $baseQuery)
             ->join(
                 'so_yppr079_t1 as t1',
@@ -241,54 +330,92 @@ class DashboardController extends Controller
             ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(t1.POSNR) as item_count'))
             ->where('t1.QTY_BALANCE2', '>', 0)
             ->where('t1.QTY_BALANCE2', '<=', 5)
+            ->whereRaw('CAST(t1.QTY_GI AS DECIMAL(18,3)) > 0') // Filter QTY_GI > 0
             ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
             ->orderBy('t2.NAME1')
             ->get();
 
         $chartData['small_qty_by_customer'] = $smallQtyByCustomerQuery;
 
+
         // 5) Return view PO dashboard
         return view('dashboard', [
-            'mapping'              => $mapping,
-            'chartData'            => $chartData,
-            'selectedLocation'     => $location,
-            'selectedLocationName' => $selectedLocationName,
-            'selectedType'         => $type,
-            'selectedTypeName'     => $selectedTypeName,
-            'view'                 => 'po', // fix ke 'po'
+            'mapping'                 => $mapping,
+            'chartData'             => $chartData,
+            'selectedLocation'         => $location,
+            'selectedLocationName'     => $selectedLocationName,
+            'selectedType'             => $type,
+            'selectedTypeName'         => $selectedTypeName,
+            'view'                     => 'po', // fix ke 'po'
         ]);
     }
-
-    /* ================== API yang tetap untuk PO / PO Report ================== */
 
     public function apiPoOverdueDetails(Request $request)
     {
         $request->validate([
-            'werks'  => 'required|string',
-            'auart'  => 'required|string',
-            'bucket' => 'required|string|in:1_30,31_60,61_90,gt_90',
+            'werks'     => 'required|string',
+            'auart'     => 'required|string',
+            'bucket'    => 'required|string|in:on_track,1_30,31_60,61_90,gt_90',
+            'kunnr'     => 'nullable|string', // Customer Number opsional
         ]);
 
-        $werks  = $request->query('werks');
-        $auart  = $request->query('auart');
-        $bucket = $request->query('bucket');
+        $werks      = $request->query('werks');
+        $auart      = $request->query('auart');
+        $bucket     = $request->query('bucket');
+        $kunnr      = $request->query('kunnr'); // AMBIL KUNNR
 
+        // =========================================================================
+        // Logika Penggabungan Data Export dan Replace (Harus sama di semua Controller)
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $auartList = [$auart];
+        if (in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes)) {
+            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        }
+        $auartList = array_unique($auartList);
+        // =========================================================================
+
+        // Parser tanggal aman
         $safeEdatu = "COALESCE(
-            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-        )";
+    STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+    STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+    )";
 
         $q = DB::table('so_yppr079_t2 as t2')
             ->selectRaw("
-                TRIM(t2.BSTNK)                              AS PO,
-                TRIM(t2.VBELN)                              AS SO,
-                DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')       AS EDATU,  
-                DATEDIFF(CURDATE(), {$safeEdatu})           AS OVERDUE_DAYS
-            ")
+        TRIM(t2.BSTNK)      AS PO,
+        TRIM(t2.VBELN)      AS SO,
+        DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')  AS EDATU,   
+        DATEDIFF(CURDATE(), {$safeEdatu})  AS OVERDUE_DAYS,
+        MAX(t2.NAME1)       AS CUSTOMER_NAME_MODAL  -- <<< PENAMBAHAN KOLOM
+        ")
             ->where('t2.IV_WERKS_PARAM', $werks)
-            ->where('t2.IV_AUART_PARAM', $auart);
+            ->whereIn('t2.IV_AUART_PARAM', $auartList)
+            ->when($kunnr, fn($q) => $q->where('t2.KUNNR', $kunnr));
+
+        // FILTER UTAMA: Hanya PO/SO yang memiliki item Outstanding (QTY_BALANCE2 > 0)
+        $q->whereExists(function ($qExist) use ($auartList, $werks) {
+            $qExist->select(DB::raw(1))
+                ->from('so_yppr079_t1 as t1_check')
+                ->whereColumn('t1_check.VBELN', 't2.VBELN')
+                ->whereIn('t1_check.IV_AUART_PARAM', $auartList)
+                ->where('t1_check.IV_WERKS_PARAM', $werks)
+                ->whereRaw('CAST(t1_check.QTY_BALANCE2 AS DECIMAL(18,3)) > 0');
+        });
 
         switch ($bucket) {
+            case 'on_track':
+                $q->whereRaw("{$safeEdatu} >= CURDATE()");
+                break;
             case '1_30':
                 $q->whereRaw("DATEDIFF(CURDATE(), {$safeEdatu}) BETWEEN 1 AND 30");
                 break;
@@ -303,10 +430,13 @@ class DashboardController extends Controller
                 break;
         }
 
-        $rows = $q->orderByDesc('OVERDUE_DAYS')
+        $rows = $q
+            // Group by harus ditambahkan karena ada agregasi MAX(t2.NAME1)
+            ->groupBy('t2.BSTNK', 't2.VBELN', 't2.EDATU')
+            ->orderByRaw("CASE WHEN {$safeEdatu} >= CURDATE() THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN {$safeEdatu} >= CURDATE() THEN {$safeEdatu} ELSE NULL END ASC") // On-Track (EDATU ASC)
+            ->orderByDesc('OVERDUE_DAYS') // Overdue (Days DESC)
             ->orderBy('t2.VBELN')
-            ->orderBy('t2.BSTNK')
-            ->limit(2000)
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);
@@ -322,7 +452,40 @@ class DashboardController extends Controller
             return response()->json(['ok' => false, 'error' => 'kunnr missing'], 400);
         }
 
-        $rows = DB::table('so_yppr079_t2 as t2')
+        // =========================================================================
+        // MODIFIKASI: Logika Penggabungan Data Export dan Replace (apiT2) - Fix untuk Table 2
+        // =========================================================================
+        $mapping = DB::table('maping')->get();
+        // Dapatkan AUART Export (non-replace)
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        // Dapatkan AUART Replace
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $auartList = [empty($auart) ? 'NO_AUART' : $auart];
+
+        // Jika AUART yang diklik adalah kode AUART EXPORT yang asli, kita gabungkan REPLACE.
+        if (!empty($auart) && in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes)) {
+            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        }
+
+        $auartList = array_unique(array_filter($auartList));
+        // Konversi list menjadi string yang dikutip untuk digunakan dalam klausa IN (SQL)
+        $auartListString = collect($auartList)->map(fn($a) => DB::getPdo()->quote($a))->join(',');
+
+        // Klausa WHERE IN untuk subqueries T1
+        $auartWhereInClause = empty($auartListString) ? "" : " AND t1.IV_AUART_PARAM IN ({$auartListString})";
+        // =========================================================================
+
+
+        $q = DB::table('so_yppr079_t2 as t2')
+            ->distinct()
             ->select([
                 't2.VBELN',
                 't2.BSTNK',
@@ -330,26 +493,27 @@ class DashboardController extends Controller
                 't2.EDATU',
                 // total value all (semua outstanding items)
                 DB::raw("(SELECT COALESCE(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))),0)
-                  FROM so_yppr079_t1 AS t1
-                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    FROM so_yppr079_t1 AS t1
+                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
                     " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                    " . (strlen((string)$auart) ? " AND t1.IV_AUART_PARAM = " . DB::getPdo()->quote($auart) : "") . "
-                 ) AS total_value"),
+                    {$auartWhereInClause} 
+                    ) AS total_value"),
                 // outs qty (Σ QTY_BALANCE2 > 0) per SO
                 DB::raw("(SELECT COALESCE(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))),0)
-                  FROM so_yppr079_t1 AS t1
-                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    FROM so_yppr079_t1 AS t1
+                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
                     " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                    " . (strlen((string)$auart) ? " AND t1.IV_AUART_PARAM = " . DB::getPdo()->quote($auart) : "") . "
+                    {$auartWhereInClause}
                     AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
-                 ) AS outs_qty"),
+                    ) AS outs_qty"),
             ])
-            ->distinct()
+            // Filter utama berdasarkan KUNNR
             ->where(function ($q) use ($kunnr) {
                 $q->where('t2.KUNNR', $kunnr)
                     ->orWhereRaw('TRIM(CAST(t2.KUNNR AS CHAR)) = TRIM(?)', [$kunnr])
                     ->orWhereRaw('CAST(TRIM(t2.KUNNR) AS UNSIGNED) = CAST(TRIM(?) AS UNSIGNED)', [$kunnr]);
             })
+            // Filter Plant (Werks)
             ->when(strlen((string)$werks) > 0, function ($q) use ($werks) {
                 $q->where(function ($qq) use ($werks) {
                     $qq->where('t2.WERKS', $werks)
@@ -358,16 +522,11 @@ class DashboardController extends Controller
                         ->orWhereRaw('TRIM(CAST(t2.IV_WERKS_PARAM AS CHAR)) = TRIM(?)', [$werks]);
                 });
             })
-            ->when(strlen((string)$auart) > 0, function ($q) use ($auart) {
-                $q->where(function ($qq) use ($auart) {
-                    $qq->where('t2.AUART', $auart)
-                        ->orWhere('t2.IV_AUART_PARAM', $auart)
-                        ->orWhereRaw('TRIM(t2.AUART) = TRIM(?)', [$auart])
-                        ->orWhereRaw('TRIM(t2.IV_AUART_PARAM) = TRIM(?)', [$auart]);
-                });
-            })
+            // Filter utama T2 menggunakan AUART LIST (Export + Replace)
+            ->whereIn('t2.IV_AUART_PARAM', $auartList)
             ->get();
 
+        $rows = $q;
         $today = new \DateTime();
         $today->setTime(0, 0, 0);
 
@@ -376,6 +535,7 @@ class DashboardController extends Controller
             $row->FormattedEdatu = '';
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
+                    // Coba parse dengan 2 format
                     $edatuDate = \DateTime::createFromFormat('Y-m-d', $row->EDATU)
                         ?: \DateTime::createFromFormat('d-m-Y', $row->EDATU);
 
@@ -384,29 +544,15 @@ class DashboardController extends Controller
                         $edatuDate->setTime(0, 0, 0);
 
                         $diff = $today->diff($edatuDate);
-                        // ✅ Sudah lewat (invert=1) → positif; Belum lewat (invert=0) → negatif
+                        // Hitung Overdue (positif = sudah lewat)
                         $overdue = $diff->invert ? (int)$diff->days : -(int)$diff->days;
                     }
                 } catch (\Exception $e) {
+                    // Jika gagal parse tanggal
                     $overdue = 0;
                 }
             }
-            $row->Overdue = $overdue;
-
-            $items = DB::table('so_yppr079_t1')
-                ->select('KWMENG', 'QTY_BALANCE2')
-                ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = TRIM(?)', [$row->VBELN])
-                ->when($werks, fn($q) => $q->where('IV_WERKS_PARAM', $werks))
-                ->when($auart, fn($q) => $q->where('IV_AUART_PARAM', $auart))
-                ->get();
-
-            $itemPercentages = [];
-            foreach ($items as $item) {
-                $qtyPo = (float) $item->KWMENG;
-                $outstanding = (float) $item->QTY_BALANCE2;
-                if ($qtyPo > 0) $itemPercentages[] = ($outstanding / $qtyPo) * 100;
-            }
-            $row->ShortagePercentage = count($itemPercentages) ? array_sum($itemPercentages) / count($itemPercentages) : 0;
+            $row->Overdue = $overdue; // Set nilai Overdue ke objek baris
         }
 
         $sortedRows = $rows->sortBy('Overdue')->values();
@@ -423,6 +569,22 @@ class DashboardController extends Controller
         $werks = $req->query('werks');
         $auart = $req->query('auart');
 
+        // === Tambahan: gabungkan Export + Replace bila perlu ===
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export') && !Str::contains($d, 'local') && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $auartList = [$auart];
+        if ($auart && in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes)) {
+            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
+        }
+
         $rows = DB::table('so_yppr079_t1 as t1')
             ->leftJoin(
                 'so_yppr079_t2 as t2',
@@ -431,7 +593,7 @@ class DashboardController extends Controller
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))')
             )
             ->select(
-                't1.id', // << PENTING untuk export
+                't1.id',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR)) as VBELN'),
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
@@ -439,14 +601,14 @@ class DashboardController extends Controller
                 't1.KWMENG',
                 't1.QTY_GI',
                 't1.QTY_BALANCE2',
-                't1.KALAB',   // WHFG
-                't1.KALAB2',  // FG  << supaya kolom FG di Blade terisi
+                't1.KALAB',
+                't1.KALAB2',
                 't1.NETPR',
                 't1.WAERK'
             )
             ->whereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
             ->when($werks, fn($q) => $q->where('t1.IV_WERKS_PARAM', $werks))
-            ->when($auart, fn($q) => $q->where('t1.IV_AUART_PARAM', $auart))
+            ->when(!empty($auartList), fn($q) => $q->whereIn('t1.IV_AUART_PARAM', $auartList))
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
             ->get();
 
@@ -456,36 +618,49 @@ class DashboardController extends Controller
     public function search(Request $request)
     {
         $request->validate(['term' => 'required|string|max:100']);
-        $term = $request->input('term');
+        $term = trim($request->input('term'));
 
         $so_info = DB::table('so_yppr079_t2')
-            ->where(function ($query) use ($term) {
-                $query->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$term])
+            ->where(function ($q) use ($term) {
+                // cari SO atau PO persis (pakai TRIM supaya aman)
+                $q->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$term])
                     ->orWhereRaw('TRIM(CAST(BSTNK AS CHAR)) = ?', [$term]);
             })
-            ->select('IV_WERKS_PARAM', 'IV_AUART_PARAM', 'KUNNR', 'VBELN')
+            ->select('IV_WERKS_PARAM', 'IV_AUART_PARAM', 'KUNNR', 'VBELN', 'BSTNK')
             ->first();
 
-        if ($so_info) {
-            $params = [
-                'werks'           => $so_info->IV_WERKS_PARAM,
-                'auart'           => $so_info->IV_AUART_PARAM,
-                'compact'         => 1,
-                'highlight_kunnr' => $so_info->KUNNR,
-                'highlight_vbeln' => $so_info->VBELN,
-                'search_term'     => $term,
-            ];
-            $encryptedPayload = Crypt::encrypt($params);
-            return redirect()->route('po.report', ['q' => $encryptedPayload]);
+        if (!$so_info) {
+            return back()
+                ->withErrors(['term' => 'Nomor PO/SO "' . $term . '" tidak ditemukan.'])
+                ->withInput();
         }
 
-        return back()->withErrors(['term' => 'Nomor PO atau SO "' . $term . '" tidak ditemukan.'])->withInput();
-    }
+        // Kirim sinyal ke PO Report agar:
+        // - buka halaman PO (bukan SO)
+        // - langsung expand Tabel-1 -> Tabel-2
+        // - highlight baris SO (dan/atau PO)
+        $params = [
+            'view'             => 'po',                  // paksa konteks PO
+            'werks'            => $so_info->IV_WERKS_PARAM,
+            'auart'            => $so_info->IV_AUART_PARAM,
+            'compact'          => 1,
+            'auto_expand'      => 1,                     // sinyal buka T2
+            'highlight_kunnr'  => $so_info->KUNNR,       // buka customer yang tepat
+            'highlight_vbeln'  => $so_info->VBELN,       // sorot baris SO
+            'highlight_bstnk'  => $so_info->BSTNK,       // jika user cari PO, tetap tersorot
+            'search_term'      => $term,
+            // (opsional) kompatibilitas lama bila ada JS yang membaca 'auto'
+            'auto'             => 1,
+        ];
 
+        $encrypted = Crypt::encrypt($params);
+        // langsung ke PO Report (tidak lewat redirector supaya tidak nyasar ke SO)
+        return redirect()->route('po.report', ['q' => $encrypted]);
+    }
     public function redirector(Request $request)
     {
         try {
-            $raw  = (string) $request->input('payload', '');
+            $raw      = (string) $request->input('payload', '');
             $data = json_decode($raw, true);
             if (!is_array($data) || empty($data)) {
                 throw new \RuntimeException('Invalid payload data.');
@@ -502,7 +677,7 @@ class DashboardController extends Controller
                 'compact',
                 'highlight_kunnr',
                 'highlight_vbeln',
-                'highlight_posnr', // <<-- DIPERLUKAN UNTUK ITEM REMARK
+                'highlight_posnr',
                 'auto_expand',
                 'location',
                 'type',
@@ -534,7 +709,7 @@ class DashboardController extends Controller
 
             // Arahkan ke route yang benar: so.index, po.report, atau dashboard
             return $route === 'so.index'
-                ? redirect()->route('so.index',  ['q' => $q])
+                ? redirect()->route('so.index',      ['q' => $q])
                 : ($route === 'po.report'
                     ? redirect()->route('po.report', ['q' => $q])
                     : redirect()->route('dashboard', ['q' => $q]));
@@ -553,19 +728,41 @@ class DashboardController extends Controller
             return response()->json(['ok' => false, 'error' => 'Invalid payload'], 422);
         }
     }
+
     public function apiPoOutsByCustomer(Request $request)
     {
         $request->validate([
             'currency' => 'required|string|in:USD,IDR',
             'location' => 'nullable|string|in:2000,3000',
-            'type'     => 'nullable|string|in:lokal,export',
-            'auart'    => 'nullable|string',
+            'type'      => 'nullable|string|in:lokal,export',
+            'auart'      => 'nullable|string',
         ]);
 
         $currency = $request->query('currency');
         $location = $request->query('location');
-        $type     = $request->query('type');
-        $auart    = $request->query('auart');
+        $type      = $request->query('type');
+        $auart      = $request->query('auart');
+
+        // --- LOGIKA PENGGABUNGAN ---
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $auartList = [];
+        if ($type === 'export') {
+            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        } elseif ($auart) {
+            $auartList[] = $auart;
+        }
+        $auartList = array_unique(array_filter($auartList));
+        // --- END LOGIKA PENGGABUNGAN ---
 
         // Basis Query dari t2
         $q = DB::table('so_yppr079_t2 as t2')
@@ -582,8 +779,12 @@ class DashboardController extends Controller
             // Filter hanya yang Outstanding (T1.QTY_BALANCE2 > 0)
             ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
             ->where('t2.WAERK', $currency)
-            ->when($location, fn($qq, $v) => $qq->where('t2.IV_WERKS_PARAM', $v))
-            ->when($auart,    fn($qq, $v) => $qq->where('t2.IV_AUART_PARAM', $v));
+            ->when($location, fn($qq, $v) => $qq->where('t2.IV_WERKS_PARAM', $v));
+
+        // Gunakan AUART List
+        if (!empty($auartList)) {
+            $q->whereIn('t2.IV_AUART_PARAM', $auartList);
+        }
 
         // Filter tipe (lokal/export) sama seperti di index()
         if ($type === 'lokal') {
@@ -595,13 +796,6 @@ class DashboardController extends Controller
                             ->groupBy('IV_AUART_PARAM', 'IV_WERKS_PARAM')
                             ->havingRaw("SUM(CASE WHEN WAERK = 'IDR' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN WAERK = 'USD' THEN 1 ELSE 0 END) = 0")
                     );
-            });
-        } elseif ($type === 'export') {
-            $q->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($sub) {
-                $sub->select('IV_AUART', 'IV_WERKS')->from('maping')
-                    ->where('Deskription', 'like', '%Export%')
-                    ->where('Deskription', 'not like', '%Replace%')
-                    ->where('Deskription', 'not like', '%Local%');
             });
         }
 
@@ -621,39 +815,50 @@ class DashboardController extends Controller
 
         return response()->json(['ok' => true, 'data' => $rows, 'grand_total' => (float)$grandTotal]);
     }
-    // API 2: Detail PO Status (Doughnut Chart Click)
+
     public function apiPoStatusDetails(Request $request)
     {
-        // Route ini dipanggil oleh donut chart, fungsinya sama persis dengan apiSoStatusDetails
-        // di code lama Anda, jadi kita alihkan saja ke apiSoStatusDetails
         return $this->apiSoStatusDetails($request);
     }
 
-
-    // API 3: Detail Small Qty (≤5) Outstanding Items by Customer
-    // DI DALAM CLASS DashboardController
 
     public function apiSmallQtyDetails(Request $request)
     {
         $request->validate([
             'customerName' => 'required|string',
-            // [KOREKSI 1]: Di Blade JS sebelumnya, Anda mengirim 'locationCode', tapi jika Anda 
-            // kembali ke key 'locationName' dengan nilai 'Semarang'/'Surabaya' seperti di template,
-            // kita gunakan validasi ini:
             'locationName' => 'required|string|in:Semarang,Surabaya',
-            'type'         => 'nullable|string|in:lokal,export'
+            'type'       => 'nullable|string', // Mengubah validasi menjadi nullable string untuk mencegah kegagalan
         ]);
 
         $customerName = $request->query('customerName');
         $locationName = $request->query('locationName');
-        $type         = $request->query('type');
+        $type       = $request->query('type');
 
-        // Konversi nama lokasi menjadi kode pabrik (WERKS)
         $werks = ($locationName === 'Semarang') ? '3000' : '2000';
+
+        // --- LOGIKA PENGGABUNGAN ---
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        // Tentukan AUART List: Gabungkan Export + Replace jika AUART yang dikirim termasuk Export codes.
+        $auartList = [$request->query('auart')];
+        if (!empty($auartList[0]) && in_array($auartList[0], $exportAuartCodes)) {
+            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        }
+        $auartList = array_unique(array_filter($auartList));
+        // --- END LOGIKA PENGGABUNGAN ---
+
 
         $query = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-            // Gunakan LEFT JOIN untuk maping agar tidak menghilangkan data jika mapping tidak ditemukan
             ->leftJoin('maping as m', function ($join) {
                 $join->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
                     ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
@@ -661,22 +866,14 @@ class DashboardController extends Controller
             ->where('t2.NAME1', $customerName)
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where('t1.QTY_BALANCE2', '>', 0)
-            ->where('t1.QTY_BALANCE2', '<=', 5);
+            ->where('t1.QTY_BALANCE2', '<=', 5)
+            ->whereRaw('CAST(t1.QTY_GI AS DECIMAL(18,3)) > 0'); // <<< FILTER HANYA JIKA SHIPPED > 0
 
-        // KOREKSI LOGIKA FILTER TYPE AGAR SAMA DENGAN index()
-        if ($type === 'lokal') {
-            $query->where(function ($q) {
-                $q->where('m.Deskription', 'like', '%Local%')
-                    // Logika ini mengikuti struktur filter umum (termasuk replace/lokal jika ada)
-                    ->orWhere('m.Deskription', 'like', '%Replace%');
-            });
-        } elseif ($type === 'export') {
-            $query->where('m.Deskription', 'like', '%Export%')
-                ->where('m.Deskription', 'not like', '%Replace%')
-                ->where('m.Deskription', 'not like', '%Local%');
+        // Tambahkan filter AUART yang relevan
+        if (!empty($auartList)) {
+            $query->whereIn('t2.IV_AUART_PARAM', $auartList);
         }
 
-        // [KOREKSI 2]: Tambahkan QTY_GI (jika ini kolom yang benar) dan pastikan urutan select
         $items = $query->select(
             't2.VBELN',
             't2.BSTNK',
@@ -693,21 +890,31 @@ class DashboardController extends Controller
         return response()->json(['ok' => true, 'data' => $items]);
     }
 
-    // ... (Fungsi apiSoStatusDetails dan apiSoUrgencyDetails (yang lama) di bawahnya) ...
-
-    // apiSoStatusDetails di code lama Anda:
 
     public function apiSoStatusDetails(Request $request)
     {
         $request->validate([
-            'status'   => 'required|string|in:overdue,due_this_week,on_time',
-            'location' => 'nullable|string|in:2000,3000',
-            'type'     => 'nullable|string|in:lokal,export',
+            'status'      => 'required|string|in:overdue,due_this_week,on_time',
+            'location'      => 'nullable|string|in:2000,3000',
+            'type'          => 'nullable|string|in:lokal,export',
         ]);
 
-        $status   = $request->query('status');
-        $location = $request->query('location');
-        $type     = $request->query('type');
+        $status      = $request->query('status');
+        $location      = $request->query('location');
+        $type          = $request->query('type');
+
+        // --- LOGIKA PENGGABUNGAN ---
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        // --- END LOGIKA PENGGABUNGAN ---
 
         $safeEdatu = "
         COALESCE(
@@ -728,13 +935,8 @@ class DashboardController extends Controller
                     );
             });
         } elseif ($type === 'export') {
-            $base->whereIn(DB::raw('(t2.IV_AUART_PARAM, t2.IV_WERKS_PARAM)'), function ($query) {
-                $query->select('IV_AUART', 'IV_WERKS')
-                    ->from('maping')
-                    ->where('Deskription', 'like', '%Export%')
-                    ->where('Deskription', 'not like', '%Replace%')
-                    ->where('Deskription', 'not like', '%Local%');
-            });
+            $auartToQuery = array_merge($exportAuartCodes, $replaceAuartCodes);
+            $base->whereIn('t2.IV_AUART_PARAM', $auartToQuery);
         }
 
         $base->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
@@ -775,15 +977,38 @@ class DashboardController extends Controller
         $validated = $request->validate([
             'customerName' => 'required|string',
             'locationName' => 'required|string|in:Semarang,Surabaya',
-            'type'         => 'nullable|string|in:lokal,export',
+            'type'       => 'nullable|string', // Mengubah validasi menjadi nullable string
         ]);
 
         $customerName = $validated['customerName'];
         $locationName = $validated['locationName'];
-        $type         = $validated['type'] ?? null;
+        $type       = $validated['type'] ?? null;
         $werks        = $locationName === 'Semarang' ? '3000' : '2000';
 
-        // Query sama dengan apiSmallQtyDetails()
+        // --- LOGIKA PENGGABUNGAN ---
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        // Tentukan AUART List: Gabungkan Export + Replace jika AUART yang dikirim termasuk Export codes.
+        $auartFromRequest = $request->input('auart');
+        $auartList = [$auartFromRequest];
+
+        if (!empty($auartList[0]) && in_array($auartList[0], $exportAuartCodes)) {
+            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        }
+        $auartList = array_unique(array_filter($auartList));
+        // --- END LOGIKA PENGGABUNGAN ---
+
+
+        // Query export
         $q = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
             ->leftJoin('maping as m', function ($j) {
@@ -793,17 +1018,12 @@ class DashboardController extends Controller
             ->where('t2.NAME1', $customerName)
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where('t1.QTY_BALANCE2', '>', 0)
-            ->where('t1.QTY_BALANCE2', '<=', 5);
+            ->where('t1.QTY_BALANCE2', '<=', 5)
+            ->whereRaw('CAST(t1.QTY_GI AS DECIMAL(18,3)) > 0'); // FILTER HANYA JIKA SHIPPED > 0
 
-        if ($type === 'lokal') {
-            $q->where(function ($qq) {
-                $qq->where('m.Deskription', 'like', '%Local%')
-                    ->orWhere('m.Deskription', 'like', '%Replace%');
-            });
-        } elseif ($type === 'export') {
-            $q->where('m.Deskription', 'like', '%Export%')
-                ->where('m.Deskription', 'not like', '%Replace%')
-                ->where('m.Deskription', 'not like', '%Local%');
+        // Tambahkan filter AUART yang relevan
+        if (!empty($auartList)) {
+            $q->whereIn('t2.IV_AUART_PARAM', $auartList);
         }
 
         $items = $q->select(
@@ -821,26 +1041,33 @@ class DashboardController extends Controller
 
         $totals = [
             'total_item' => $items->count(),
-            'total_po'   => $items->pluck('PO')->filter()->unique()->count(),
+            'total_po'     => $items->pluck('PO')->filter()->unique()->count(),
         ];
 
         $meta = [
             'customerName' => $customerName,
             'locationName' => $locationName,
-            'type'         => $type,
-            'generatedAt'  => now()->format('d-m-Y'), // <-- tadinya d-m-Y H:i
+            'type'       => $type,
+            'generatedAt'    => now()->format('d-m-Y'),
         ];
 
-        // Jika dompdf tersedia → stream PDF; kalau tidak, render HTML biasa
         if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po_report.small-qty-pdf', [
-                'items' => $items,
-                'meta' => $meta,
-                'totals' => $totals,
-            ])->setPaper('a4', 'portrait');
+            if ($items->isEmpty()) {
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po_report.small-qty-pdf', [
+                    'items' => collect(),
+                    'meta' => $meta,
+                    'totals' => ['total_item' => 0, 'total_po' => 0],
+                ])->setPaper('a4', 'portrait');
+            } else {
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po_report.small-qty-pdf', [
+                    'items' => $items,
+                    'meta' => $meta,
+                    'totals' => $totals,
+                ])->setPaper('a4', 'portrait');
+            }
 
             $filename = 'SmallQty_' . $locationName . '_' . Str::slug($customerName) . '.pdf';
-            return $pdf->stream($filename);   // pakai ->download($filename) jika mau auto-download
+            return $pdf->stream($filename);
         }
 
         return view('po_report.small-qty-pdf', [
