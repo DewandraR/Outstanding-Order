@@ -14,6 +14,12 @@
         $curLoc = $selectedLocation ?? null;
         $curType = $selectedType ?? null;
 
+        // Ambil data mapping untuk dropdown
+        $allMapping = $mapping;
+
+        // Ambil data KPI baru
+        $kpiNew = $chartData['kpi_new'] ?? [];
+
         // Ambil data mapping untuk JS
         $auartDescriptions = collect($mapping)->flatten()->keyBy('IV_AUART');
 
@@ -29,6 +35,249 @@
             }
             return route('so.dashboard', ['q' => \Crypt::encrypt($payload)]);
         };
+
+        // Helper pembentuk URL terenkripsi ke SO Report (so.index)
+        $encReport = function (array $params) {
+            $payload = array_filter(array_merge(['compact' => 1], $params), fn($v) => !is_null($v) && $v !== '');
+            // NOTE: Route 'so.index' harus sudah terdaftar
+            return route('so.index', ['q' => \Crypt::encrypt($payload)]);
+        };
+
+        // Helper untuk format mata uang (DIPERLUKAN UNTUK RENDER BLOCK Awal)
+        $formatCurrency = function ($value, $currency, $decimals = 2) {
+            $n = (float) $value;
+            if ($n == 0) {
+                return '–';
+            }
+            if ($currency === 'IDR') {
+                return 'Rp ' . number_format($n, $decimals, ',', '.');
+            }
+            return '$' . number_format($n, $decimals, '.', ',');
+        };
+
+        // Helper untuk format quantity (Count SO) (DIPERLUKAN UNTUK RENDER BLOCK Awal)
+        $formatQty = function ($value, $decimals = 0) {
+            $n = (float) $value;
+            if ($n == 0) {
+                return '–';
+            }
+            return number_format($n, $decimals, '.', ',');
+        };
+
+        // =========================================================================================
+        // PERBAIKAN: Filter Mapping untuk Drill Down Report (Menghapus Replace)
+        // =========================================================================================
+        $filteredMapping = $allMapping->map(function ($plantGroup) {
+            // Hapus semua Order Type yang Deskription-nya mengandung 'Replace'
+            $filteredGroup = $plantGroup->reject(function ($item) {
+                return \Illuminate\Support\Str::contains(strtolower((string) $item->Deskription), 'replace');
+            });
+
+            return $filteredGroup->values();
+        });
+
+        // =========================================================================================
+        // HELPER PHP UNTUK RENDER SINGLE KPI BLOCK (DIADAPTASI DARI PO)
+        // =========================================================================================
+        $renderSingleKpiBlock = function ($locationName, $kpiData, $locPrefix, $allMapping) use (
+            $formatCurrency,
+            $formatQty,
+            $encReport,
+        ) {
+            $werksCode = $locPrefix === 'smg' ? '3000' : '2000';
+
+            // Logika untuk menemukan AUART Export dan Lokal
+            $exportAuart = collect($allMapping[$werksCode] ?? [])->first(
+                fn($t) => \Illuminate\Support\Str::contains(strtolower((string) $t->Deskription), 'export') &&
+                    !\Illuminate\Support\Str::contains(strtolower((string) $t->Deskription), 'local') &&
+                    !\Illuminate\Support\Str::contains(strtolower((string) $t->Deskription), 'replace'),
+            );
+
+            $localAuart = collect($allMapping[$werksCode] ?? [])->first(
+                fn($t) => \Illuminate\Support\Str::contains(strtolower((string) $t->Deskription), 'local'),
+            );
+
+            // NOTE: Karena SO Report menggabungkan Export + Replace secara internal,
+            // kita hanya perlu mengarahkan ke AUART Export untuk link USD/Export.
+
+            $exportAuartCode = $exportAuart ? trim((string) $exportAuart->IV_AUART) : null;
+            $localAuartCode = $localAuart ? trim((string) $localAuart->IV_AUART) : null;
+
+            // Buat URL terenkripsi ke SO Index/Report
+            $urlExport = $exportAuartCode ? $encReport(['werks' => $werksCode, 'auart' => $exportAuartCode]) : '#';
+            $urlLocal = $localAuartCode ? $encReport(['werks' => $werksCode, 'auart' => $localAuartCode]) : '#';
+
+            // Ambil data dari kpiNew
+            $usdVal = $kpiData[$locPrefix . '_usd_val'] ?? 0;
+            $usdQty = $kpiData[$locPrefix . '_usd_qty'] ?? 0;
+            $usdOverdueVal = $kpiData[$locPrefix . '_usd_overdue_val'] ?? 0;
+            $usdOverdueQty = $kpiData[$locPrefix . '_usd_overdue_qty'] ?? 0;
+
+            $idrVal = $kpiData[$locPrefix . '_idr_val'] ?? 0;
+            $idrQty = $kpiData[$locPrefix . '_idr_qty'] ?? 0;
+            $idrOverdueVal = $kpiData[$locPrefix . '_idr_overdue_val'] ?? 0;
+            $idrOverdueQty = $kpiData[$locPrefix . '_idr_overdue_qty'] ?? 0;
+
+            // Data-attribute untuk JavaScript (menyimpan semua nilai)
+            $dataAttrs = [
+                'data-werks' => $werksCode,
+                // PENTING: data-export-url dan data-local-url harus ada
+                'data-export-url' => $urlExport,
+                'data-local-url' => $urlLocal,
+                'data-usd-val' => $usdVal,
+                'data-usd-qty' => $usdQty,
+                'data-usd-overdue-val' => $usdOverdueVal,
+                'data-usd-overdue-qty' => $usdOverdueQty,
+                'data-idr-val' => $idrVal,
+                'data-idr-qty' => $idrQty,
+                'data-idr-overdue-val' => $idrOverdueVal,
+                'data-idr-overdue-qty' => $idrOverdueQty,
+            ];
+
+            // Pilihan warna
+            $mainColor = $locPrefix === 'smg' ? 'bg-teal-gradient' : 'bg-indigo-gradient';
+
+            // Tampilan Awal (Default: USD)
+            $initialVal = $formatCurrency($usdVal, 'USD');
+            $initialQty = $formatQty($usdQty);
+            $initialOverdueVal = $formatCurrency($usdOverdueVal, 'USD');
+            $initialOverdueQty = $formatQty($usdOverdueQty);
+
+            // Class awal untuk nilai USD
+            $valClass = 'text-usd';
+
+            // URL default (USD/Export)
+            $initialUrl = $urlExport;
+
+            return '
+                <div class="col-lg-6" ' .
+                implode(' ', array_map(fn($k, $v) => "{$k}=\"$v\"", array_keys($dataAttrs), $dataAttrs)) .
+                ' id="kpi-block-' .
+                $locPrefix .
+                '">
+                    <div class="card shadow-lg h-100 kpi-main-card yz-kpi-card-enhanced">
+                        
+                        <div class="card-header position-relative p-3 ' .
+                $mainColor .
+                '">
+                            <h4 class="mb-0 fw-bolder text-center text-white" style="letter-spacing: 1px;">' .
+                $locationName .
+                '</h4>
+                            <div class="yz-card-toolbar" id="kpi-toggle-holder-' .
+                $locPrefix .
+                '">
+                                <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
+                                    <button type="button" data-cur="USD" class="btn btn-primary btn-sm-square">USD</button>
+                                    <button type="button" data-cur="IDR" class="btn btn-outline-success btn-sm-square">IDR</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card-body p-4 pt-3">
+                            
+                            <div class="row mb-4 border-bottom pb-3">
+                                <h6 class="text-uppercase fw-bold ps-3 pt-0 mb-3" style="color: #6c757d;">Outstanding</h6>
+                                <div class="col-lg-6 mb-3">
+                                    <a href="' .
+                $initialUrl .
+                '" class="text-decoration-none kpi-link" id="' .
+                $locPrefix .
+                '-outs-link">
+                                        <div class="d-flex align-items-center yz-kpi-item-inner">
+                                            <div class="yz-kpi-icon bg-primary-subtle text-primary p-2 me-3" 
+                                                style="border-radius: 50%; box-shadow: 0 0 10px rgba(13, 110, 253, 0.2);">
+                                                <i class="fas fa-sack-dollar"></i>
+                                            </div>
+                                            <div style="line-height:1.2;">
+                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Outstanding Value</span></div>
+                                                <h3 class="mb-0 fw-bolder ' .
+                $valClass .
+                '" id="' .
+                $locPrefix .
+                '-outstanding-value">' .
+                ($initialVal === '–' ? '<span class="text-muted">–</span>' : $initialVal) .
+                '</h3>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </div>
+                                <div class="col-lg-6 mb-3">
+                                    <a href="' .
+                $initialUrl .
+                '" class="text-decoration-none kpi-link" id="' .
+                $locPrefix .
+                '-qty-link">
+                                        <div class="d-flex align-items-center yz-kpi-item-inner">
+                                            <div class="yz-kpi-icon bg-info-subtle text-info p-2 me-3" 
+                                                style="border-radius: 50%; box-shadow: 0 0 10px rgba(13, 202, 240, 0.2);">
+                                                <i class="fas fa-box-open"></i>
+                                            </div>
+                                            <div style="line-height:1.2;">
+                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Total SO</span></div>
+                                                <h3 class="mb-0 fw-bolder text-info' . // Hapus $qtyColorClass karena sudah di class info di sini
+                '" id="' .
+                $locPrefix .
+                '-outstanding-qty">' .
+                ($initialQty === '–' ? '<span class="text-muted">–</span>' : $initialQty) .
+                '</h3>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </div>
+                            </div>
+                            
+                            <div class="row pt-3">
+                                <h6 class="text-uppercase text-danger fw-bold ps-3 pt-0 mb-3">Overdue</h6>
+                                <div class="col-lg-6 mb-3">
+                                    <a href="' .
+                $initialUrl .
+                '" class="text-decoration-none kpi-link" id="' .
+                $locPrefix .
+                '-overdue-val-link">
+                                        <div class="d-flex align-items-center yz-kpi-item-inner">
+                                            <div class="yz-kpi-icon bg-danger-subtle text-danger p-2 me-3" 
+                                                style="border-radius: 50%; box-shadow: 0 0 10px rgba(220, 53, 69, 0.2);">
+                                                <i class="fas fa-circle-exclamation"></i>
+                                            </div>
+                                            <div style="line-height:1.2;">
+                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Overdue Value</span></div>
+                                                <h3 class="mb-0 fw-bolder text-danger" id="' .
+                $locPrefix .
+                '-overdue-value">' .
+                ($initialOverdueVal === '–' ? '<span class="text-muted">–</span>' : $initialOverdueVal) .
+                '</h3>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </div>
+                                <div class="col-lg-6 mb-3">
+                                    <a href="' .
+                $initialUrl .
+                '" class="text-decoration-none kpi-link" id="' .
+                $locPrefix .
+                '-overdue-qty-link">
+                                        <div class="d-flex align-items-center yz-kpi-item-inner">
+                                            <div class="yz-kpi-icon bg-danger-subtle text-danger p-2 me-3" 
+                                                style="border-radius: 50%; box-shadow: 0 0 10px rgba(220, 53, 69, 0.2);">
+                                                <i class="fas fa-hourglass-half"></i>
+                                            </div>
+                                            <div style="line-height:1.2;">
+                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Total SO</span></div>
+                                                <h3 class="mb-0 fw-bolder text-danger" id="' .
+                $locPrefix .
+                '-overdue-qty">' .
+                ($initialOverdueQty === '–' ? '<span class="text-muted">–</span>' : $initialOverdueQty) .
+                '</h3>
+                                            </div>
+                                        </div>
+                                    </a>
+                                </div>
+                            </div>
+                            
+                        </div>
+                    </div>
+                </div>';
+        };
     @endphp
 
     {{-- Anchor untuk JS --}}
@@ -37,45 +286,48 @@
 
     {{-- DATA HOLDER untuk Chart.js dan JS logic --}}
     <div id="dashboard-data-holder" data-chart-data='@json($chartData)'
-        data-mapping-data='@json($mapping)' data-selected-type='{{ $selectedType }}'
+        data-mapping-data='@json($filteredMapping)' data-selected-type='{{ $selectedType }}'
         data-current-view='{{ $view }}' data-current-location='{{ $selectedLocation ?? '' }}'
         data-current-auart='{{ $selectedAuart ?? '' }}' style="display:none;">
     </div>
 
+    {{-- HEADER DENGAN DROPDOWN --}}
     <div class="d-flex flex-column flex-lg-row justify-content-lg-between align-items-lg-center mb-3 gap-3">
         <div>
-            <h2 class="mb-0 fw-bolder">Outstanding SO Overview</h2>
-            <p class="text-muted mb-0">Monitoring Sales Orders Ready for Packing</p>
+            <h2 class="mb-0 fw-bolder text-primary">Outstanding SO Overview</h2>
+            <p class="text-muted mb-0"><i class="fas fa-chart-line me-1"></i> Monitoring Sales Orders Outstanding & Overdue
+            </p>
         </div>
 
         <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
+            <span class="d-flex align-items-center text-muted small fw-semibold me-2">Drill Down Report:</span>
             @php
                 $locations = ['3000' => 'Semarang', '2000' => 'Surabaya'];
             @endphp
 
-            @foreach ($locations as $werks => $name)
+            @foreach ($locations as $werks_code => $name)
                 <div class="dropdown">
-                    <button class="btn btn-sm btn-primary dropdown-toggle shadow-sm" type="button"
-                        data-bs-toggle="dropdown" aria-expanded="false">
+                    <button class="btn btn-sm btn-outline-primary dropdown-toggle shadow-sm text-truncate" type="button"
+                        data-bs-toggle="dropdown" aria-expanded="false" style="min-width: 120px;">
                         {{ $name }}
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
+                    <ul class="dropdown-menu dropdown-menu-end shadow-lg">
+                        <h6 class="dropdown-header text-uppercase small text-primary-emphasis">Order Type
+                            {{ $name }}</h6>
                         @php
-                            // Ambil Order Type unik untuk Plant ini
-                            $werksMapping = $mapping[$werks] ?? collect([]);
+                            // Menggunakan $filteredMapping yang sudah menghapus 'Replace'
+                            $werksMapping = $filteredMapping[$werks_code] ?? collect([]);
                         @endphp
 
                         @forelse ($werksMapping as $t)
                             @php
                                 $auartCode = trim((string) $t->IV_AUART);
                                 // Ciptakan payload terenkripsi ke SO Report (so.index)
-                                $reportUrl = route('so.index', [
-                                    'q' => \Crypt::encrypt(['werks' => $werks, 'auart' => $auartCode]),
-                                ]);
+                                $reportUrl = $encReport(['werks' => $werks_code, 'auart' => $auartCode]);
                             @endphp
                             <li>
                                 <a class="dropdown-item" href="{{ $reportUrl }}">
-                                    <i class="fas fa-file-alt me-2"></i> {{ $t->Deskription }}
+                                    <i class="fas fa-file-alt me-2 text-info"></i> {{ $t->Deskription }}
                                 </a>
                             </li>
                         @empty
@@ -86,279 +338,31 @@
             @endforeach
         </div>
     </div>
-    <hr class="mt-0 mb-4">
+    <hr class="mt-0 mb-4 border-primary opacity-25">
 
     @if (!empty($chartData))
-        {{-- ==================== DASHBOARD SO CONTENT ==================== --}}
+        {{-- ==================== DASHBOARD SO CONTENT: KPI BLOCKS BARU ==================== --}}
         <div class="row g-4 mb-4">
-            <div class="col-sm-6 col-xl-3">
-                <div class="card yz-kpi-card h-100 shadow-sm clickable" id="kpi-so-val-usd-card" style="cursor: pointer;"
-                    title="Klik untuk lihat breakdown Total Outstanding Value per Customer (USD)">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="yz-kpi-icon bg-primary-subtle text-primary"><i class="fas fa-dollar-sign"></i>
-                        </div>
-                        <div class="ms-3">
-                            {{-- Hapus label (Overdue) --}}
-                            <div class="mb-1 text-muted yz-kpi-title" data-help-key="so.kpi.total_outstanding_value_usd">
-                                <span>Outs Value Packing</span>
-                            </div>
-                            <h4 class="mb-0 fw-bolder" id="kpi-so-val-usd">$0.00</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-sm-6 col-xl-3">
-                <div class="card yz-kpi-card h-100 shadow-sm clickable" id="kpi-so-val-idr-card" style="cursor: pointer;"
-                    title="Klik untuk lihat breakdown Total Outstanding Value per Customer (IDR)">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="yz-kpi-icon bg-success-subtle text-success"><i class="fas fa-money-bill-wave"></i>
-                        </div>
-                        <div class="ms-3">
-                            {{-- Hapus label (Overdue) --}}
-                            <div class="mb-1 text-muted yz-kpi-title" data-help-key="so.kpi.total_outstanding_value_idr">
-                                <span>Outs Value Packing</span>
-                            </div>
-                            <h4 class="mb-0 fw-bolder" id="kpi-so-val-idr">Rp 0</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-sm-6 col-xl-3">
-                <div id="toggle-due-tables-card" class="card yz-kpi-card card-highlight-info h-100 shadow-sm"
-                    style="cursor: pointer;" title="Klik untuk menampilkan/menyembunyikan detail SO Due This Week">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="yz-kpi-icon bg-info-subtle text-info"><i class="fas fa-shipping-fast"></i></div>
-                        <div class="ms-3">
-                            <div class="mb-1 text-muted yz-kpi-title" data-help-key="so.kpi.value_to_ship_this_week">
-                                <span>Value to Packing This Week</span>
-                            </div>
-                            <h5 class="mb-0 fw-bolder" id="kpi-so-ship-week-usd">$0.00</h5>
-                            <h5 class="mb-0 fw-bolder" id="kpi-so-ship-week-idr">Rp 0</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-sm-6 col-xl-3">
-                <div id="toggle-bottlenecks-card" class="card yz-kpi-card card-highlight-warning h-100 shadow-sm"
-                    style="cursor: pointer;" title="Klik untuk melihat Potential Bottlenecks">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="yz-kpi-icon bg-warning-subtle text-warning"><i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="ms-3">
-                            <div class="mb-1 text-muted yz-kpi-title" data-help-key="so.kpi.potential_bottlenecks">
-                                <span>Potential Bottlenecks</span>
-                            </div>
-                            <h4 class="mb-0 fw-bolder"><span id="kpi-so-bottleneck">0</span> <small
-                                    id="kpi-so-bottleneck-unit">Items</small></h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            {{-- SEMARANG BLOCK --}}
+            {!! $renderSingleKpiBlock('Semarang', $kpiNew, 'smg', $allMapping) !!}
+
+            {{-- SURABAYA BLOCK --}}
+            {!! $renderSingleKpiBlock('Surabaya', $kpiNew, 'sby', $allMapping) !!}
         </div>
 
-        {{-- === DETAIL (SO): Outs Value Packing by Customer — muncul di bawah KPI === --}}
-        <div id="so-outs-details" class="card yz-chart-card mt-3" style="display:none;">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-table me-2"></i>
-                        Outstanding Value Packing by Customer —
-                        <span id="so-outs-cur" class="badge bg-secondary">USD</span>
-                    </h5>
-                    <button type="button" class="btn btn-sm btn-light" id="so-outs-hide">Hide</button>
-                </div>
-                <div id="so-outs-filter" class="text-muted small mt-1">Filter: –</div>
-                <hr class="mt-2">
+        <hr class="my-4 border-dashed border-secondary">
 
-                <div class="table-responsive yz-scrollable-table-container" style="max-height:45vh;">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light yz-sticky-thead">
-                            <tr>
-                                <th>Customer</th>
-                                <th class="text-center" style="min-width:160px;">Order Type</th>
-                                <th class="text-end" style="min-width:180px;">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody id="so-outs-tbody"></tbody>
-                        <tfoot>
-                            <tr class="table-light">
-                                <th colspan="2" class="text-end">Total</th>
-                                <th id="so-outs-total" class="text-end">–</th>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-        </div>
-        {{-- === /DETAIL (SO) === --}}
-
-
-        {{-- DUE THIS WEEK TABLES --}}
-        <div id="due-this-week-tables" style="display: none;">
-            @if (!empty($chartData['due_this_week']))
-                @php
-                    $rangeStart = \Carbon\Carbon::parse($chartData['due_this_week']['start']);
-                    $rangeEndEx = \Carbon\Carbon::parse($chartData['due_this_week']['end_excl']);
-                    $rangeEnd = $rangeEndEx->copy()->subDay(); // tampil s.d. Minggu
-                    $dueSoRows = $chartData['due_this_week']['by_so'] ?? [];
-                    $dueCustRows = $chartData['due_this_week']['by_customer'] ?? [];
-                    $plantNames = ['2000' => 'SBY', '3000' => 'SMG'];
-                @endphp
-
-                <div class="row g-4 mb-4">
-                    {{-- KIRI: SO jatuh tempo minggu ini --}}
-                    <div class="col-lg-7">
-                        <div class="card shadow-sm h-100 yz-chart-card">
-                            <div class="card-body">
-                                <h5 class="card-title" data-help-key="so.due_this_week_by_so">
-                                    <i class="fas fa-truck-fast me-2"></i>SO Due This Week
-                                    <span class="text-muted small">
-                                        ({{ $rangeStart->translatedFormat('d M Y') }} –
-                                        {{ $rangeEnd->translatedFormat('d M Y') }})
-                                    </span>
-                                </h5>
-                                <hr class="mt-2">
-                                @if (empty($dueSoRows))
-                                    <div class="text-muted p-4 text-center">
-                                        <i class="fas fa-info-circle me-2"></i>Tidak ada SO jatuh tempo minggu ini.
-                                    </div>
-                                @else
-                                    <div class="table-responsive yz-scrollable-table-container">
-                                        <table class="table table-sm table-hover align-middle mb-0">
-                                            <thead class="table-light yz-sticky-thead">
-                                                <tr>
-                                                    <th class="text-center">SO</th>
-                                                    <th class="text-center">PO</th>
-                                                    <th>Customer</th>
-                                                    <th class="text-center">Plant</th>
-                                                    <th class="text-center">Order Type</th>
-                                                    <th class="text-center">Due</th>
-                                                    <th class="text-end">Value</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach ($dueSoRows as $r)
-                                                    <tr>
-                                                        <td class="text-center">{{ $r->VBELN }}</td>
-                                                        <td class="text-center">{{ $r->BSTNK }}</td>
-                                                        <td>{{ $r->NAME1 }}</td>
-                                                        <td class="text-center">
-                                                            {{ $plantNames[$r->IV_WERKS_PARAM] ?? $r->IV_WERKS_PARAM }}
-                                                        </td>
-                                                        <td class="text-center">
-                                                            {{ $auartDescriptions[$r->IV_AUART_PARAM]->Deskription ?? $r->IV_AUART_PARAM }}
-                                                        </td>
-                                                        <td class="text-center">
-                                                            {{ \Carbon\Carbon::parse($r->due_date)->format('d-m-Y') }}
-                                                        </td>
-                                                        <td class="text-end">
-                                                            @if ($r->WAERK === 'USD')
-                                                                ${{ number_format((float) $r->total_value, 2, '.', ',') }}
-                                                            @else
-                                                                Rp
-                                                                {{ number_format((float) $r->total_value, 2, ',', '.') }}
-                                                            @endif
-                                                        </td>
-                                                    </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- KANAN: ringkasan per customer --}}
-                    <div class="col-lg-5">
-                        <div class="card shadow-sm h-100 yz-chart-card">
-                            <div class="card-body">
-                                <h5 class="card-title" data-help-key="so.due_this_week_by_customer">
-                                    <i class="fas fa-user-clock me-2"></i>Customers Due This Week
-                                </h5>
-                                <hr class="mt-2">
-                                @if (empty($dueCustRows))
-                                    <div class="text-muted p-4 text-center">
-                                        <i class="fas fa-info-circle me-2"></i>Tidak ada customer jatuh tempo minggu
-                                        ini.
-                                    </div>
-                                @else
-                                    <div class="table-responsive yz-scrollable-table-container">
-                                        <table class="table table-sm table-hover align-middle mb-0">
-                                            <thead class="table-light yz-sticky-thead">
-                                                <tr>
-                                                    <th>Customer</th>
-                                                    <th class="text-end">Total Value</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach ($dueCustRows as $r)
-                                                    <tr>
-                                                        <td>{{ $r->NAME1 }}</td>
-                                                        <td class="text-end">
-                                                            @if ($r->WAERK === 'USD')
-                                                                ${{ number_format((float) $r->total_value, 2, '.', ',') }}
-                                                            @else
-                                                                Rp
-                                                                {{ number_format((float) $r->total_value, 2, ',', '.') }}
-                                                            @endif
-                                                        </td>
-                                                    </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            @endif
-        </div>
-
-        {{-- Slot untuk Bottlenecks (diisi via JS/API) --}}
-        <div id="bottlenecks-tables" style="display:none;"></div>
-
-        <div class="row g-4 mb-4">
-            <div class="col-lg-7">
-                <div class="card shadow-sm h-100 yz-chart-card">
-                    <div class="card-body d-flex flex-column">
-                        <h5 class="card-title" data-help-key="so.value_by_location_status">
-                            <i class="fas fa-chart-column me-2"></i>Value to Packing vs Overdue by Location (USD)
-                        </h5>
-                        <hr class="mt-2">
-                        <div class="chart-container flex-grow-1">
-                            <canvas id="chartValueByLocationStatus"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-5">
-                <div class="card shadow-sm h-100 yz-chart-card position-relative">
-                    <div class="card-body d-flex flex-column">
-                        <h5 class="card-title" data-help-key="so.status_overview">
-                            <i class="fas fa-clock me-2"></i>SO Fulfillment Urgency
-                        </h5>
-                        <hr class="mt-2">
-                        <div class="chart-container flex-grow-1">
-                            <canvas id="chartSoUrgency"></canvas>
-                        </div>
-                    </div>
-                    {{-- Slot untuk detail Urgency (diisi via JS/API) --}}
-                    <div id="so-urgency-details" style="display:none;"></div>
-                </div>
-            </div>
-        </div>
-
+        {{-- CHART TOP CUSTOMERS (Overdue Value) --}}
         <div class="row g-4 mb-4">
             <div class="col-12">
-                <div class="card shadow-sm h-100 yz-chart-card">
+                <div class="card shadow-lg h-100 yz-chart-card position-relative">
                     <div class="card-body d-flex flex-column">
-                        <h5 class="card-title text-primary-emphasis" data-help-key="so.top_overdue_customers_value">
-                            <i class="fas fa-crown me-2"></i>Top 5 Customers by Value of Overdue Orders Awaiting
-                            Packing (USD)
+                        <h5 class="card-title text-danger-emphasis yz-card-header-pad-top"
+                            data-help-key="so.top_overdue_customers_value">
+                            <i class="fas fa-crown me-2 text-warning"></i>Top 5 Customers by Value of Overdue Orders
+                            Awaiting Packing (USD)
                         </h5>
-                        <hr class="mt-2">
+                        <hr class="mt-2 mb-3">
                         <div class="chart-container flex-grow-1" style="min-height: 400px;">
                             <canvas id="chartTopCustomersValueSO"></canvas>
                         </div>
@@ -397,6 +401,183 @@
 
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
+    <style>
+        /* ========================================================= */
+        /* Custom Styles untuk Tampilan KPI Block (Dari PO Dashboard) */
+        /* ========================================================= */
+
+        .border-dashed {
+            border-style: dashed !important;
+            opacity: 0.35;
+        }
+
+        /* Peningkatan Kontras Warna untuk Header KPI Gradient */
+        .bg-teal-gradient {
+            background: linear-gradient(90deg, #0d9488 0%, #065f46 100%);
+        }
+
+        .bg-indigo-gradient {
+            background: linear-gradient(90deg, #4f46e5 0%, #312e81 100%);
+        }
+
+        .text-teal {
+            color: #0d9488;
+        }
+
+        .text-indigo {
+            color: #4f46e5;
+        }
+
+        /* Penyesuaian KPI Block */
+        .yz-kpi-card-enhanced {
+            border-radius: 1.25rem;
+            overflow: hidden;
+            border: none;
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+        }
+
+        .yz-kpi-card-enhanced:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.15) !important;
+        }
+
+        /* Icon pada KPI Block */
+        .yz-kpi-icon {
+            font-size: 1.5rem;
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .yz-kpi-item-inner {
+            transition: transform 0.2s ease;
+        }
+
+        .yz-kpi-item-inner:hover {
+            transform: translateX(5px);
+        }
+
+        /* Perbaikan: Atur posisi toolbar KPI block */
+        .yz-kpi-card-enhanced .yz-card-toolbar {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            right: 1rem;
+        }
+
+        .yz-kpi-card-enhanced .yz-card-toolbar .btn-sm-square {
+            padding: .2rem .6rem;
+            font-size: .8rem;
+            line-height: 1;
+        }
+
+        .text-usd {
+            color: var(--bs-primary, #0d6efd) !important;
+        }
+
+        .text-idr {
+            color: var(--bs-success, #198754) !important;
+        }
+
+        /* Judul Chart */
+        .yz-chart-card .card-title {
+            font-size: 1.15rem;
+        }
+
+        .yz-card-header-pad-top {
+            padding-right: 150px !important;
+        }
+
+        .yz-chart-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 0.8rem 1.5rem rgba(0, 0, 0, 0.1) !important;
+        }
+
+        /* Perbaikan Kontras Warna Toggle di dalam Header Gradient (KPI) */
+        .yz-currency-toggle .btn-sm-square {
+            background-color: rgba(255, 255, 255, 0.15);
+            color: white !important;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            font-weight: 600;
+        }
+
+        .yz-currency-toggle .btn.btn-primary {
+            background-color: #ffffff !important;
+            color: #0d9488 !important;
+            border-color: #ffffff !important;
+        }
+
+        .yz-currency-toggle .btn.btn-success {
+            background-color: #ffffff !important;
+            color: #15803d !important;
+            border-color: #ffffff !important;
+        }
+
+        .yz-currency-toggle .btn.btn-outline-primary,
+        .yz-currency-toggle .btn.btn-outline-success {
+            background-color: transparent !important;
+        }
+
+        .yz-kpi-card-enhanced .card-header h4 {
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        /* ========================================================= */
+        /* PERBAIKAN UTAMA: Warna Toggle di dalam Chart (Latar Belakang Putih) */
+        /* ========================================================= */
+        .yz-currency-toggle-chart {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        /* Tombol non-aktif */
+        .yz-currency-toggle-chart .btn-sm-square {
+            background-color: #f8f9fa !important;
+            color: #6c757d !important;
+            border: 1px solid #e9ecef;
+            font-weight: 600;
+        }
+
+        /* Tombol USD (Primary) saat AKTIF */
+        .yz-currency-toggle-chart .btn.btn-primary {
+            background-color: var(--bs-primary, #0d6efd) !important;
+            color: white !important;
+            border-color: var(--bs-primary, #0d6efd) !important;
+        }
+
+        /* Tombol IDR (Success) saat AKTIF */
+        .yz-currency-toggle-chart .btn.btn-success {
+            background-color: var(--bs-success, #198754) !important;
+            color: white !important;
+            border-color: var(--bs-success, #198754) !important;
+        }
+
+        /* Tombol non-aktif saat outline */
+        .yz-currency-toggle-chart .btn-outline-primary,
+        .yz-currency-toggle-chart .btn-outline-success {
+            background-color: #f8f9fa !important;
+            color: #6c757d !important;
+            border-color: #e9ecef !important;
+        }
+
+        .yz-card-toolbar {
+            position: absolute;
+            top: .75rem;
+            right: .75rem;
+            z-index: 3;
+        }
+
+        .yz-card-toolbar .btn {
+            padding: .15rem .5rem;
+            font-size: .75rem;
+            line-height: 1.1;
+        }
+    </style>
 @endpush
 
 @push('scripts')
@@ -420,9 +601,45 @@
             // Stop pengecekan setelah 5 detik
             setTimeout(() => clearInterval(iv), 5000);
         });
+
+        // Set Default Chart Font/Style
+        Chart.defaults.font.family = 'Inter, sans-serif';
+        Chart.defaults.plugins.legend.position = 'bottom';
+        Chart.defaults.responsive = true;
+        Chart.defaults.maintainAspectRatio = false;
+
         // =========================================================
-        // Helper Functions (Copy dari kode lama)
+        // Helper Functions
         // =========================================================
+
+        const formatFullCurrency = (value, currency) => {
+            const n = parseFloat(value);
+            if (isNaN(n) || n === 0) return '–';
+            if (currency === 'IDR') {
+                return new Intl.NumberFormat('id-ID', {
+                    style: 'currency',
+                    currency: 'IDR',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(n).replace('IDR', 'Rp');
+            }
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(n);
+        };
+
+        const formatQty = (value, decimals = 0) => {
+            const n = parseFloat(value);
+            if (isNaN(n) || n === 0) return '–';
+
+            return new Intl.NumberFormat('id-ID', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: decimals
+            }).format(n);
+        };
 
         function setTitleCurrencySuffixByCanvas(canvasId, currency) {
             const titleEl = document.getElementById(canvasId)?.closest('.card')?.querySelector('.card-title');
@@ -432,9 +649,11 @@
 
             if (!textNodes.length) return;
             const tn = textNodes[textNodes.length - 1];
-            const raw = tn.textContent;
+            let raw = tn.textContent;
 
-            if (/\((USD|IDR)\)/.test(raw)) {
+            raw = raw.replace(/\s*\((USD|IDR)\)\s*$/, '');
+
+            if (/\(USD|IDR\)/.test(raw)) {
                 tn.textContent = raw.replace(/\((USD|IDR)\)/, `(${currency})`);
             } else {
                 tn.textContent = `${raw.trim()} (${currency})`;
@@ -442,64 +661,15 @@
         }
 
         function preventInfoButtonPropagation() {
-            document.querySelectorAll('.yz-info-icon').forEach(btn => {
+            const infoButtons = document.querySelectorAll('.yz-info-icon');
+            infoButtons.forEach(btn => {
                 if (btn.dataset.clickBound === '1') return;
                 btn.addEventListener('click', (e) => {
-                    e.stopPropagation(); // cukup hentikan bubbling
-                    // JANGAN panggil e.preventDefault() atau e.stopImmediatePropagation()
+                    e.stopPropagation();
+                    e.stopImmediatePropagation?.();
                 });
                 btn.dataset.clickBound = '1';
             });
-        }
-        document.addEventListener('DOMContentLoaded', function() {
-            // Logika hide currency toggle jika type filter aktif (tetap dipertahankan)
-            const typeSelected = {!! json_encode((bool) $curType) !!};
-            if (typeSelected) {
-                document.querySelectorAll('.yz-currency-toggle').forEach(el => el.remove());
-                const maybeGroups = document.querySelectorAll('.btn-group, .nav, .nav-pills');
-                maybeGroups.forEach(g => {
-                    const labels = Array.from(g.querySelectorAll('a,button'))
-                        .map(b => (b.textContent || '').trim().toUpperCase());
-                    if (labels.includes('USD') && labels.includes('IDR')) g.remove();
-                });
-            }
-        });
-
-        const formatFullCurrency = (value, currency) => {
-            const n = parseFloat(value);
-            if (isNaN(n)) return '';
-            if (currency === 'IDR') {
-                return new Intl.NumberFormat('id-ID', {
-                    style: 'currency',
-                    currency: 'IDR',
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                }).format(n);
-            }
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD'
-            }).format(n);
-        };
-
-        function injectToggleStyles() {
-            if (document.getElementById('yzToggleCss')) return;
-            const style = document.createElement('style');
-            style.id = 'yzToggleCss';
-            style.textContent = `
-        .yz-card-toolbar {
-            position: absolute;
-            top: .75rem;
-            right: .75rem;
-            z-index: 3;
-        }
-        .yz-card-toolbar .btn {
-            padding: .15rem .5rem;
-            font-size: .75rem;
-            line-height: 1.1;
-        }
-    `;
-            document.head.appendChild(style);
         }
 
         const showNoDataMessage = (canvasId, msg = 'Data tidak tersedia untuk filter ini.') => {
@@ -524,38 +694,31 @@
             if (canvas) canvas.style.display = '';
         };
 
-        const formatLocations = (locsString) => {
-            if (!locsString) return '';
-            const hasSemarang = locsString.includes('3000');
-            const hasSurabaya = locsString.includes('2000');
-            if (hasSemarang && hasSurabaya) return 'Semarang & Surabaya';
-            if (hasSemarang) return 'Semarang';
-            if (hasSurabaya) return 'Surabaya';
-            return '';
-        };
 
+        /**
+         * Fungsi untuk membuat Horizontal Bar Chart.
+         */
         const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, currency = '') => {
             if (!chartData || chartData.length === 0) {
                 showNoDataMessage(canvasId);
-                return;
+                return null;
             }
+            hideNoDataMessage(canvasId);
             const ctx = document.getElementById(canvasId);
-            if (!ctx) return;
+            if (!ctx) return null;
+            const prev = Chart.getChart(canvasId);
+            if (prev) prev.destroy();
 
             const labels = chartData.map(d => {
                 const customerName = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
-                if (d.locations) return [customerName, formatLocations(d.locations)];
-                return customerName;
+
+                // Jika data memiliki so_count, tambahkan sebagai label agar terlihat di chart
+                const soCountText = d.so_count ? ` (${d.so_count} SO)` : '';
+                return `${customerName}${soCountText}`;
             });
             const values = chartData.map(d => d[dataKey]);
 
-            let existingChart = Chart.getChart(canvasId);
-            if (existingChart) {
-                existingChart.destroy();
-            }
-            hideNoDataMessage(canvasId);
-
-            new Chart(ctx, {
+            const newChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels,
@@ -576,7 +739,8 @@
                         },
                         tooltip: {
                             callbacks: {
-                                title: (items) => items[0].label.split(',')[0],
+                                // Menampilkan nama Customer tanpa SO Count di title tooltip
+                                title: (items) => items[0].label.split('(')[0].trim(),
                                 label: (context) => {
                                     const dataPoint = chartData[context.dataIndex];
 
@@ -584,14 +748,14 @@
                                         const totalTxt = formatFullCurrency(context.raw, currency);
 
                                         let breakdownTxt = '';
+                                        // LOGIKA BREAKDOWN SBY/SMG
                                         if (canvasId === 'chartTopCustomersValueSO') {
                                             const sby = Number(dataPoint.sby_value || 0);
                                             const smg = Number(dataPoint.smg_value || 0);
 
                                             if (sby > 0 && smg > 0) {
                                                 breakdownTxt =
-                                                    ` (SMG: ${formatFullCurrency(smg, currency)}, ` +
-                                                    `SBY: ${formatFullCurrency(sby, currency)})`;
+                                                    ` (SMG: ${formatFullCurrency(smg, currency)}, SBY: ${formatFullCurrency(sby, currency)})`;
                                             } else if (smg > 0 && sby === 0) {
                                                 breakdownTxt = ' (SMG)';
                                             } else if (sby > 0 && smg === 0) {
@@ -599,11 +763,10 @@
                                             }
                                         }
 
-                                        const soCountTxt = dataPoint.so_count ?
-                                            ` (${dataPoint.so_count} PO)` : '';
-                                        return `${totalTxt}${breakdownTxt}${soCountTxt}`;
+                                        return `${totalTxt}${breakdownTxt}`;
                                     }
-                                    return `${context.raw} PO`;
+
+                                    return `${context.raw} SO`;
                                 }
                             }
                         }
@@ -618,8 +781,14 @@
                                 padding: 6,
                                 callback: (value) => {
                                     if (Math.floor(value) === value) {
-                                        return currency ? formatFullCurrency(value, currency).replace(
-                                            /\,00$/, '') : value;
+                                        if (currency) {
+                                            let formatted = new Intl.NumberFormat('id-ID', {
+                                                minimumFractionDigits: 0,
+                                                maximumFractionDigits: 2
+                                            }).format(value);
+                                            return formatted;
+                                        }
+                                        return value;
                                     }
                                 }
                             }
@@ -627,23 +796,171 @@
                     }
                 }
             });
+            return newChart;
         };
 
-        function escapeHtml(str = '') {
-            return String(str).replace(/[&<>"']/g, s => ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#39;'
-            } [s]));
+
+        /* =========================================================
+           HELPER KPI BARU (UNTUK FUNGSI TOGGLE)
+           ======================================================== */
+        /**
+         * Memperbarui nilai dan link pada blok KPI tunggal berdasarkan mata uang yang dipilih.
+         */
+        const updateKpiBlock = (locPrefix, currency) => {
+            const block = document.getElementById(`kpi-block-${locPrefix}`);
+            if (!block) return;
+
+            const curLower = currency.toLowerCase();
+            const isUSD = currency === 'USD';
+
+            // Ambil nilai dari data attribute
+            const val = parseFloat(block.dataset[`${curLower}Val`]) || 0;
+            const qty = parseInt(block.dataset[`${curLower}Qty`]) || 0;
+            const overdueVal = parseFloat(block.dataset[`${curLower}OverdueVal`]) || 0;
+            const overdueQty = parseInt(block.dataset[`${curLower}OverdueQty`]) || 0;
+
+            // Ambil URL yang sudah terenkripsi dari data attribute
+            const reportUrl = isUSD ? (block.dataset.exportUrl || '#') : (block.dataset.localUrl || '#');
+
+            // Format nilai
+            const valText = formatFullCurrency(val, currency);
+            const qtyText = formatQty(qty, 0);
+            const overdueValText = formatFullCurrency(overdueVal, currency);
+            const overdueQtyText = formatQty(overdueQty, 0);
+
+            // Tentukan class warna untuk Outstanding Value
+            const valColorClass = isUSD ? 'text-usd' : 'text-idr';
+
+            // Target elemen
+            const valEl = document.getElementById(`${locPrefix}-outstanding-value`);
+            const qtyEl = document.getElementById(`${locPrefix}-outstanding-qty`);
+            const overdueValEl = document.getElementById(`${locPrefix}-overdue-value`);
+            const overdueQtyEl = document.getElementById(`${locPrefix}-overdue-qty`);
+
+            // PENTING: Perbaikan Logika Link
+            const links = block.querySelectorAll('.kpi-link');
+
+            // Update Nilai & Warna Outstanding Value
+            if (valEl) {
+                valEl.innerHTML = (val === 0 || valText === '–') ? '<span class="text-muted">–</span>' : valText;
+                valEl.classList.remove('text-primary', 'text-success', 'text-usd', 'text-idr');
+                valEl.classList.add(valColorClass);
+            }
+            if (qtyEl) {
+                qtyEl.innerHTML = (qty === 0 || qtyText === '–') ? '<span class="text-muted">–</span>' : qtyText;
+            }
+            if (overdueValEl) {
+                overdueValEl.innerHTML = (overdueVal === 0 || overdueValText === '–') ?
+                    '<span class="text-muted">–</span>' : overdueValText;
+            }
+            if (overdueQtyEl) {
+                overdueQtyEl.innerHTML = (overdueQty === 0 || overdueQtyText === '–') ?
+                    '<span class="text-muted">–</span>' : overdueQtyText;
+            }
+
+            // Update Link Tujuan (USD -> Export, IDR -> Local)
+            links.forEach(link => {
+                link.href = reportUrl;
+            });
+
+
+            // Update Tampilan Toggle
+            document.querySelectorAll(`#kpi-toggle-holder-${locPrefix} button[data-cur]`).forEach(b => {
+                const isCurrent = b.dataset.cur === currency;
+
+                if (b.dataset.cur === 'USD') {
+                    b.classList.toggle('btn-primary', isCurrent);
+                    b.classList.toggle('btn-outline-primary', !isCurrent);
+                    b.classList.remove('btn-success', 'btn-outline-success');
+                } else if (b.dataset.cur === 'IDR') {
+                    b.classList.toggle('btn-success', isCurrent);
+                    b.classList.toggle('btn-outline-success', !isCurrent);
+                    b.classList.remove('btn-primary', 'btn-outline-primary');
+                }
+            });
+        };
+
+        /**
+         * FUNGSI BARU UNTUK MEMPERBARUI TOMBOL TOGGLE DI CHART
+         */
+        function updateChartToggleButtons(currency) {
+            document.querySelectorAll('.yz-currency-toggle-chart button[data-cur]').forEach(b => {
+                const v = b.dataset.cur;
+                b.classList.toggle('btn-primary', v === 'USD' && currency === 'USD');
+                b.classList.toggle('btn-outline-primary', v === 'USD' && currency !== 'USD');
+                b.classList.toggle('btn-success', v === 'IDR' && currency === 'IDR');
+                b.classList.toggle('btn-outline-success', v === 'IDR' && currency !== 'IDR');
+            });
         }
 
-        // =========================================================
-        // MAIN SO DASHBOARD SCRIPT
-        // =========================================================
+        /**
+         * Menginisialisasi tombol toggle KPI dan event listener-nya.
+         */
+        function initKpiToggles(chartCurrencyFunction, initialChartCurrency) {
+            const locations = ['smg', 'sby'];
+
+            let savedKpiCur = initialChartCurrency;
+            try {
+                const saved = localStorage.getItem('soKpiCurrency');
+                if (saved === 'USD' || saved === 'IDR') savedKpiCur = saved;
+            } catch {}
+
+            let currentKpiCurrency = savedKpiCur;
+
+            // 1. Terapkan nilai awal KPI
+            locations.forEach(loc => {
+                updateKpiBlock(loc, currentKpiCurrency);
+            });
+
+            // Panggil render chart pertama kali (menggunakan currency KPI)
+            if (typeof chartCurrencyFunction === 'function') {
+                chartCurrencyFunction(currentKpiCurrency);
+            }
+
+            // PENTING: Perbarui tampilan tombol chart toggle saat inisialisasi
+            updateChartToggleButtons(currentKpiCurrency);
+
+            // 2. Tambahkan event listeners untuk toggle KPI
+            locations.forEach(loc => {
+                const toggleHolder = document.getElementById(`kpi-toggle-holder-${loc}`);
+                toggleHolder?.addEventListener('click', (e) => {
+                    const btn = e.target.closest('button[data-cur]');
+                    if (!btn) return;
+                    e.preventDefault();
+
+                    const nextCurrency = btn.dataset.cur;
+
+                    if (nextCurrency === currentKpiCurrency) return;
+
+                    currentKpiCurrency = nextCurrency;
+
+                    // Simpan ke Local Storage untuk preferensi
+                    try {
+                        localStorage.setItem('soKpiCurrency', currentKpiCurrency);
+                        // Simpan ke chart currency juga agar sinkron saat halaman dimuat ulang
+                        localStorage.setItem('soTopCustomerCurrency', currentKpiCurrency);
+                    } catch {}
+
+                    // Perbarui semua blok KPI dan link
+                    locations.forEach(l => updateKpiBlock(l, currentKpiCurrency));
+
+                    // Perbarui chart Top Customers
+                    if (typeof chartCurrencyFunction === 'function') {
+                        chartCurrencyFunction(currentKpiCurrency);
+                        // PENTING: Panggil fungsi update tombol chart di sini juga
+                        updateChartToggleButtons(currentKpiCurrency);
+                    }
+                });
+            });
+
+            return currentKpiCurrency;
+        }
+
+        /* =========================================================
+           MAIN SO DASHBOARD SCRIPT
+           ======================================================== */
         (() => {
-            injectToggleStyles();
+
             const dataHolder = document.getElementById('dashboard-data-holder');
             if (!dataHolder) return;
 
@@ -669,139 +986,44 @@
 
             const chartData = JSON.parse(dataHolder.dataset.chartData);
             const selectedType = dataHolder.dataset.selectedType;
-            if (!chartData || !chartData.kpi) {
-                document.querySelectorAll('.row.g-4.mb-4').forEach(el => el.style.display = 'none');
-                return;
-            }
+            if (!chartData) return;
 
-            Chart.defaults.font.family = 'Inter, sans-serif';
-            Chart.defaults.plugins.legend.position = 'bottom';
-            Chart.defaults.responsive = true;
-            Chart.defaults.maintainAspectRatio = false;
+            // --- LOGIC PENENTU MATA UANG CHART AWAL ---
+            const hasTypeFilter = !!filterState.type;
+            const enableCurrencyToggle = (!hasTypeFilter);
 
-            /* ======================== KPI & Data Initialization ======================== */
-
-            // Mengisi KPI Card - Menggunakan nilai TOTAL outstanding yang sudah dihitung di Controller
-            document.getElementById('kpi-so-val-usd').textContent = formatFullCurrency(chartData.kpi
-                .total_outstanding_value_usd, 'USD');
-            document.getElementById('kpi-so-val-idr').textContent = formatFullCurrency(chartData.kpi
-                .total_outstanding_value_idr, 'IDR');
-            document.getElementById('kpi-so-ship-week-usd').textContent = formatFullCurrency(chartData.kpi
-                .value_to_ship_this_week_usd, 'USD');
-            document.getElementById('kpi-so-ship-week-idr').textContent = formatFullCurrency(chartData.kpi
-                .value_to_ship_this_week_idr, 'IDR');
-            document.getElementById('kpi-so-bottleneck').textContent = chartData.kpi.potential_bottlenecks;
-
-
-            /* ======================== Currency Toggle Logic (Value by Location & Top Customer) ======================== */
-
-            const enableSoCurrencyToggle = !selectedType;
-            let currentSoCurrency;
-
-            if (selectedType === 'lokal') {
-                currentSoCurrency = 'IDR';
-            } else if (selectedType === 'export') {
-                currentSoCurrency = 'USD';
-            } else {
-                currentSoCurrency = 'USD';
+            // Tentukan mata uang chart default/initial
+            let initialChartCurrency = (dataHolder.dataset.selectedType === 'lokal') ? 'IDR' : 'USD';
+            if (enableCurrencyToggle) {
                 try {
                     const saved = localStorage.getItem('soTopCustomerCurrency');
-                    if (saved === 'USD' || saved === 'IDR') {
-                        currentSoCurrency = saved;
-                    }
-                } catch (e) {}
+                    if (saved === 'USD' || saved === 'IDR') initialChartCurrency = saved;
+                } catch {}
             }
 
-            let soValByLocChart = null;
+            let currentChartCurrency = initialChartCurrency;
+
+            // Chart definitions
             let soTopCustomersChart = null;
 
-            function buildSoLocationSeries(rows, currency) {
-                const labels = ['Semarang', 'Surabaya'];
-                const curKey = currency === 'IDR' ? 'idr' : 'usd';
-                const findRow = (loc) => (rows || []).find(d => d.location === loc) || {};
-                const num = (v) => Number(v || 0);
 
-                const onTime = labels.map(loc => num((findRow(loc).on_time_breakdown || {})[curKey]));
-                const overdue = labels.map(loc => num((findRow(loc).overdue_breakdown || {})[curKey]));
-
-                return {
-                    labels,
-                    onTime,
-                    overdue
-                };
-            }
-
-            function renderSoValueByLocationStatus(currency) {
-                const canvasId = 'chartValueByLocationStatus';
-                const ctx = document.getElementById(canvasId);
-                if (!ctx) return;
-
-                const rows = chartData.value_by_location_status || [];
-                const {
-                    labels,
-                    onTime,
-                    overdue
-                } = buildSoLocationSeries(rows, currency);
-                const total = [...onTime, ...overdue].reduce((a, b) => a + b, 0);
-
-                if (soValByLocChart) soValByLocChart.destroy();
-                soValByLocChart = null;
-
-                if (total === 0) {
-                    showNoDataMessage(canvasId);
-                    return;
-                }
-                hideNoDataMessage(canvasId);
-                setTitleCurrencySuffixByCanvas(canvasId, currency);
-
-                soValByLocChart = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels,
-                        datasets: [{
-                                label: 'On Time',
-                                data: onTime,
-                                backgroundColor: 'rgba(75, 192, 192, 0.7)'
-                            },
-                            {
-                                label: 'Overdue',
-                                data: overdue,
-                                backgroundColor: 'rgba(255, 99, 132, 0.7)'
-                            }
-                        ]
-                    },
-                    options: {
-                        scales: {
-                            x: {
-                                stacked: true
-                            },
-                            y: {
-                                stacked: true,
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: (v) => new Intl.NumberFormat('id-ID').format(v)
-                                }
-                            }
-                        },
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: (ctx) =>
-                                        `${ctx.dataset.label}: ${formatFullCurrency(ctx.raw || 0, currency)}`
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
+            // --- FUNGSI RENDER CHART TOP CUSTOMERS ---
             function renderSoTopCustomers(currency) {
                 const canvasId = 'chartTopCustomersValueSO';
-                if (soTopCustomersChart) soTopCustomersChart.destroy();
+                if (soTopCustomersChart) Chart.getChart(canvasId)?.destroy?.();
                 soTopCustomersChart = null;
-                setTitleCurrencySuffixByCanvas(canvasId, currency);
 
-                // Chart Top Customers ini menggunakan data OVERDUE (sesuai judulnya)
+                // PENTING: Update currentChartCurrency agar mountCurrencyToggleIfNeeded menggunakan nilai terbaru
+                currentChartCurrency = currency;
+
+                // Judul
+                const titleEl = document.getElementById(canvasId)?.closest('.card')?.querySelector('.card-title');
+                if (titleEl) {
+                    titleEl.innerHTML =
+                        `<i class="fas fa-crown me-2 text-warning"></i>Top 5 Customers by Value of Overdue Orders Awaiting Packing (${currency})`;
+                }
+
+                // Data
                 const data = (currency === 'IDR') ?
                     chartData.top_customers_value_idr :
                     chartData.top_customers_value_usd;
@@ -814,7 +1036,7 @@
                     border: 'rgba(59, 130, 246, 1)'
                 };
 
-                createHorizontalBarChart(
+                const newChart = createHorizontalBarChart(
                     canvasId,
                     data,
                     'total_value',
@@ -822,457 +1044,107 @@
                     colors,
                     currency
                 );
-                soTopCustomersChart = Chart.getChart(canvasId);
+                soTopCustomersChart = newChart;
             }
 
-            function rerenderSoCurrencyDependentCharts() {
-                renderSoTopCustomers(currentSoCurrency);
-                renderSoValueByLocationStatus(currentSoCurrency);
+            // FUNGSI INI AKAN DIPANGGIL DARI initKpiToggles.
+            function rerenderSoCurrencyDependentCharts(currency) {
+                renderSoTopCustomers(currency);
             }
 
-            function mountSoCurrencyToggle() {
-                if (!enableSoCurrencyToggle) return;
+            // --- INISIALISASI KPI TOGGLE (Memicu render chart pertama) ---
+            if (chartData.kpi_new) {
+                // Gunakan chartData.kpi_new untuk inisialisasi KPI
+                initKpiToggles(rerenderSoCurrencyDependentCharts, initialChartCurrency);
+            } else {
+                // Fallback untuk render chart saja (jika filter tidak menampilkan KPI detail)
+                rerenderSoCurrencyDependentCharts(currentChartCurrency);
+            }
+            // --- END INISIALISASI KPI TOGGLE ---
 
-                const targets = [
-                    document.getElementById('chartValueByLocationStatus'),
-                    document.getElementById('chartTopCustomersValueSO')
-                ].filter(Boolean);
+
+            /* Mounting Currency Toggle Chart (memperindah bagian chart) */
+            function mountCurrencyToggleIfNeeded() {
+                if (!enableCurrencyToggle) return;
+
+                const canvasIds = ['chartTopCustomersValueSO'];
 
                 const makeToggle = () => {
-                    const toolbar = document.createElement('div');
-                    toolbar.className = 'yz-card-toolbar';
-                    toolbar.innerHTML = `
-        <div class="btn-group btn-group-sm yz-currency-toggle" role="group">
-          <button type="button" data-cur="USD" class="btn ${currentSoCurrency==='USD' ? 'btn-primary' : 'btn-outline-primary'}">USD</button>
-          <button type="button" data-cur="IDR" class="btn ${currentSoCurrency==='IDR' ? 'btn-success' : 'btn-outline-success'}">IDR</button>
-        </div>`;
-                    return toolbar;
+                    const holder = document.createElement('div');
+                    holder.className = 'yz-card-toolbar';
+                    // PENTING: Toggle Chart diinisialisasi dengan currentChartCurrency
+                    holder.innerHTML = `
+                             <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
+                                 <button type="button" data-cur="USD"
+                                 class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
+                                 <button type="button" data-cur="IDR"
+                                 class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
+                             </div>
+                             `;
+                    return holder;
                 };
 
-                targets.forEach(cv => {
-                    const card = cv.closest('.card');
-                    const cardBody = card?.querySelector('.card-body');
-                    if (!cardBody || card.querySelector('.yz-card-toolbar')) return;
+                canvasIds.forEach(canvasId => {
+                    const targetCanvas = document.getElementById(canvasId);
+                    if (!targetCanvas) return;
+
+                    const card = targetCanvas.closest('.card');
+                    const titleEl = card?.querySelector('.card-title');
+                    const headerRow = titleEl?.parentElement;
+
+                    if (!card || !headerRow) return;
+
+                    card.style.position = 'relative';
+                    // Cek dan hapus toolbar lama jika ada
+                    headerRow.querySelector('.yz-card-toolbar')?.remove();
 
                     const toolbar = makeToggle();
-                    card.style.position = 'relative';
-                    cardBody.appendChild(toolbar);
+                    headerRow.appendChild(toolbar);
+                });
 
-                    toolbar.addEventListener('click', (e) => {
+
+                // LOGIC KLIK UNTUK CHART (untuk klik langsung pada chart toggle)
+                document.querySelectorAll('.yz-currency-toggle-chart').forEach(toggleEl => {
+                    toggleEl.addEventListener('click', (e) => {
                         const btn = e.target.closest('button[data-cur]');
                         if (!btn) return;
                         const next = btn.dataset.cur;
-                        if (next === currentSoCurrency) return;
+                        if (next !== 'USD' && next !== 'IDR') return;
+                        if (next === currentChartCurrency) return;
 
-                        currentSoCurrency = next;
+                        currentChartCurrency = next;
                         try {
-                            localStorage.setItem('soTopCustomerCurrency', currentSoCurrency);
+                            localStorage.setItem('soTopCustomerCurrency', currentChartCurrency);
+                            // Simpan ke KPI currency juga agar sinkron saat halaman dimuat ulang
+                            localStorage.setItem('soKpiCurrency', currentChartCurrency);
                         } catch {}
 
-                        document.querySelectorAll('.yz-currency-toggle button[data-cur]').forEach(b => {
-                            const isUSD = b.dataset.cur === 'USD';
-                            const isIDR = b.dataset.cur === 'IDR';
-                            b.classList.toggle('btn-primary', isUSD && currentSoCurrency ===
-                                'USD');
-                            b.classList.toggle('btn-outline-primary', isUSD &&
-                                currentSoCurrency !==
-                                'USD');
-                            b.classList.toggle('btn-success', isIDR && currentSoCurrency ===
-                                'IDR');
-                            b.classList.toggle('btn-outline-success', isIDR &&
-                                currentSoCurrency !==
-                                'IDR');
-                        });
+                        // PENTING: Perbarui tampilan semua elemen
+                        rerenderSoCurrencyDependentCharts(currentChartCurrency);
+                        updateChartToggleButtons(currentChartCurrency);
 
-                        rerenderSoCurrencyDependentCharts();
+                        // Perbarui semua blok KPI
+                        const locations = ['smg', 'sby'];
+                        locations.forEach(l => updateKpiBlock(l, currentChartCurrency));
                     });
                 });
             }
 
-            mountSoCurrencyToggle();
-            rerenderSoCurrencyDependentCharts();
+            // Panggil mounting toggle chart
+            mountCurrencyToggleIfNeeded();
 
-
-            /* ======================== Donut Chart (SO Urgency) ======================== */
-
-            async function loadSoUrgencyDetails(statusKey, labelText) {
-                const container = document.getElementById('so-urgency-details');
-                if (!container) return;
-                Object.assign(container.style, {
-                    position: 'absolute',
-                    top: '0',
-                    left: '0',
-                    width: '100%',
-                    height: '100%',
-                    background: 'var(--bs-card-bg, white)',
-                    zIndex: '10',
-                    display: 'flex',
-                    padding: '1rem'
-                });
-                container.innerHTML =
-                    `<div class="card yz-chart-card shadow-sm h-100 w-100"><div class="card-body d-flex flex-column"><div class="d-flex justify-content-between align-items-center"><h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>SO List — ${labelText}</h6><button type="button" class="btn btn-sm btn-outline-secondary" disabled><i class="fas fa-times"></i></button></div><hr class="mt-2"><div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted"><div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...</div></div></div>`;
-
-                const api = new URL("{{ route('so.api.urgency_details') }}", window.location.origin);
-                api.searchParams.set('status', statusKey);
-                if (filterState.location) api.searchParams.set('location', filterState.location);
-                if (filterState.type) api.searchParams.set('type', filterState.type);
-                if (filterState.auart) api.searchParams.set('auart', filterState.auart);
-
-                try {
-                    const res = await fetch(api);
-                    const json = await res.json();
-                    if (!json.ok) throw new Error(json.error || 'Gagal mengambil data dari server.');
-                    renderSoUrgencyTable(json.data, labelText);
-                } catch (e) {
-                    container.innerHTML =
-                        `<div class="card yz-chart-card shadow-sm h-100 w-100"><div class="card-body d-flex flex-column"><div class="d-flex justify-content-between align-items-center"><h6 class="card-title mb-0 text-danger"><i class="fas fa-exclamation-triangle me-2"></i>Error</h6><button type="button" class="btn btn-sm btn-outline-secondary" id="closeSoUrgencyDetailsError"><i class="fas fa-times"></i></button></div><hr class="mt-2"><div class="alert alert-danger mb-0">${e.message}</div></div></div>`;
-                    document.getElementById('closeSoUrgencyDetailsError')?.addEventListener('click', () => {
-                        container.removeAttribute('style');
-                        container.innerHTML = '';
-                    });
-                }
-            }
-
-            function renderSoUrgencyTable(rows, labelText) {
-                const container = document.getElementById('so-urgency-details');
-                if (!container) return;
-                const formatDate = (s) => !s ? '' : s.split('-').reverse().join('-');
-                const table = (rows || []).map((r, i) => `
-      <tr>
-        <td class="text-center">${i + 1}</td>
-        <td class="text-center">${r.BSTNK ?? '-'}</td>
-        <td class="text-center">${r.VBELN}</td>
-        <td>${r.NAME1 ?? ''}</td>
-        <td class="text-center">${plantMap[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
-        <td class="text-center">${
-      (() => {
-        const desc  = auartMap[r.IV_AUART_PARAM] || r.order_type_name || '';
-        const short = r.IV_WERKS_PARAM === '2000' ? 'SBY' : r.IV_WERKS_PARAM === '3000' ? 'SMG' : '';
-        return desc ? `${desc}${short ? ' ' + short : ''}`.trim() : (r.IV_AUART_PARAM || '');
-      })()
-    }</td>
-        <td class="text-center">${formatDate(r.due_date) || '-'}</td>
-      </tr>`).join('');
-                container.innerHTML = `
-      <div class="card yz-chart-card shadow-sm h-100 w-100">
-        <div class="card-body d-flex flex-column">
-          <div class="d-flex justify-content-between align-items-center">
-            <h6 class="card-title mb-0"><i class="fas fa-list me-2"></i>SO List — ${labelText}</h6>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="closeSoUrgencyDetails"><i class="fas fa-times"></i></button>
-          </div>
-          <hr class="mt-2">
-          ${(rows && rows.length) ? `
-                                                                                                          <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height: 0;">
-                                                                                                              <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                                  <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                                                                                                      <tr>
-                                                                                                                          <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                                          <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                                          <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                                          <th>CUSTOMER</th>
-                                                                                                                          <th class="text-center" style="min-width:100px;">PLANT</th>
-                                                                                                                          <th class="text-center" style="min-width:120px;">ORDER TYPE</th>
-                                                                                                                          <th class="text-center" style="min-width:120px;">DUE DATE</th>
-                                                                                                                      </tr>
-                                                                                                                  </thead>
-                                                                                                                  <tbody>${table}</tbody>
-                                                                                                              </table>
-                                                                                                          </div>` :
-              `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Data tidak ditemukan.</div>`
-            }
-        </div>
-      </div>`;
-                document.getElementById('closeSoUrgencyDetails')?.addEventListener('click', () => {
-                    container.removeAttribute('style');
-                    container.innerHTML = '';
-                });
-            }
-
-            const ctxSoUrgency = document.getElementById('chartSoUrgency');
-            if (ctxSoUrgency && chartData.aging_analysis) {
-                const agingData = chartData.aging_analysis;
-                const total = Object.values(agingData).reduce((a, b) => a + b, 0);
-                if (total === 0) {
-                    showNoDataMessage('chartSoUrgency');
-                } else {
-                    const soUrgencyChart = new Chart(ctxSoUrgency, {
-                        type: 'doughnut',
-                        data: {
-                            labels: ['Overdue > 30 Days', 'Overdue 1-30 Days', 'Due This Week', 'On Time'],
-                            datasets: [{
-                                data: [agingData.overdue_over_30, agingData.overdue_1_30, agingData
-                                    .due_this_week, agingData.on_time
-                                ],
-                                backgroundColor: ['#b91c1c', '#ef4444', '#f59e0b', '#10b981']
-                            }]
-                        },
-                        options: {
-                            cutout: '60%',
-                            onClick: async (evt, elements) => {
-                                if (!elements.length) return;
-                                const idx = elements[0].index;
-                                const label = soUrgencyChart.data.labels[idx];
-                                const map = {
-                                    'Overdue > 30 Days': 'overdue_over_30',
-                                    'Overdue 1-30 Days': 'overdue_1_30',
-                                    'Due This Week': 'due_this_week',
-                                    'On Time': 'on_time'
-                                };
-                                const statusKey = map[label];
-                                if (!statusKey) return;
-                                await loadSoUrgencyDetails(statusKey, label);
-                            }
-                        }
-                    });
-                }
-            }
-
-            /* ======================== KPI Detail Table (Outs by Customer) ======================== */
-            (function() {
-                const soApi = "{{ route('so.api.outs_by_customer') }}";
-                const soBox = document.getElementById('so-outs-details');
-                const soTbody = document.getElementById('so-outs-tbody');
-                const soTotalEl = document.getElementById('so-outs-total');
-                const soFilterEl = document.getElementById('so-outs-filter');
-                const soCurBadge = document.getElementById('so-outs-cur');
-                const soBtnHide = document.getElementById('so-outs-hide');
-
-                const curLoc = filterState.location;
-                const curType = filterState.type;
-                const curAu = filterState.auart;
-
-                function fmt(val, cur) {
-                    val = Number(val || 0);
-                    if (cur === 'USD') return '$' + val.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    });
-                    if (cur === 'IDR') return 'Rp ' + val.toLocaleString('id-ID', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    });
-                    return val.toLocaleString();
-                }
-
-                function soShow() {
-                    soBox.style.display = '';
-                }
-
-                function soHide() {
-                    soBox.style.display = 'none';
-                }
-                soBtnHide && soBtnHide.addEventListener('click', soHide);
-
-                function renderSoLoading(currency) {
-                    soCurBadge.textContent = currency;
-                    // Hilangkan curAu dari label filter UI
-                    soFilterEl.textContent = `Filter: ${curLoc||'All Plant'} • ${curType||'All Type'}`;
-                    soTbody.innerHTML = `
-      <tr><td colspan="3">
-        <div class="text-center text-muted py-3">
-          <div class="spinner-border spinner-border-sm me-2"></div> Loading...
-        </div>
-      </td></tr>`;
-                    soTotalEl.textContent = '–';
-                }
-
-                function renderSoRows(rows, currency) {
-                    soTbody.innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.NAME1||''}</td>
-        <td class="text-center">${r.ORDER_TYPE||''}</td>
-        <td class="text-end">${fmt(r.TOTAL_VALUE, currency)}</td>
-      </tr>`).join('');
-                }
-
-                async function openSoDetailBelowKPI(currency) {
-                    renderSoLoading(currency);
-                    soShow();
-
-                    const params = new URLSearchParams({
-                        currency: currency,
-                        location: curLoc || '',
-                        type: curType || '',
-                        auart: curAu || '' // Tetap kirim ke API agar filter server-side tetap berjalan
-                    });
-
-                    try {
-                        const res = await fetch(soApi + '?' + params.toString(), {
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        });
-                        const json = await res.json();
-                        const rows = (json && json.ok) ? (json.data || []) : [];
-                        const gtot = (json && json.ok) ? json.grand_total : null;
-
-                        if (!rows.length) {
-                            soTbody.innerHTML =
-                                `<tr><td colspan="3"><div class="alert alert-info m-0">Tidak ada data untuk filter saat ini.</div></td></tr>`;
-                            soTotalEl.textContent = '–';
-                            return;
-                        }
-
-                        renderSoRows(rows, currency);
-                        if (gtot !== null) soTotalEl.textContent = fmt(gtot, currency);
-                    } catch (e) {
-                        soTbody.innerHTML =
-                            `<tr><td colspan="3"><div class="alert alert-danger m-0">Gagal memuat data.</div></td></tr>`;
-                        soTotalEl.textContent = '–';
-                    }
-                }
-
-                const soUsd = document.getElementById('kpi-so-val-usd-card');
-                const soIdr = document.getElementById('kpi-so-val-idr-card');
-                const soDetailBox = document.getElementById('so-outs-details');
-
-                const soHideFunc = () => {
-                    soDetailBox.style.display = 'none';
-                };
-
-                if (soUsd) {
-                    soUsd.addEventListener('click', (ev) => {
-                        if (ev.target.closest('.yz-info-icon')) return; // GUARD
-                        if (soDetailBox.style.display === 'none' || soDetailBox.dataset.activeCurrency !==
-                            'USD') {
-                            soDetailBox.dataset.activeCurrency = 'USD';
-                            openSoDetailBelowKPI('USD');
-                        } else {
-                            soHideFunc();
-                        }
-                    });
-                }
-
-                if (soIdr) {
-                    soIdr.addEventListener('click', (ev) => {
-                        if (ev.target.closest('.yz-info-icon')) return; // GUARD
-                        if (soDetailBox.style.display === 'none' || soDetailBox.dataset.activeCurrency !==
-                            'IDR') {
-                            soDetailBox.dataset.activeCurrency = 'IDR';
-                            openSoDetailBelowKPI('IDR');
-                        } else {
-                            soHideFunc();
-                        }
-                    });
-                }
-            })();
-
-            /* ======================== Bottlenecks Toggle/Fetch ======================== */
-
-            const bottleneckCard = document.getElementById('toggle-bottlenecks-card');
-            const bottleneckBox = document.getElementById('bottlenecks-tables');
-            const apiSoBottlenecks = "{{ route('so.api.bottlenecks_details') }}";
-
-            function renderBottlenecksTable(rows, windowInfo) {
-                const auartMap2 = auartMap;
-                const fmt = s => (!s ? '' : s.split('-').reverse().join('-'));
-
-                let dateRangeText = '';
-                if (windowInfo && windowInfo.start && windowInfo.end) {
-                    const startDate = new Date(windowInfo.start + 'T00:00:00').toLocaleDateString('id-ID', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric'
-                    });
-                    const endDate = new Date(windowInfo.end + 'T00:00:00').toLocaleDateString('id-ID', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric'
-                    });
-                    dateRangeText = `(${startDate} – ${endDate})`;
-                }
-
-                const body = (rows || []).map((r, i) => `
-        <tr>
-            <td class="text-center">${i+1}</td>
-            <td class="text-center">${r.VBELN}</td>
-            <td class="text-center">${r.BSTNK ?? '-'}</td>
-            <td>${r.NAME1 ?? ''}</td>
-            <td class="text-center">${({ '2000':'Surabaya','3000':'Semarang' })[r.IV_WERKS_PARAM] || r.IV_WERKS_PARAM}</td>
-            <td class="text-center">${auartMap2[r.IV_AUART_PARAM] || r.IV_AUART_PARAM}</td>
-            <td class="text-center">${fmt(r.due_date) || '-'}</td>
-        </tr>
-    `).join('');
-
-                bottleneckBox.innerHTML = `
-        <div class="row g-4 mb-4">
-            <div class="col-lg-12">
-                <div class="card shadow-sm h-100 yz-chart-card">
-                    <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">
-                                <span><i class="fas fa-exclamation-triangle me-2"></i>Potential Bottlenecks (SO Level)</span>
-                                <span class="text-muted small ms-2">${dateRangeText}</span>
-                            </h5>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="close-bottlenecks"><i class="fas fa-times"></i></button>
-                        </div>
-                <hr class="mt-2">
-                ${(rows && rows.length) ? `
-                                                                                                                        <div class="table-responsive yz-scrollable-table-container flex-grow-1" style="min-height:0;">
-                                                                                                                            <table class="table table-sm table-hover align-middle mb-0">
-                                                                                                                                <thead class="table-light" style="position:sticky;top:0;z-index:1;">
-                                                                                                                                    <tr>
-                                                                                                                                        <th class="text-center" style="width:60px;">NO.</th>
-                                                                                                                                        <th class="text-center" style="min-width:120px;">SO</th>
-                                                                                                                                        <th class="text-center" style="min-width:120px;">PO</th>
-                                                                                                                                        <th>Customer</th>
-                                                                                                                                        <th class="text-center" style="min-width:100px;">Plant</th>
-                                                                                                                                        <th class="text-center" style="min-width:140px;">Order Type</th>
-                                                                                                                                        <th class="text-center" style="min-width:120px;">Due Date</th>
-                                                                                                                                    </tr>
-                                                                                                                                </thead>
-                                                                                                                                <tbody>${body}</tbody>
-                                                                                                                            </table>
-                                                                                                                        </div>` :
-              `<div class="text-muted p-4 text-center"><i class="fas fa-info-circle me-2"></i>Tidak ada Potensial bottleneck (dalam 7 hari ke depan).</div>`}
-              </div>
-            </div>
-          </div>
-        </div>`;
-                document.getElementById('close-bottlenecks')?.addEventListener('click', () => bottleneckBox.style
-                    .display = 'none');
-            }
-
-            if (bottleneckCard && bottleneckBox) {
-                bottleneckCard.addEventListener('click', async (ev) => {
-                    if (ev.target.closest('.yz-info-icon')) return; // GUARD
-                    const api = new URL(apiSoBottlenecks, window.location.origin);
-                    const isHidden = bottleneckBox.style.display === 'none';
-                    if (!isHidden) {
-                        bottleneckBox.style.display = 'none';
-                        return;
-                    }
-                    bottleneckBox.style.display = '';
-                    bottleneckBox.innerHTML =
-                        `<div class="card yz-chart-card shadow-sm"><div class="card-body d-flex align-items-center justify-content-center"><div class="spinner-border spinner-border-sm me-2" role="status"></div> Loading data...</div></div>`;
-
-                    if (filterState.location) api.searchParams.set('location', filterState.location);
-                    if (filterState.type) api.searchParams.set('type', filterState.type);
-
-                    try {
-                        const res = await fetch(api);
-                        const json = await res.json();
-                        if (!json.ok) throw new Error(json.error || 'Gagal mengambil data.');
-                        renderBottlenecksTable(json.data || [], json.window_info);
-                    } catch (e) {
-                        bottleneckBox.innerHTML =
-                            `<div class="alert alert-danger m-3"><i class="fas fa-exclamation-triangle me-2"></i>${e.message}</div>`;
-                    }
-                });
-            }
-
-            // Toggle Due This Week Table
-            const toggleCard = document.getElementById('toggle-due-tables-card');
-            const tablesContainer = document.getElementById('due-this-week-tables');
-            if (toggleCard && tablesContainer) {
-                toggleCard.addEventListener('click', (ev) => {
-                    if (ev.target.closest('.yz-info-icon')) return; // GUARD
-                    const isHidden = tablesContainer.style.display === 'none';
-                    tablesContainer.style.display = isHidden ? '' : 'none';
-                });
-            }
 
             /* ======================== ITEM WITH REMARK (INLINE) ======================== */
+            function escapeHtml(str = '') {
+                return String(str).replace(/[&<>"']/g, s => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                } [s]));
+            }
+
             (function itemWithRemarkTableOnly() {
                 const apiRemarkItems = "{{ route('so.api.remark_items') }}";
                 const listBox = document.getElementById('remark-list-box-inline');
@@ -1298,7 +1170,7 @@
 
                     const body = rows.map((r, i) => {
                         const item = stripZeros(r.POSNR); // untuk ditampilkan
-                        const posnr6 = String(r.POSNR ?? '').trim().padStart(6, '0'); // untuk API
+                        const posnr6 = String(r.POSNR ?? '').trim().padStart(6, '0'); // untuk API/highlight
                         const werks = (r.IV_WERKS_PARAM || '').trim();
                         const auart = String(r.IV_AUART_PARAM || '').trim();
                         const plant = __plantName(werks);
@@ -1313,59 +1185,59 @@
                             compact: 1,
                             highlight_kunnr: kunnr,
                             highlight_vbeln: so,
-                            highlight_posnr: item,
+                            highlight_posnr: posnr6, // ***PERBAIKAN: Kirim POSNR 6 digit***
                             auto_expand: '1'
                         };
 
                         return `
-<tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat detail SO">
-    <td class="text-center">${i + 1}</td>
-    <td class="text-center">${so || '-'}</td>
-    <td class="text-center">${item || '-'}</td>
-    <td class="text-center">${plant || '-'}</td>
-    <td class="text-center">${otName}</td>
-    <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-    <td class="text-center">
-    <button type="button"
-            class="btn btn-sm btn-outline-danger js-del-remark"
-            title="Hapus remark"
-            data-vbeln="${so}"
-            data-posnr="${posnr6}"
-            data-werks="${werks}"
-            data-auart="${auart}">
-      <i class="fas fa-trash"></i>
-    </button>
-  </td>
-</tr>`;
+                        <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat detail SO">
+                            <td class="text-center">${i + 1}</td>
+                            <td class="text-center">${so || '-'}</td>
+                            <td class="text-center">${item || '-'}</td>
+                            <td class="text-center">${plant || '-'}</td>
+                            <td class="text-center">${otName}</td>
+                            <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+                            <td class="text-center">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-danger js-del-remark"
+                                    title="Hapus remark"
+                                    data-vbeln="${so}"
+                                    data-posnr="${posnr6}"
+                                    data-werks="${werks}"
+                                    data-auart="${auart}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                          </td>
+                        </tr>`;
                     }).join('');
 
                     return `
-        <div class="yz-scrollable-table-container" style="max-height:420px;">
-            <table class="table table-striped table-hover table-sm align-middle mb-0">
-                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                    <tr>
-                        <th class="text-center" style="width:60px;">No.</th>
-                        <th class="text-center" style="min-width:110px;">SO</th>
-                        <th class="text-center" style="min-width:90px;">Item</th>
-                        <th class="text-center" style="min-width:110px;">Plant</th>
-                        <th class="text-center" style="min-width:160px;">Order Type</th>
-                        <th style="min-width:220px;">Remark</th>
-                        <th class="text-center" style="width:70px;">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody>${body}</tbody>
-            </table>
-        </div>
-        <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
+                        <div class="yz-scrollable-table-container" style="max-height:420px;">
+                            <table class="table table-striped table-hover table-sm align-middle mb-0">
+                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                    <tr>
+                                        <th class="text-center" style="width:60px;">No.</th>
+                                        <th class="text-center" style="min-width:110px;">SO</th>
+                                        <th class="text-center" style="min-width:90px;">Item</th>
+                                        <th class="text-center" style="min-width:110px;">Plant</th>
+                                        <th class="text-center" style="min-width:160px;">Order Type</th>
+                                        <th style="min-width:220px;">Remark</th>
+                                        <th class="text-center" style="width:70px;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${body}</tbody>
+                            </table>
+                        </div>
+                        <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
                 }
 
                 async function loadList() {
                     const inlineCard = document.getElementById('remark-inline-container');
                     inlineCard.style.display = '';
                     listBox.innerHTML = `
-        <div class="d-flex justify-content-center align-items-center py-4 text-muted">
-            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
-        </div>`;
+                        <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                        </div>`;
 
                     try {
                         const url = new URL(apiRemarkItems, window.location.origin);
@@ -1387,7 +1259,7 @@
                 }
 
                 listBox.addEventListener('click', (ev) => {
-                    if (ev.target.closest('.js-del-remark')) return; // JANGAN redirect kalau klik hapus
+                    if (ev.target.closest('.js-del-remark')) return;
                     const tr = ev.target.closest('.js-remark-row');
                     if (!tr || !tr.dataset.payload) return;
 
@@ -1427,12 +1299,12 @@
                     ev.stopPropagation();
 
                     const vbeln = btn.dataset.vbeln || '';
-                    const posnr = btn.dataset.posnr || '';
+                    const posnr = btn.dataset.posnr || ''; // Sudah 6 digit padded
                     const werks = btn.dataset.werks || '';
                     const auart = btn.dataset.auart || '';
 
                     // Konfirmasi
-                    const ok = confirm(`Hapus remark untuk SO ${vbeln} / Item ${posnr}?`);
+                    const ok = confirm(`Hapus remark untuk SO ${vbeln} / Item ${stripZeros(posnr)}?`);
                     if (!ok) return;
 
                     // UX: disable sementara
@@ -1452,7 +1324,6 @@
                                 posnr: posnr,
                                 werks: werks,
                                 auart: auart,
-                                // mode: 'delete' // <- pakai ini jika ingin hard delete baris
                             })
                         });
 

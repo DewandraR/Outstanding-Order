@@ -136,8 +136,17 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::get('/api/items-by-so', [SalesOrderController::class, 'apiGetItemsBySo'])->name('so.api.by_items');
 	Route::post('/outstanding-so/export', [SalesOrderController::class, 'exportData'])->name('so.export');
 	Route::post('/api/so-save-remark', [SalesOrderController::class, 'apiSaveRemark'])->name('so.api.save_remark');
-	Route::get('/outstanding-so/export/summary', [SalesOrderController::class, 'exportCustomerSummary'])
-		->name('so.export.summary');
+	Route::get('/outstanding-so/export/summary', [SalesOrderController::class, 'exportCustomerSummary'])->name('so.export.summary');
+
+	// --- Small Qty (≤5) Outstanding SO ---
+	Route::get('/api/so/small-qty-by-customer', [SalesOrderController::class, 'apiSmallQtyByCustomer'])
+		->name('so.api.small_qty_by_customer');
+
+	Route::get('/api/so/small-qty-details', [SalesOrderController::class, 'apiSmallQtyDetails'])
+		->name('so.api.small_qty_details');
+
+	Route::post('/outstanding-so/export/small-qty-pdf', [SalesOrderController::class, 'exportSmallQtyPdf'])
+		->name('so.export.small_qty_pdf');
 
 	// --------- Stock report & dashboard ---------
 	Route::get('/stock-report', [StockController::class, 'index'])->name('stock.index');
