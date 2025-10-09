@@ -77,7 +77,7 @@
         });
 
         // =========================================================================================
-        // HELPER PHP UNTUK RENDER SINGLE KPI BLOCK (DIADAPTASI DARI PO)
+        // HELPER PHP UNTUK RENDER SINGLE KPI BLOCK (DENGAN PERBAIKAN PENEMPATAN DATA-HELP-KEY)
         // =========================================================================================
         $renderSingleKpiBlock = function ($locationName, $kpiData, $locPrefix, $allMapping) use (
             $formatCurrency,
@@ -96,9 +96,6 @@
             $localAuart = collect($allMapping[$werksCode] ?? [])->first(
                 fn($t) => \Illuminate\Support\Str::contains(strtolower((string) $t->Deskription), 'local'),
             );
-
-            // NOTE: Karena SO Report menggabungkan Export + Replace secara internal,
-            // kita hanya perlu mengarahkan ke AUART Export untuk link USD/Export.
 
             $exportAuartCode = $exportAuart ? trim((string) $exportAuart->IV_AUART) : null;
             $localAuartCode = $localAuart ? trim((string) $localAuart->IV_AUART) : null;
@@ -121,7 +118,6 @@
             // Data-attribute untuk JavaScript (menyimpan semua nilai)
             $dataAttrs = [
                 'data-werks' => $werksCode,
-                // PENTING: data-export-url dan data-local-url harus ada
                 'data-export-url' => $urlExport,
                 'data-local-url' => $urlLocal,
                 'data-usd-val' => $usdVal,
@@ -176,7 +172,11 @@
                         <div class="card-body p-4 pt-3">
                             
                             <div class="row mb-4 border-bottom pb-3">
-                                <h6 class="text-uppercase fw-bold ps-3 pt-0 mb-3" style="color: #6c757d;">Outstanding</h6>
+                                ' .
+                // --- OUTSTANDING SECTION TITLE (Ikon di sini) ---
+                '<h6 class="text-uppercase fw-bold ps-3 pt-0 mb-3" style="color: #6c757d;" data-help-key="so.kpi_new.outstanding_value">Outstanding</h6>' .
+                // -----------------------------------------------------------
+                '
                                 <div class="col-lg-6 mb-3">
                                     <a href="' .
                 $initialUrl .
@@ -189,8 +189,11 @@
                                                 <i class="fas fa-sack-dollar"></i>
                                             </div>
                                             <div style="line-height:1.2;">
-                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Outstanding Value</span></div>
-                                                <h3 class="mb-0 fw-bolder ' .
+                                                ' .
+                // --- OUTSTANDING VALUE LABEL (Ikon Dihilangkan) ---
+                '<div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Outstanding Value</span></div>' .
+                // ---------------------------------------------------------
+                '<h3 class="mb-0 fw-bolder ' .
                 $valClass .
                 '" id="' .
                 $locPrefix .
@@ -213,8 +216,11 @@
                                                 <i class="fas fa-box-open"></i>
                                             </div>
                                             <div style="line-height:1.2;">
-                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Total SO</span></div>
-                                                <h3 class="mb-0 fw-bolder text-info' . // Hapus $qtyColorClass karena sudah di class info di sini
+                                                ' .
+                // --- OUTSTANDING QTY LABEL (Ikon Dihilangkan) ---
+                '<div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Total SO</span></div>' .
+                // -----------------------------
+                '<h3 class="mb-0 fw-bolder text-info' .
                 '" id="' .
                 $locPrefix .
                 '-outstanding-qty">' .
@@ -227,7 +233,11 @@
                             </div>
                             
                             <div class="row pt-3">
-                                <h6 class="text-uppercase text-danger fw-bold ps-3 pt-0 mb-3">Overdue</h6>
+                                ' .
+                // --- OVERDUE SECTION TITLE (Ikon di sini) ---
+                '<h6 class="text-uppercase text-danger fw-bold ps-3 pt-0 mb-3" data-help-key="so.kpi_new.overdue_value">Overdue</h6>' .
+                // -------------------------------------------------------
+                '
                                 <div class="col-lg-6 mb-3">
                                     <a href="' .
                 $initialUrl .
@@ -240,8 +250,11 @@
                                                 <i class="fas fa-circle-exclamation"></i>
                                             </div>
                                             <div style="line-height:1.2;">
-                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Overdue Value</span></div>
-                                                <h3 class="mb-0 fw-bolder text-danger" id="' .
+                                                ' .
+                // --- OVERDUE VALUE LABEL (Ikon Dihilangkan) ---
+                '<div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Overdue Value</span></div>' .
+                // ---------------------------
+                '<h3 class="mb-0 fw-bolder text-danger" id="' .
                 $locPrefix .
                 '-overdue-value">' .
                 ($initialOverdueVal === '–' ? '<span class="text-muted">–</span>' : $initialOverdueVal) .
@@ -262,8 +275,11 @@
                                                 <i class="fas fa-hourglass-half"></i>
                                             </div>
                                             <div style="line-height:1.2;">
-                                                <div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Total SO</span></div>
-                                                <h3 class="mb-0 fw-bolder text-danger" id="' .
+                                                ' .
+                // --- OVERDUE QTY LABEL (Ikon Dihilangkan) ---
+                '<div class="mb-0 text-muted small text-uppercase fw-semibold"><span>Total SO</span></div>' .
+                // -------------------------
+                '<h3 class="mb-0 fw-bolder text-danger" id="' .
                 $locPrefix .
                 '-overdue-qty">' .
                 ($initialOverdueQty === '–' ? '<span class="text-muted">–</span>' : $initialOverdueQty) .
@@ -591,7 +607,8 @@
 
             // Bind ulang untuk ikon yang disisipkan dinamis oleh chart-help.js
             const iv = setInterval(() => {
-                if (!document.querySelector('.yz-info-icon:not([data-click-bound="1"])')) {
+                const newIcons = document.querySelectorAll('.yz-info-icon:not([data-click-bound="1"])');
+                if (newIcons.length === 0) {
                     clearInterval(iv);
                     return;
                 }
@@ -661,13 +678,17 @@
         }
 
         function preventInfoButtonPropagation() {
+            // Fungsi ini mencegah klik pada ikon (i) memicu link <a> di luarnya.
             const infoButtons = document.querySelectorAll('.yz-info-icon');
             infoButtons.forEach(btn => {
                 if (btn.dataset.clickBound === '1') return;
+
+                // MENGHENTIKAN PENYEBARAN EVENT KLIK
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.stopImmediatePropagation?.();
                 });
+
                 btn.dataset.clickBound = '1';
             });
         }
@@ -1074,13 +1095,13 @@
                     holder.className = 'yz-card-toolbar';
                     // PENTING: Toggle Chart diinisialisasi dengan currentChartCurrency
                     holder.innerHTML = `
-                             <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
-                                 <button type="button" data-cur="USD"
-                                 class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
-                                 <button type="button" data-cur="IDR"
-                                 class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
-                             </div>
-                             `;
+                            <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
+                                <button type="button" data-cur="USD"
+                                class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
+                                <button type="button" data-cur="IDR"
+                                class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
+                            </div>
+                            `;
                     return holder;
                 };
 
@@ -1199,15 +1220,15 @@
                             <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
                             <td class="text-center">
                             <button type="button"
-                                    class="btn btn-sm btn-outline-danger js-del-remark"
-                                    title="Hapus remark"
-                                    data-vbeln="${so}"
-                                    data-posnr="${posnr6}"
-                                    data-werks="${werks}"
-                                    data-auart="${auart}">
+                                        class="btn btn-sm btn-outline-danger js-del-remark"
+                                        title="Hapus remark"
+                                        data-vbeln="${so}"
+                                        data-posnr="${posnr6}"
+                                        data-werks="${werks}"
+                                        data-auart="${auart}">
                                 <i class="fas fa-trash"></i>
                             </button>
-                          </td>
+                            </td>
                         </tr>`;
                     }).join('');
 

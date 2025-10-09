@@ -50,7 +50,7 @@
         };
 
         // =========================================================================================
-        // HELPER PHP UNTUK RENDER SINGLE KPI BLOCK
+        // HELPER PHP UNTUK RENDER SINGLE KPI BLOCK (PERBAIKAN ICON & KEY)
         // =========================================================================================
         $renderSingleKpiBlock = function ($locationName, $kpiData, $locPrefix, $allMapping) use (
             $formatCurrency,
@@ -91,7 +91,7 @@
             // Data-attribute untuk JavaScript (menyimpan semua nilai)
             $dataAttrs = [
                 'data-werks' => $werksCode,
-                // Tambahkan URL terenkripsi ke data-attribute
+                // Tambahkan URL terenkripsi ke data-attribute link
                 'data-export-url' => $urlExport,
                 'data-local-url' => $urlLocal,
                 'data-usd-val' => $usdVal,
@@ -105,7 +105,6 @@
             ];
 
             // Pilihan warna
-            $locColor = $locPrefix === 'smg' ? '#0f766e' : '#4338ca'; // Teal/Indigo
             $overdueColorClass = 'text-danger';
             $qtyColorClass = 'text-info';
             $mainColor = $locPrefix === 'smg' ? 'bg-teal-gradient' : 'bg-indigo-gradient';
@@ -149,7 +148,14 @@
                         <div class="card-body p-4 pt-3">
                             
                             <div class="row mb-4 border-bottom pb-3">
-                                <h6 class="text-uppercase fw-bold ps-3 pt-0 mb-3" style="color: #6c757d;">Outstanding</h6>
+                                ' .
+                // --- OUTSTANDING SECTION TITLE (Icon di sini) ---
+                // MENGGUNAKAN KEY YANG VALID DI JSON UNTUK SECTION OUTSTANDING
+                '<h6 class="text-uppercase fw-bold ps-3 pt-0 mb-3" style="color: #6c757d;" data-help-key="po.kpi.outstanding_po">' .
+                'Outstanding' .
+                '</h6>' .
+                // -----------------------------------------------------------
+                '
                                 <div class="col-lg-6 mb-3">
                                     <a href="' .
                 $initialUrl .
@@ -209,7 +215,14 @@
                             </div>
                             
                             <div class="row pt-3">
-                                <h6 class="text-uppercase text-danger fw-bold ps-3 pt-0 mb-3">Overdue</h6>
+                                ' .
+                // --- OVERDUE SECTION TITLE (Icon di sini) ---
+                // MENGGUNAKAN KEY YANG VALID DI JSON UNTUK SECTION OVERDUE
+                '<h6 class="text-uppercase text-danger fw-bold ps-3 pt-0 mb-3" data-help-key="po.kpi.overdue_po">' .
+                'Overdue' .
+                '</h6>' .
+                // -------------------------------------------------------
+                '
                                 <div class="col-lg-6 mb-3">
                                     <a href="' .
                 $initialUrl .
@@ -427,17 +440,14 @@
         .border-dashed {
             border-style: dashed !important;
             opacity: 0.35;
-            /* Sedikit lebih transparan */
         }
 
         /* Peningkatan Kontras Warna untuk Header KPI Gradient */
         .bg-teal-gradient {
-            /* Lebih Teal / Cyan tua */
             background: linear-gradient(90deg, #0d9488 0%, #065f46 100%);
         }
 
         .bg-indigo-gradient {
-            /* Lebih Indigo / Ungu tua */
             background: linear-gradient(90deg, #4f46e5 0%, #312e81 100%);
         }
 
@@ -452,7 +462,6 @@
         /* Penyesuaian KPI Block */
         .yz-kpi-card-enhanced {
             border-radius: 1.25rem;
-            /* Sudut lebih membulat */
             overflow: hidden;
             border: none;
             transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
@@ -460,7 +469,6 @@
 
         .yz-kpi-card-enhanced:hover {
             transform: translateY(-5px);
-            /* Efek melayang saat hover */
             box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.15) !important;
         }
 
@@ -482,12 +490,10 @@
 
         .yz-kpi-item-inner:hover {
             transform: translateX(5px);
-            /* Efek geser kecil saat hover */
         }
 
         .yz-card-toolbar {
             top: 50%;
-            /* Posisikan vertikal di tengah */
             transform: translateY(-50%);
             right: 1rem;
         }
@@ -523,27 +529,20 @@
         /* Perbaikan Kontras Warna Toggle di dalam Header Gradient (KPI) */
         .yz-currency-toggle .btn-sm-square {
             background-color: rgba(255, 255, 255, 0.15);
-            /* Semi transparan putih untuk non-aktif */
             color: white !important;
-            /* Teks default putih */
             border: 1px solid rgba(255, 255, 255, 0.5);
-            /* Border putih transparan */
             font-weight: 600;
         }
 
         .yz-currency-toggle .btn.btn-primary {
             background-color: #ffffff !important;
-            /* Penuh Putih saat USD aktif */
             color: #0d9488 !important;
-            /* Warna Teal Tua untuk teks */
             border-color: #ffffff !important;
         }
 
         .yz-currency-toggle .btn.btn-success {
             background-color: #ffffff !important;
-            /* Penuh Putih saat IDR aktif */
             color: #15803d !important;
-            /* Warna Hijau Tua untuk teks */
             border-color: #ffffff !important;
         }
 
@@ -568,9 +567,7 @@
         /* Tombol non-aktif */
         .yz-currency-toggle-chart .btn-sm-square {
             background-color: #f8f9fa !important;
-            /* Latar abu-abu sangat muda */
             color: #6c757d !important;
-            /* Teks abu-abu gelap */
             border: 1px solid #e9ecef;
             font-weight: 600;
         }
@@ -593,11 +590,8 @@
         .yz-currency-toggle-chart .btn-outline-primary,
         .yz-currency-toggle-chart .btn-outline-success {
             background-color: #f8f9fa !important;
-            /* Tetap abu-abu muda */
             color: #6c757d !important;
-            /* Teks abu-abu gelap */
             border-color: #e9ecef !important;
-            /* Border tipis */
         }
     </style>
 @endpush
@@ -614,8 +608,8 @@
         Chart.defaults.maintainAspectRatio = false;
 
         /* =========================================================
-            HELPER UMUM (DARI KODE ASLI)
-            ======================================================== */
+           HELPER UMUM (DARI KODE ASLI)
+           ======================================================== */
         const formatFullCurrency = (value, currency) => {
             const n = parseFloat(value);
             if (isNaN(n) || n === 0) return '–';
@@ -665,13 +659,17 @@
         }
 
         function preventInfoButtonPropagation() {
+            // Fungsi ini mencegah klik pada ikon (i) memicu link <a> di luarnya.
             const infoButtons = document.querySelectorAll('.yz-info-icon');
             infoButtons.forEach(btn => {
                 if (btn.dataset.clickBound === '1') return;
+
+                // MENGHENTIKAN PENYEBARAN EVENT KLIK
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.stopImmediatePropagation?.();
                 });
+
                 btn.dataset.clickBound = '1';
             });
         }
@@ -724,10 +722,11 @@
 
             const labels = chartData.map(d => {
                 const customerName = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
-                if (d.locations && Array.isArray(d.locations)) return [customerName, formatLocations(d
-                    .locations)];
-                if (currency && d.so_count) return `${customerName} (${d.so_count} PO)`;
-                return customerName;
+                // Logika PO (Outstanding Value menggunakan currency, Overdue menggunakan count)
+                const isOverdueChart = canvasId.startsWith('chartTopOverdueCustomers');
+                const countText = isOverdueChart ? ` (${d.overdue_count} PO)` : ` (${d.so_count} PO)`;
+
+                return `${customerName}${countText}`;
             });
             const values = chartData.map(d => d[dataKey]);
 
@@ -754,19 +753,17 @@
                             callbacks: {
                                 title: (items) => items[0].label.split('(')[0].trim(),
                                 label: (context) => {
-                                    const dataPoint = chartData[context.dataIndex];
+                                    const isOverdueChart = canvasId.startsWith('chartTopOverdueCustomers');
 
-                                    if (currency && dataPoint) {
-                                        const totalTxt = formatFullCurrency(context.raw, currency);
-                                        return `${totalTxt}`;
+                                    if (!isOverdueChart && currency) {
+                                        return formatFullCurrency(context.raw, currency);
                                     }
 
-                                    if (canvasId.startsWith('chartTopOverdueCustomers') && dataPoint) {
-                                        const total = dataPoint.overdue_count;
-                                        return `${total} PO Overdue`;
+                                    if (isOverdueChart) {
+                                        return `${context.raw} PO Overdue`;
                                     }
 
-                                    return `${context.raw} PO`;
+                                    return `${context.raw}`;
                                 }
                             }
                         }
@@ -781,7 +778,7 @@
                                 padding: 6,
                                 callback: (value) => {
                                     if (Math.floor(value) === value) {
-                                        if (currency) {
+                                        if (currency && !canvasId.startsWith('chartTopOverdueCustomers')) {
                                             let formatted = new Intl.NumberFormat('id-ID', {
                                                 minimumFractionDigits: 0,
                                                 maximumFractionDigits: 2
@@ -800,8 +797,8 @@
         };
 
         /* =========================================================
-            HELPER KPI BARU (UNTUK FUNGSI TOGGLE)
-            ======================================================== */
+           HELPER KPI BARU (UNTUK FUNGSI TOGGLE)
+           ======================================================== */
         /**
          * Memperbarui nilai dan link pada blok KPI tunggal berdasarkan mata uang yang dipilih.
          */
@@ -829,6 +826,8 @@
 
             // Tentukan class warna untuk Outstanding Value
             const valColorClass = isUSD ? 'text-usd' : 'text-idr';
+            const overdueColorClass = 'text-danger'; // Tetap merah
+            const qtyColorClass = 'text-info'; // Tetap biru
 
             // Target elemen
             const valEl = document.getElementById(`${locPrefix}-outstanding-value`);
@@ -863,7 +862,7 @@
                     '<span class="text-muted">–</span>' : overdueQtyText;
             }
 
-            // PERMINTAAN PENGGUNA: Update Link Tujuan (USD -> Export, IDR -> Local)
+            // Update Link Tujuan (USD -> Export, IDR -> Local)
             links.forEach(link => {
                 link.href = reportUrl;
             });
@@ -873,7 +872,6 @@
             document.querySelectorAll(`#kpi-toggle-holder-${locPrefix} button[data-cur]`).forEach(b => {
                 const isCurrent = b.dataset.cur === currency;
 
-                // Pastikan class toggle USD/IDR tidak bentrok
                 if (b.dataset.cur === 'USD') {
                     b.classList.toggle('btn-primary', isCurrent);
                     b.classList.toggle('btn-outline-primary', !isCurrent);
@@ -927,6 +925,8 @@
                     // Simpan ke Local Storage untuk preferensi
                     try {
                         localStorage.setItem('poKpiCurrency', currentKpiCurrency);
+                        // Simpan ke chart currency juga agar sinkron saat halaman dimuat ulang
+                        localStorage.setItem('poCurrency', currentKpiCurrency);
                     } catch {}
 
                     // Perbarui semua blok KPI dan link
@@ -943,8 +943,8 @@
         }
 
         /* =========================================================
-            LOGIC DASHBOARD UTAMA (DARI KODE ASLI)
-            ======================================================== */
+           LOGIC DASHBOARD UTAMA (DARI KODE ASLI)
+           ======================================================== */
         (() => {
 
             const dataHolder = document.getElementById('dashboard-data-holder');
@@ -995,9 +995,18 @@
                     setTitleCurrencySuffixByCanvas(canvasId, currency);
                     __destroy(canvasId);
 
+                    // Key data di Controller adalah: top_customers_value_[usd/idr]_[smg/sby]
                     const dsKey = (currency === 'IDR') ? `top_customers_value_idr_${loc}` :
                         `top_customers_value_usd_${loc}`;
                     const ds = chartData[dsKey];
+
+                    const colors = (currency === 'IDR') ? {
+                        bg: 'rgba(25, 135, 84, 0.8)',
+                        border: 'rgba(25, 135, 84, 1)'
+                    } : {
+                        bg: 'rgba(13, 110, 253, 0.8)',
+                        border: 'rgba(13, 110, 253, 1)'
+                    };
 
                     const canvas = document.getElementById(canvasId);
                     if (canvas) {
@@ -1006,15 +1015,7 @@
                             ds,
                             'total_value',
                             'Total Outstanding',
-                            (currency === 'IDR') ? {
-                                bg: 'rgba(25, 135, 84, 0.8)',
-                                /* Lebih gelap untuk chart */
-                                border: 'rgba(25, 135, 84, 1)'
-                            } : {
-                                bg: 'rgba(13, 110, 253, 0.8)',
-                                /* Lebih gelap untuk chart */
-                                border: 'rgba(13, 110, 253, 1)'
-                            },
+                            colors,
                             currency
                         );
                         __charts[`topCustomers_${loc}`] = newChart;
@@ -1033,13 +1034,6 @@
             }
             // --- END FUNGSI RENDER CHART TOP CUSTOMERS ---
 
-            // --- INISIALISASI KPI TOGGLE (Memicu render chart pertama) ---
-            if (chartData.kpi_new) {
-                // Inisialisasi KPI. initialChartCurrency digunakan sebagai currency awal KPI.
-                initKpiToggles(renderTopCustomersByCurrency, initialChartCurrency);
-            }
-            // --- END INISIALISASI KPI TOGGLE ---
-
             // --- RENDER CHART OVERDUE (Ini tetap berjalan karena tidak tergantung currency toggle) ---
             __charts.chartTopOverdueCustomers_smg = createHorizontalBarChart(
                 'chartTopOverdueCustomers_smg',
@@ -1047,7 +1041,6 @@
                 'overdue_count',
                 'Jumlah PO Terlambat', {
                     bg: 'rgba(220, 53, 69, 0.8)',
-                    /* Merah lebih gelap */
                     border: 'rgba(220, 53, 69, 1)'
                 }
             );
@@ -1058,12 +1051,16 @@
                 'overdue_count',
                 'Jumlah PO Terlambat', {
                     bg: 'rgba(220, 53, 69, 0.8)',
-                    /* Merah lebih gelap */
                     border: 'rgba(220, 53, 69, 1)'
                 }
             );
             // --- END RENDER CHART OVERDUE ---
 
+            // --- INISIALISASI KPI TOGGLE (Memicu render chart pertama) ---
+            if (chartData.kpi_new) {
+                // Inisialisasi KPI. initialChartCurrency digunakan sebagai currency awal KPI.
+                initKpiToggles(renderTopCustomersByCurrency, initialChartCurrency);
+            }
 
             /* Mounting Currency Toggle Chart (memperindah bagian chart) */
             function mountCurrencyToggleIfNeeded() {
@@ -1076,13 +1073,13 @@
                     holder.className = 'yz-card-toolbar';
                     // Menggunakan tombol yang lebih kecil
                     holder.innerHTML = `
-                         <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
-                             <button type="button" data-cur="USD"
-                             class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
-                             <button type="button" data-cur="IDR"
-                             class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
-                         </div>
-                         `;
+                            <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
+                                <button type="button" data-cur="USD"
+                                class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
+                                <button type="button" data-cur="IDR"
+                                class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
+                            </div>
+                            `;
                     return holder;
                 };
 
@@ -1129,7 +1126,7 @@
             mountCurrencyToggleIfNeeded();
 
 
-            // Panggil fungsi click prevention
+            // Panggil fungsi click prevention setelah DOM dimuat
             document.addEventListener('DOMContentLoaded', function() {
                 preventInfoButtonPropagation();
                 const intervalId = setInterval(() => {

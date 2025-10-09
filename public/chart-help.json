@@ -1,32 +1,35 @@
 {
     "po": {
+        "kpi_new": {
+            "outstanding_status": "<b>Pesanan Belum Selesai (Outstanding)</b><br>Ini adalah ringkasan semua pesanan yang harus dikirim dari pabrik ini (Semarang/Surabaya) yang **belum tuntas dipenuhi** (masih ada sisa barang yang harus dikirim).<br><br>Angka di bawah menunjukkan: <ul><li><b>Outstanding Value</b>: Total nilai uang pesanan yang tersisa.</li><li><b>Total PO</b>: Jumlah Nomor Pesanan yang tersisa.</li></ul>",
+            "overdue_status": "<b>Pesanan Sudah Terlambat (Overdue)</b><br>Ini adalah ringkasan pesanan yang jadwal kirimnya (**Due Date**) **sudah terlewat**, tetapi masih memiliki sisa barang yang harus dikirim.<br><br>Angka di bawah menunjukkan:<ul><li><b>Overdue Value</b>: Total nilai uang dari pesanan yang terlambat.</li><li><b>Total PO</b>: Jumlah Nomor Pesanan yang terlambat.</li></ul>"
+        },
         "kpi": {
             "value_usd": "<b>Outs Value Ship (USD)</b><br>Ini adalah total nilai pesanan yang masih me&shy;nunggu di&shy;kirim, di&shy;hitung dalam dolar.",
             "value_idr": "<b>Outs Value Ship (IDR)</b><br>Ini adalah total nilai pesanan yang masih me&shy;nunggu di&shy;kirim, di&shy;hitung dalam rupiah.",
-            "outstanding_po": "<b>Outstanding PO</b><br>Berapa banyak nomor pesanan yang belum selesai (belum tuntas di&shy;penuhi).",
-            "overdue_po": "<b>Overdue PO</b><br>Berapa banyak nomor pesanan yang sudah lewat tanggal kirim&shy;nya. Angka di samping&shy;nya me&shy;nunjuk&shy;kan persen di&shy;banding semua pesanan yang belum selesai."
+            "outstanding_po": "<b>Outstanding PO</b><br>Berapa banyak nomor pesanan yang belum selesai (belum tuntas di&shy;penuhi) dan berapa total uangnya.",
+            "overdue_po": "<b>Overdue PO</b><br>Berapa banyak nomor pesanan yang sudah lewat tanggal kirim&shy;nya. Angka di bawah me&shy;nunjuk&shy;kan semua pesanan yang belum selesai."
         },
         "outstanding_by_location": "<b>Outstanding Value by Location</b><br>Per&shy;ban&shy;dingan nilai pesanan yang belum selesai di tiap pabrik (Semarang vs Surabaya). Semakin tinggi batang&shy;nya, semakin besar nilai yang belum selesai.",
-        "status_overview": "<b>PO Status Overview</b><br>Cincin ini membagi pesanan menjadi:<ul><li><b>Overdue</b>: sudah lewat tanggal kirim</li><li><b>Due This Week</b>: tenggat minggu ini</li><li><b>On Time</b>: tenggat masih lama (lebih dari 7 hari)</li></ul>",
-        "top_customers_value_usd": "<b>Top 4 Customers by Outstanding Value</b><br>Empat pe&shy;langgan dengan nilai pesanan belum selesai ter&shy;besar.",
-        "top_customers_value_idr": "<b>Top 4 Customers by Outstanding Value</b><br>Empat pe&shy;langgan dengan nilai pesanan belum selesai ter&shy;besar.",
-        "top_customers_overdue": "<b>Top 4 Customers with Most Overdue PO</b><br>Empat pe&shy;langgan dengan jumlah pesanan ter&shy;lambat ter&shy;banyak.",
-        "performance_details": "<b>Outstanding PO & Performance Details by Type</b><br>Tabel ringkas per jenis pesanan: berapa total pesanan, berapa nilai&shy;nya, berapa yang ter&shy;lambat, dan sebaran ke&shy;ter&shy;lambatan (1–30, 31–60, 61–90, dan lebih dari 90 hari).",
-        "small_qty_by_customer": "<b>Small Quantity (≤5) Outstanding Items by Customer</b><br>Daftar pe&shy;langgan yang punya banyak item kecil (sisa ≤ 5 unit) yang belum selesai. Grafik ini mem&shy;bantu men&shy;cari item-item sepele yang bisa cepat di&shy;beres&shy;kan."
+        "status_overview": "<b>Ringkasan Status PO</b><br>Cincin ini membagi pesanan menjadi:<ul><li><b>Terlambat</b>: Sudah lewat tanggal kirim.</li><li><b>Jatuh Tempo Minggu Ini</b>: Tenggat pengiriman jatuh pada minggu ini.</li><li><b>Aman</b>: Tenggat pengiriman masih lama (lebih dari 7 hari).</li></ul>",
+        "top_customers_value_usd_smg": "<b>4 Pelanggan dengan Nilai Outstanding Terbesar (Semarang)</b><br>Empat pelanggan dengan nilai total pesanan yang **belum selesai** terbesar di Plant Semarang.",
+        "top_customers_value_usd_sby": "<b>4 Pelanggan dengan Nilai Outstanding Terbesar (Surabaya)</b><br>Empat pelanggan dengan nilai total pesanan yang **belum selesai** terbesar di Plant Surabaya.",
+        "top_customers_overdue_smg": "<b>4 Pelanggan dengan Jumlah PO Terlambat Terbanyak (Semarang)</b><br>Empat pelanggan dengan jumlah **Nomor Pesanan** yang **sudah lewat tanggal kirim** (terlambat) terbanyak di Plant Semarang.",
+        "top_customers_overdue_sby": "<b>4 Pelanggan dengan Jumlah PO Terlambat Terbanyak (Surabaya)</b><br>Empat pelanggan dengan jumlah **Nomor Pesanan** yang **sudah lewat tanggal kirim** (terlambat) terbanyak di Plant Surabaya.",
+        "performance_details": "<b>Sebaran Status PO Outstanding</b><br>Tabel ringkas sebaran PO Outstanding berdasarkan keterlambatan: <b>On track</b>, <b>1–30 hari terlambat</b>, <b>31–60 hari terlambat</b>, <b>61–90 hari terlambat</b>, dan <b>lebih dari 90 hari terlambat</b>.",
+        "small_qty_by_customer": "<b>Sisa Barang Kecil (≤5 Unit) Berdasarkan Pelanggan</b><br>Daftar pelanggan yang memiliki banyak item kecil (sisa ≤ 5 unit) yang belum selesai. Ini membantu mencari 'sisa-sisa' yang cepat diselesaikan."
     },
     "so": {
-        "kpi": {
-            "total_outstanding_value_usd": "<b>Outs Value Packing (USD)</b><br>Total nilai pesanan yang me&shy;nunggu di&shy;packing namun belum selesai, dalam dolar.",
-            "total_outstanding_value_idr": "<b>Outs Value Packing (IDR)</b><br>Total nilai pesanan yang me&shy;nunggu di&shy;packing namun belum selesai, dalam rupiah.",
-            "value_to_ship_this_week": "<b>Value to Packing This Week</b><br>Per&shy;kiraan nilai pesanan yang jadwal&shy;nya jatuh <u>minggu ini</u>.",
-            "potential_bottlenecks": "<b>Potential Bottlenecks</b><br>Per&shy;kiraan jumlah SO item yang ber&shy;potensi meng&shy;hambat (misal&shy;nya karena ke&shy;butuhan lebih besar dari ke&shy;ter&shy;sediaan se&shy;karang) Dalam 7 Hari Kedepan."
+        "kpi_new": {
+            "outstanding_value": "<b>Nilai Pesanan Belum Selesai</b><br>Ini adalah total nilai uang dari semua pesanan yang harus dikirim, tetapi proses Pengepakan (Packing) dan Pengiriman&shy;nya **belum tuntas**.",
+            "outstanding_so_count": "<b>Total Pesanan Belum Selesai</b><br>Ini adalah jumlah **Nomor Pesanan** (SO) yang masih memiliki barang yang belum tuntas dikirim (masih ada sisa di gudang/packing).",
+            "overdue_value": "<b>Nilai Pesanan Sudah Terlambat</b><br>Ini adalah total nilai uang dari pesanan-pesanan yang jadwal kirimnya (**Due Date**) **sudah lewat**, tetapi masih ada barang yang belum dikirim.",
+            "overdue_so_count": "<b>Total Pesanan Sudah Terlambat</b><br>Ini adalah jumlah **Nomor Pesanan** (SO) yang jadwal kirimnya (**Due Date**) **sudah lewat** dan masih ada sisa barang yang harus dikirim."
         },
-        "value_by_location_status": "<b>Value to Packing vs Overdue by Location</b><br>Grafik batang ber&shy;tumpuk yang mem&shy;ban&shy;ding&shy;kan nilai total item yang siap di&shy;packing per plant, di&shy;seg&shy;men&shy;tasikan ber&shy;dasarkan status&shy;nya: <b>On Time</b> (belum melewati <i>due date</i>) dan <b>Overdue</b> (sudah melewati <i>due date</i>).",
-        "status_overview": "<b>SO Fulfillment Urgency</b><br>Cincin ini me&shy;nunjuk&shy;kan urgensi pesanan:<ul><li><b>Overdue &gt; 30 hari</b></li><li><b>Overdue 1–30 hari</b></li><li><b>Due This Week</b>: jatuh tempo minggu ini</li><li><b>On Time</b>: tenggat masih aman</li></ul>",
-        "top_overdue_customers_value": "<b>Top Customers by Value of Overdue Orders</b><br>Pe&shy;langgan dengan nilai pesanan ter&shy;lambat paling besar. Mem&shy;bantu fokus ke pe&shy;langgan yang dampak&shy;nya paling tinggi.",
-        "due_this_week_by_so": "<b>SO Due This Week – By SO</b><br>Daftar nomor pesanan yang jatuh tempo minggu ini, lengkap dengan nilai dan tanggal paling cepat yang harus di&shy;penuhi.",
-        "due_this_week_by_customer": "<b>Due This Week – By Customer</b><br>Ring&shy;kasan pe&shy;langgan mana yang paling besar ke&shy;wajib&shy;annya minggu ini.",
-        "items_with_remark": "<b>Item with Remark</b><br>Daftar item yang di&shy;beri catatan khusus (misal&shy;nya ada per&shy;hatian/aksi yang perlu di&shy;lakukan)."
+        "status_overview": "<b>Keterdesakan Jadwal Pengiriman</b><br>Cincin ini menunjukkan seberapa mendesak pengiriman pesanan yang tersisa:<ul><li><b>Terlambat > 30 hari</b>: Jadwal kirim lewat lebih dari sebulan.</li><li><b>Terlambat 1–30 hari</b>: Jadwal kirim lewat kurang dari sebulan.</li><li><b>Jatuh Tempo Minggu Ini</b>: Harus dikirim antara hari ini sampai 7 hari ke depan.</li><li><b>Aman</b>: Jadwal kirimnya masih lebih dari 7 hari lagi.</li></ul>",
+        "top_overdue_customers_value": "<b>Pelanggan dengan Pesanan Terlambat Terbesar</b><br>Lima pelanggan yang total nilai pesanan (yang belum selesai & sudah lewat jadwalnya) adalah yang **paling besar**. Membantu Anda fokus pada pelanggan yang paling berdampak secara nilai uang.",
+        "items_with_remark": "<b>Daftar Barang dengan Catatan Khusus</b><br>Daftar item pesanan yang diberi **Catatan/Peringatan** khusus oleh tim terkait (misalnya, ada masalah/aksi yang perlu di&shy;lakukan segera).",
+        "small_qty_by_customer": "<b>Sisa Barang Sedikit (Kurang dari atau Sama dengan 5 Unit)</b><br>Ini adalah daftar pelanggan yang memiliki banyak barang tersisa yang jumlahnya sangat kecil (hanya 1 sampai 5 unit)."
     },
     "stock": {
         "kpi": {
