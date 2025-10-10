@@ -1315,14 +1315,16 @@ END MODAL
          START MODIFIED SECTION: Handle click event for T2 row (PO)
          ==================================================================== */
 
-        async function handleSoRowClick(ev) {
+        async function handleSoRowClick(ev, soRowEl = null) {
             // Jika yang di-klik adalah checkbox atau mode collapse aktif, hentikan.
             if (ev.target.closest('.form-check-input') || COLLAPSE_MODE) {
                 return;
             }
             ev.stopPropagation();
 
-            const soRow = ev.currentTarget;
+            // PENTING: pakai elemen baris yang kita kirim (delegation) ATAU currentTarget (jika bound langsung)
+            const soRow = soRowEl || ev.currentTarget;
+
             const kunnr = soRow.closest('.yz-nest-card').previousElementSibling.dataset.kunnr;
             const vbeln = (soRow.dataset.vbeln || '').trim();
             const tgtId = soRow.dataset.tgt;
@@ -1333,7 +1335,6 @@ END MODAL
             const t2tbl = soRow.closest('table');
             const soTbody = soRow.closest('tbody');
 
-            // Toggle fokus visual (Mode lama T1. Yang baru pakai card-row)
             if (!open) {
                 soTbody.classList.add('so-focus-mode');
                 soRow.classList.add('is-focused');
@@ -1342,11 +1343,9 @@ END MODAL
                 soRow.classList.remove('is-focused');
             }
 
-            // Toggle tampilan row nested (Tabel 3)
             if (open) {
                 tgt.style.display = 'none';
                 caret?.classList.remove('rot');
-                // Menggunakan helper visibility di sini untuk menampilkan footer jika tidak ada yang terbuka
                 updateT2FooterVisibility(t2tbl);
                 return;
             }
@@ -1355,15 +1354,13 @@ END MODAL
             caret?.classList.add('rot');
             updateT2FooterVisibility(t2tbl);
 
-            // Memuat data T3 (jika belum dimuat)
             if (tgt.dataset.loaded === '1') return;
 
             box.innerHTML = `
-                <div class="p-2 text-muted small yz-loader-pulse">
-                    <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
-                </div>`;
+        <div class="p-2 text-muted small yz-loader-pulse">
+            <div class="spinner-border spinner-border-sm me-2"></div>Memuat detail…
+        </div>`;
 
-            // Ambil data T3 dari API
             const apiT3 = "{{ route('dashboard.api.t3') }}";
             const root = document.getElementById('yz-root');
             const WERKS = (root.dataset.werks || '').trim() || null;
@@ -1382,7 +1379,7 @@ END MODAL
                 box.innerHTML = renderT3(j3.data);
                 tgt.dataset.loaded = '1';
 
-                // Update status checkbox item setelah render
+                // Sinkronkan checkbox item sesuai selectedItems
                 box.querySelectorAll('.check-item').forEach(chk => {
                     const sid = sanitizeId(chk.dataset.id);
                     chk.checked = !!(sid && selectedItems.has(sid));
@@ -1566,6 +1563,18 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             const modalSubTitle = document.getElementById('modal-sub-title');
             const modalContentArea = document.getElementById('modal-content-area');
 
+            const globalTotalsCard = document.querySelector('.yz-global-total-card');
+
+            function updateGlobalTotalsVisibility() {
+                // Jika ada customer card yang sedang terbuka (is-open), sembunyikan total
+                const anyOpen = !!document.querySelector('.yz-customer-card.is-open');
+                if (!globalTotalsCard) return;
+                globalTotalsCard.style.display = anyOpen ? 'none' : '';
+            }
+
+            // Inisialisasi awal saat halaman selesai render
+            updateGlobalTotalsVisibility();
+
             const scrollToCenter = (el) => {
                 if (!el) return Promise.resolve();
                 const rect = el.getBoundingClientRect();
@@ -1591,6 +1600,24 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     });
                 });
             };
+
+            document.body.addEventListener('click', async (e) => {
+                const soRow = e.target.closest('.js-t2row');
+                if (!soRow) return;
+                // Batasi hanya yang berada di area PO report (nest card)
+                if (!soRow.closest('.yz-nest-card')) return;
+                await handleSoRowClick(e, soRow);
+            });
+
+            document.body.addEventListener('click', async (e) => {
+                const btn = e.target.closest('.js-collapse-toggle');
+                if (!btn) return;
+                const tbody = btn.closest('table')?.querySelector('tbody');
+                if (tbody) {
+                    e.stopPropagation();
+                    await applyCollapseView(tbody, !COLLAPSE_MODE);
+                }
+            });
 
             // Expand Level-1 → load T2
             document.querySelectorAll('.yz-customer-card').forEach(custRow => {
@@ -1624,6 +1651,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     custRow.classList.toggle('is-open', !wasOpen);
                     custRow.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
                     slot.style.display = wasOpen ? 'none' : 'block';
+                    updateGlobalTotalsVisibility();
 
                     // 2. Manage focus mode
                     if (!wasOpen) {
@@ -1702,8 +1730,6 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     if (wasOpen) return;
                     if (wrap.dataset.loaded === '1') {
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
-                            soRow.addEventListener('click', handleSoRowClick);
-                            // Sinkronkan dot
                             const vbeln = soRow.dataset.vbeln;
                             if (vbeln) soHasSelectionDot(vbeln);
                         });
@@ -1715,10 +1741,6 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         const soTable = wrap.querySelector('table.yz-mini');
                         const soTbodyTable = soTable?.querySelector('tbody');
                         const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
-                        collapseBtn?.addEventListener('click', async (ev) => {
-                            ev.stopPropagation();
-                            await applyCollapseView(soTbodyTable, !COLLAPSE_MODE);
-                        });
                         return;
                     }
 
@@ -1747,15 +1769,9 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         const soTable = wrap.querySelector('table.yz-mini');
                         const soTbody = soTable?.querySelector('tbody');
                         const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
-                        collapseBtn?.addEventListener('click', async (ev) => {
-                            ev.stopPropagation();
-                            await applyCollapseView(soTbody, !COLLAPSE_MODE);
-                        });
 
                         // Klik PO → toggle & load T3
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
-                            soRow.addEventListener('click', handleSoRowClick);
-                            // Set initial checkbox state (berdasarkan selectedItems)
                             const chk = soRow.querySelector('.check-so');
                             const vbeln = chk.dataset.vbeln;
                             const anySel = Array.from(selectedItems).some(id =>
@@ -2213,13 +2229,10 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
                     // Begitu baris PO diklik (untuk buka Tabel-3 manual), matikan highlight sekali saja.
                     const removeHL = () => targetRow.classList.remove('row-highlighted');
-                    targetRow.removeEventListener('click', handleSoRowClick);
                     targetRow.addEventListener('click', removeHL, {
                         capture: true,
                         once: true
                     });
-                    // Re-add listener handleSoRowClick agar tetap bisa buka T3
-                    targetRow.addEventListener('click', handleSoRowClick);
                 })();
             })();
         });

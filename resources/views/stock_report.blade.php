@@ -334,9 +334,20 @@
             const selectedCountSpan = document.getElementById('selected-count');
             const globalFooter = document.querySelector('.yz-global-total-card');
 
-            const selectedItems = new Set(); // item id (string)
-            const itemIdToSO = new Map(); // item id -> VBELN
-            const itemsCache = new Map(); // VBELN -> items[]
+            const selectedItems = new Set();
+            const itemIdToSO = new Map();
+            const itemsCache = new Map();
+
+            // ==============================
+            //  State kolaps per-tbody (bukan global)
+            // ==============================
+            function getCollapseMode(tbodyEl) {
+                return tbodyEl?.dataset.collapseMode === '1';
+            }
+
+            function setCollapseMode(tbodyEl, on) {
+                if (tbodyEl) tbodyEl.dataset.collapseMode = on ? '1' : '0';
+            }
 
             // --- Helpers ---
             const formatCurrency = (value, currency, d = 2) => {
@@ -380,14 +391,17 @@
                 selectAll.indeterminate = !allChecked && Array.from(itemCheckboxes).some(ch => ch.checked);
             }
 
+            // Tentukan berdasarkan apakah tbody sedang kolaps (class 'collapse-mode')
             function syncSelectAllSoState(tbody) {
                 const allSoCheckboxes = Array.from(tbody.querySelectorAll('.check-so'));
+                const isCollapsed = tbody.classList.contains('collapse-mode');
+
                 const visibleSoCheckboxes = allSoCheckboxes.filter(ch => ch.closest('tr').style.display !== 'none');
-                // Saat collapse aktif, hanya hitung SO yang terlihat
-                const consider = isCollapseOn(tbody) ? visibleSoCheckboxes : allSoCheckboxes;
+                const soCheckboxesToConsider = isCollapsed ? visibleSoCheckboxes : allSoCheckboxes;
 
                 const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
-                if (!selectAllSo || consider.length === 0) {
+
+                if (!selectAllSo || soCheckboxesToConsider.length === 0) {
                     if (selectAllSo) {
                         selectAllSo.checked = false;
                         selectAllSo.indeterminate = false;
@@ -395,8 +409,8 @@
                     return;
                 }
 
-                const checkedCount = consider.filter(ch => ch.checked).length;
-                const totalCount = consider.length;
+                const checkedCount = soCheckboxesToConsider.filter(ch => ch.checked).length;
+                const totalCount = soCheckboxesToConsider.length;
 
                 if (checkedCount === 0) {
                     selectAllSo.checked = false;
@@ -406,7 +420,7 @@
                     selectAllSo.indeterminate = false;
                 } else {
                     selectAllSo.checked = false;
-                    selectAllSo.indeterminate = true;
+                    selectAllSo.indeterminate = false;
                 }
             }
 
@@ -432,17 +446,6 @@
                 return jd.data;
             }
 
-            // ===== Collapse state PER TABEL (bukan global) =====
-            function isCollapseOn(tbodyEl) {
-                return !!(tbodyEl && (tbodyEl.classList.contains('collapse-mode') || tbodyEl.dataset.collapse ===
-                    '1'));
-            }
-
-            function setCollapseState(tbodyEl, on) {
-                if (!tbodyEl) return;
-                tbodyEl.dataset.collapse = on ? '1' : '0';
-            }
-
             // ===== RENDER LEVEL 2 (SO) =====
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
@@ -454,7 +457,7 @@
                 <tr>
                     <th style="width:40px;" class="text-center">
                         <input type="checkbox" class="form-check-input check-all-sos"
-                               title="Pilih semua SO" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+                                title="Pilih semua SO" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
                     </th>
                     <th style="width:40px;" class="text-center">
                         <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
@@ -467,7 +470,7 @@
                     <th style="width:28px;"></th>
                 </tr>
             </thead>
-            <tbody data-collapse="0">`;
+            <tbody>`;
                 rows.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const isSoSelected = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) ===
@@ -476,17 +479,17 @@
               <tr class="yz-row js-t2row" data-vbeln="${r.VBELN}" data-tgt="${rid}">
                 <td class="text-center">
                   <input type="checkbox" class="form-check-input check-so"
-                         data-vbeln="${r.VBELN}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+                                data-vbeln="${r.VBELN}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
                 </td>
-                <td class="text-center"><span class="yz-caret">▸</span></td>
+                <td class="text-center">
+                  <span class="yz-caret">▸</span> </td>
                 <td class="yz-t2-vbeln text-start fw-bold text-primary">${r.VBELN}</td>
                 <td class="text-center">${formatNumber(r.total_qty)}</td>
                 <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
                 <td class="text-center"><span class="so-selected-dot" style="display:${isSoSelected?'inline-block':'none'};"></span></td>
               </tr>
               <tr id="${rid}" class="yz-nest" style="display:none;">
-                <td colspan="6" class="p-0">
-                  <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+                <td colspan="6" class="p-0"> <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
                     <div class="yz-slot-items p-2"></div>
                   </div>
                 </td>
@@ -546,7 +549,7 @@
                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
                     </div>`;
 
-                    return ensureItemsLoadedForSO(vbeln).then(items => {
+                    ensureItemsLoadedForSO(vbeln).then(items => {
                         itemBox.innerHTML = renderLevel3_Items(items);
                         applySelectionsToRenderedItems(itemBox);
                         nest.dataset.loaded = '1';
@@ -555,7 +558,6 @@
                     });
                 } else {
                     applySelectionsToRenderedItems(itemBox);
-                    return Promise.resolve();
                 }
             }
 
@@ -568,9 +570,11 @@
                 }
             }
 
-            // ===== Apply/Toggle Collapse per TABEL =====
+            // ==============================
+            // Kolaps per-tbody
+            // ==============================
             async function applyCollapseView(tbodyEl, on) {
-                setCollapseState(tbodyEl, on);
+                setCollapseMode(tbodyEl, on);
 
                 const headerCaret = tbodyEl.closest('table')?.querySelector(
                     '.js-collapse-toggle .yz-collapse-caret');
@@ -625,7 +629,7 @@
 
                     const wasOpen = row.classList.contains('is-open');
 
-                    // 1) Tutup customer lain
+                    // 1. Exclusive Toggle & Focus Mode — pastikan customer lain ditutup
                     document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
                         if (r !== row) {
                             const otherSlot = document.getElementById(r.dataset.kid);
@@ -633,18 +637,22 @@
                             r.querySelector('.kunnr-caret')?.classList.remove('rot');
 
                             const otherTable = otherSlot?.querySelector('table');
-                            otherTable?.querySelector('tbody')?.classList.remove(
-                                'so-focus-mode', 'collapse-mode');
+                            const otherTbody = otherTable?.querySelector('tbody');
+                            otherTbody?.classList.remove('so-focus-mode',
+                                'collapse-mode');
+                            // ⬇ reset dataset state agar sinkron
+                            setCollapseMode(otherTbody, false);
+
                             otherTable?.querySelectorAll('.js-t2row').forEach(rr =>
                                 closeItemsForSORow(rr));
                         }
                     });
 
-                    // 2) Toggle current card
+                    // 2. Toggle status kartu saat ini
                     row.classList.toggle('is-open');
                     row.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
 
-                    // 3) Focus mode + footer global
+                    // 3. Keluar/masuk Customer Focus Mode & Global Footer
                     if (!wasOpen) {
                         customerListContainer.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
@@ -657,26 +665,49 @@
 
                     if (wasOpen) return;
 
-                    // 4) Muat data SO (Level 2)
+                    // 4. Muat data SO (Level 2)
                     if (wrap.dataset.loaded === '1') {
-                        // Re-bind jika sudah ada
+                        // Re-bind listeners jika sudah dimuat (hindari double-bind)
                         const soTable = wrap.querySelector('table.yz-mini');
                         const soTbody = soTable?.querySelector('tbody');
                         const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
 
-                        // Samakan caret dengan state tabel saat ini
-                        const headerCaret = soTable?.querySelector('.yz-collapse-caret');
-                        if (headerCaret) headerCaret.textContent = isCollapseOn(soTbody) ? '▾' :
-                            '▸';
-
-                        collapseBtn?.addEventListener('click', async (ev) => {
-                            ev.stopPropagation();
-                            const onNow = isCollapseOn(soTbody);
-                            await applyCollapseView(soTbody, !onNow);
-                        });
+                        if (collapseBtn && collapseBtn.dataset.bound !== '1') {
+                            collapseBtn.addEventListener('click', async (ev) => {
+                                ev.stopPropagation();
+                                const current = getCollapseMode(soTbody);
+                                await applyCollapseView(soTbody, !current);
+                            });
+                            collapseBtn.dataset.bound = '1';
+                        }
 
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             updateSODot(soRow.dataset.vbeln);
+                            if (soRow.dataset.bound === '1') return; // cegah re-bind
+
+                            soRow.addEventListener('click', async (ev) => {
+                                if (ev.target.closest('.form-check-input'))
+                                    return;
+                                ev.stopPropagation();
+                                const open = soRow.nextElementSibling.style
+                                    .display !== 'none';
+                                const soTbodyLocal = soRow.closest('tbody');
+
+                                if (open) {
+                                    closeItemsForSORow(soRow);
+                                    soTbodyLocal?.classList.remove(
+                                        'so-focus-mode');
+                                    soRow.classList.remove('is-focused');
+                                    return;
+                                }
+
+                                await openItemsIfNeededForSORow(soRow);
+                                soTbodyLocal?.classList.add(
+                                    'so-focus-mode');
+                                soRow.classList.add('is-focused');
+                            });
+
+                            soRow.dataset.bound = '1';
                         });
                         if (soTbody) syncSelectAllSoState(soTbody);
                         return;
@@ -685,8 +716,7 @@
                     try {
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
                             <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
-                        </div>`;
-
+                            </div>`;
                         const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
@@ -699,19 +729,26 @@
                         wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
                         wrap.dataset.loaded = '1';
 
-                        // 5) Bind Listeners Level 2
+                        // 5. Bind Listeners Level 2
                         const soTable = wrap.querySelector('table.yz-mini');
                         const soTbody = soTable?.querySelector('tbody');
                         const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
 
-                        collapseBtn?.addEventListener('click', async (ev) => {
-                            ev.stopPropagation();
-                            const onNow = isCollapseOn(soTbody);
-                            await applyCollapseView(soTbody, !onNow);
-                        });
+                        // Inisialisasi state kolaps per tbody ke 'off'
+                        setCollapseMode(soTbody, false);
+
+                        if (collapseBtn && collapseBtn.dataset.bound !== '1') {
+                            collapseBtn.addEventListener('click', async (ev) => {
+                                ev.stopPropagation();
+                                const current = getCollapseMode(soTbody);
+                                await applyCollapseView(soTbody, !current);
+                            });
+                            collapseBtn.dataset.bound = '1';
+                        }
 
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             updateSODot(soRow.dataset.vbeln);
+                            if (soRow.dataset.bound === '1') return; // cegah re-bind
 
                             soRow.addEventListener('click', async (ev) => {
                                 if (ev.target.closest('.form-check-input'))
@@ -719,20 +756,23 @@
                                 ev.stopPropagation();
                                 const open = soRow.nextElementSibling.style
                                     .display !== 'none';
-                                const soBody = soRow.closest('tbody');
+                                const soTbodyLocal = soRow.closest('tbody');
 
                                 if (open) {
                                     closeItemsForSORow(soRow);
-                                    soBody?.classList.remove(
+                                    soTbodyLocal?.classList.remove(
                                         'so-focus-mode');
                                     soRow.classList.remove('is-focused');
                                     return;
                                 }
 
                                 await openItemsIfNeededForSORow(soRow);
-                                soBody?.classList.add('so-focus-mode');
+                                soTbodyLocal?.classList.add(
+                                    'so-focus-mode');
                                 soRow.classList.add('is-focused');
                             });
+
+                            soRow.dataset.bound = '1';
                         });
                         if (soTbody) syncSelectAllSoState(soTbody);
 
@@ -745,13 +785,16 @@
 
             // ===== Cegah checkbox memicu toggle baris (Level 2 & 3) =====
             document.body.addEventListener('click', (e) => {
-                if (e.target.closest('.check-so') ||
+                if (
+                    e.target.closest('.check-so') ||
                     e.target.closest('.check-all-sos') ||
                     e.target.closest('.check-item') ||
-                    e.target.closest('.check-all-items')) {
+                    e.target.closest('.check-all-items')
+                ) {
                     e.stopPropagation();
                 }
             }, true);
+
 
             // ===== Change events (pilih SO / Item) =====
             document.body.addEventListener('change', async (e) => {
@@ -822,7 +865,12 @@
                         updateSODot(vbeln);
                     }
                     if (tbody) syncSelectAllSoState(tbody);
-                    if (isCollapseOn(tbody)) await applyCollapseView(tbody, true);
+
+                    // Hanya re-apply jika tbody sedang kolaps
+                    if (tbody && tbody.classList.contains('collapse-mode')) {
+                        await applyCollapseView(tbody, true);
+                    }
+
                     updateExportButton();
                     return;
                 }
@@ -844,7 +892,10 @@
                     const tbody = e.target.closest('tbody');
                     if (tbody) syncSelectAllSoState(tbody);
 
-                    if (isCollapseOn(tbody)) await applyCollapseView(tbody, true);
+                    // Hanya re-apply jika tbody sedang kolaps
+                    if (tbody && tbody.classList.contains('collapse-mode')) {
+                        await applyCollapseView(tbody, true);
+                    }
 
                     updateExportButton();
                     return;

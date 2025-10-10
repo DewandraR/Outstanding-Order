@@ -667,8 +667,11 @@
             const itemsCache = new Map(); // ITEM CACHE
             const itemIdToSO = new Map();
 
-            // State untuk Collapse Mode di Tabel 2
-            let COLLAPSE_MODE = false;
+            // ===== Collpase state per T2 (per tbody) =====
+            const getCollapse = (tbody) => !!(tbody && tbody.dataset && tbody.dataset.collapse === '1');
+            const setCollapse = (tbody, on) => {
+                if (tbody && tbody.dataset) tbody.dataset.collapse = on ? '1' : '0';
+            };
 
 
             /* ---------- Utils ---------- */
@@ -769,7 +772,8 @@
 
             // 🟢 Fungsi untuk mengelola Collapse Mode di Tabel 2 (SO List) DENGAN BUKA OTOMATIS T3
             async function applyCollapseViewSo(tbodyEl, on) {
-                COLLAPSE_MODE = on;
+                if (!tbodyEl) return;
+                setCollapse(tbodyEl, on);
 
                 const headerCaret = tbodyEl.closest('table')?.querySelector(
                     '.js-collapse-toggle .yz-collapse-caret');
@@ -813,7 +817,7 @@
                     }
 
                     // [PERBAIKAN UTAMA] Jika tidak ada PO yang tersisa, matikan mode kolaps secara otomatis
-                    if (visibleCount === 0 && COLLAPSE_MODE) {
+                    if (visibleCount === 0 && getCollapse(tbodyEl)) {
                         await applyCollapseViewSo(tbodyEl, false); // Rekursif ke mode normal
                         return; // Keluar dari fungsi ini setelah menonaktifkan
                     }
@@ -867,7 +871,8 @@
                 const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
                     'none' && tr.offsetParent !== null);
                 const tfoot = t2Table.querySelector('tfoot.t2-footer');
-                if (tfoot) tfoot.style.display = (anyOpen || COLLAPSE_MODE) ? 'none' : '';
+                const tbody = t2Table.querySelector('tbody');
+                if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
             }
 
             document.addEventListener('click', (e) => {
@@ -883,28 +888,28 @@
                 const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ?? 0), 0);
 
                 let html = `
-    
-    <table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-so">
-        <tr>
-            <th style="width:40px;" class="text-center">
-                <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-            </th>
-            <th style="width:40px;" class="text-center">
-                <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
-                    <span class="yz-collapse-caret">▸</span>
-                </button>
-            </th>
-            {{-- MODIFIKASI STRUKTUR KOLOM: Memindahkan Outs. Value dan menghapus Overdue (Days) --}}
-            <th class="text-start" style="width: 250px;">SO & Status</th>
-            <th class="text-center">SO Item Count</th>
-            <th class="text-start">Outs. Value</th>
-            <th class="text-center">Req. Deliv. Date</th>
-            <th class="text-center">Outs. Qty</th>
-            <th style="width:28px;"></th>
-        </tr>
-        </thead>
-        <tbody>`;
+
+<table class="table table-sm mb-0 yz-mini">
+    <thead class="yz-header-so">
+    <tr>
+        <th style="width:40px;" class="text-center">
+            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+        </th>
+        <th style="width:40px;" class="text-center">
+            <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
+                <span class="yz-collapse-caret">▸</span>
+            </button>
+        </th>
+        {{-- MODIFIKASI STRUKTUR KOLOM: Memindahkan Outs. Value dan menghapus Overdue (Days) --}}
+        <th class="text-start" style="width: 250px;">SO & Status</th>
+        <th class="text-center">SO Item Count</th>
+        <th class="text-start">Outs. Value</th>
+        <th class="text-center">Req. Deliv. Date</th>
+        <th class="text-center">Outs. Qty</th>
+        <th style="width:28px;"></th>
+    </tr>
+    </thead>
+    <tbody>`;
                 const rowsSorted = [...rows].sort((a, b) => {
                     // Sortir: Overdue (Terbesar) -> On Track (Terkecil) -> Normal
                     const oa = Number(a.Overdue || 0);
@@ -943,46 +948,46 @@
                     }
 
                     html += `
-        <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-            <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}" onclick="event.stopPropagation()"></td>
-            <td class="text-center"><span class="yz-caret">▸</span></td>
-            
-            {{-- KOLOM BARU: SO & STATUS (Bubble) --}}
-            <td class="text-start">
-                <div class="fw-bold text-primary mb-1">${r.VBELN}</div>
-                ${overdueBadge}
-            </td>
-            
-            <td class="text-center">${r.item_count ?? '-'}</td>
-            
-            {{-- Outs. Value dipindah ke KIRI --}}
-            <td class="text-start fw-bold fs-6">${displayOutsValue}</td>
-            
-            <td class="text-center small text-muted">${r.FormattedEdatu || '-'}</td>
-            <td class="text-center">${formatNumberGlobal(outsQty, 0)}</td> 
+    <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+        <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}" onclick="event.stopPropagation()"></td>
+        <td class="text-center"><span class="yz-caret">▸</span></td>
+        
+        {{-- KOLOM BARU: SO & STATUS (Bubble) --}}
+        <td class="text-start">
+            <div class="fw-bold text-primary mb-1">${r.VBELN}</div>
+            ${overdueBadge}
+        </td>
+        
+        <td class="text-center">${r.item_count ?? '-'}</td>
+        
+        {{-- Outs. Value dipindah ke KIRI --}}
+        <td class="text-start fw-bold fs-6">${displayOutsValue}</td>
+        
+        <td class="text-center small text-muted">${r.FormattedEdatu || '-'}</td>
+        <td class="text-center">${formatNumberGlobal(outsQty, 0)}</td> 
 
-            <td class="text-center">
-                <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
-                <span class="so-selected-dot"></span>
-            </td>
-        </tr>
-        <tr id="${rid}" class="yz-nest" style="display:none;">
-            <td colspan="8" class="p-0"> {{-- colspan disesuaikan dari 9 ke 8 --}}
-                <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-                    <div class="yz-slot-items p-2"></div>
-                </div>
-            </td>
-        </tr>`;
+        <td class="text-center">
+            <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+            <span class="so-selected-dot"></span>
+        </td>
+    </tr>
+    <tr id="${rid}" class="yz-nest" style="display:none;">
+        <td colspan="8" class="p-0"> {{-- colspan disesuaikan dari 9 ke 8 --}}
+            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+                <div class="yz-slot-items p-2"></div>
+            </div>
+        </td>
+    </tr>`;
                 });
 
                 html += `</tbody>
-        <tfoot class="t2-footer">
-            <tr class="table-light yz-t2-total-outs" style="background-color: #e9ecef;">
-                <th colspan="6" class="text-end">Total Outstanding Qty</th>
-                <th class="text-center fw-bold">${formatNumberGlobal(totalOutsQtyT2, 0)}</th> <th colspan="1"></th> {{-- colspan disesuaikan dari 2 ke 1 --}}
-            </tr>
-        </tfoot>
-    </table>`;
+    <tfoot class="t2-footer">
+        <tr class="table-light yz-t2-total-outs" style="background-color: #e9ecef;">
+            <th colspan="6" class="text-end">Total Outstanding Qty</th>
+            <th class="text-center fw-bold">${formatNumberGlobal(totalOutsQtyT2, 0)}</th> <th colspan="1"></th> {{-- colspan disesuaikan dari 2 ke 1 --}}
+        </tr>
+    </tfoot>
+</table>`;
                 return html;
             }
 
@@ -991,38 +996,38 @@
                     return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
 
                 let html = `<div class="table-responsive">
-        <table class="table table-sm table-hover mb-0 yz-mini">
-        <thead class="yz-header-item">
-          <tr>
-            <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-            <th>Item</th><th>Material FG</th><th>Desc FG</th>
-            <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
-            <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
-            <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
-          </tr>
-        </thead>
-        <tbody>`;
+    <table class="table table-sm table-hover mb-0 yz-mini">
+    <thead class="yz-header-item">
+      <tr>
+        <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+        <th>Item</th><th>Material FG</th><th>Desc FG</th>
+        <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
+        <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
+        <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
+      </tr>
+    </thead>
+    <tbody>`;
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
                     const hasRemark = r.remark && r.remark.trim() !== '';
                     const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
                     html += `
-             <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
-                 data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
-                 data-vbeln="${r.VBELN_KEY}" 
-                 data-posnr="${r.POSNR}"
-                 data-posnr-key="${r.POSNR_KEY}">
-                        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
-                        <td>${r.POSNR ?? ''}</td>
-                        <td>${r.MATNR ?? ''}</td>
-                        <td>${r.MAKTX ?? ''}</td>
-                        <td>${formatNumberGlobal(r.KWMENG, 0)}</td> <td>${formatNumberGlobal(r.PACKG, 0)}</td> <td>${formatNumberGlobal(r.KALAB2, 0)}</td> <td>${formatNumberGlobal(r.ASSYM, 0)}</td> <td>${formatNumberGlobal(r.PAINT, 0)}</td> <td>${formatNumberGlobal(r.MENGE, 0)}</td> <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
-                        <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
-                        <td class="text-center">
-                            <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
-                            <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
-                        </td>
-                    </tr>`;
+         <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+             data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
+             data-vbeln="${r.VBELN_KEY}" 
+             data-posnr="${r.POSNR}"
+             data-posnr-key="${r.POSNR_KEY}">
+                    <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
+                    <td>${r.POSNR ?? ''}</td>
+                    <td>${r.MATNR ?? ''}</td>
+                    <td>${r.MAKTX ?? ''}</td>
+                    <td>${formatNumberGlobal(r.KWMENG, 0)}</td> <td>${formatNumberGlobal(r.PACKG, 0)}</td> <td>${formatNumberGlobal(r.KALAB2, 0)}</td> <td>${formatNumberGlobal(r.ASSYM, 0)}</td> <td>${formatNumberGlobal(r.PAINT, 0)}</td> <td>${formatNumberGlobal(r.MENGE, 0)}</td> <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
+                    <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
+                    <td class="text-center">
+                        <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
+                        <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
+                    </td>
+                </tr>`;
                 });
                 html += `</tbody></table></div>`;
                 return html;
@@ -1095,7 +1100,8 @@
 
             // 🟢 Fungsi untuk mengelola Collapse Mode di Tabel 2 (SO List) DENGAN BUKA OTOMATIS T3
             async function applyCollapseViewSo(tbodyEl, on) {
-                COLLAPSE_MODE = on;
+                if (!tbodyEl) return;
+                setCollapse(tbodyEl, on);
 
                 const headerCaret = tbodyEl.closest('table')?.querySelector(
                     '.js-collapse-toggle .yz-collapse-caret');
@@ -1139,7 +1145,7 @@
                     }
 
                     // [PERBAIKAN UTAMA] Jika tidak ada PO yang tersisa, matikan mode kolaps secara otomatis
-                    if (visibleCount === 0 && COLLAPSE_MODE) {
+                    if (visibleCount === 0 && getCollapse(tbodyEl)) {
                         await applyCollapseViewSo(tbodyEl, false); // Rekursif ke mode normal
                         return; // Keluar dari fungsi ini setelah menonaktifkan
                     }
@@ -1193,7 +1199,8 @@
                 const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
                     'none' && tr.offsetParent !== null);
                 const tfoot = t2Table.querySelector('tfoot.t2-footer');
-                if (tfoot) tfoot.style.display = (anyOpen || COLLAPSE_MODE) ? 'none' : '';
+                const tbody = t2Table.querySelector('tbody');
+                if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
             }
 
             document.addEventListener('click', (e) => {
@@ -1236,7 +1243,9 @@
                                         .remove('rot');
                                 }
                             });
-                            COLLAPSE_MODE = false;
+                            // reset collapse state hanya untuk tbody milik card yang ditutup
+                            const otherTbody = otherWrap?.querySelector('table tbody');
+                            if (otherTbody) setCollapse(otherTbody, false);
                         }
                     });
 
@@ -1293,19 +1302,13 @@
                     if (wrap.dataset.loaded === '1') {
                         const soTbody = wrap.querySelector('table tbody');
                         if (soTbody) syncCheckAllSoHeader(soTbody);
-
-                        wrap.querySelector('.js-collapse-toggle')?.addEventListener('click',
-                            async (ev) => {
-                                ev.stopPropagation();
-                                await applyCollapseViewSo(soTbody, !COLLAPSE_MODE);
-                            });
                         return;
                     }
 
                     try {
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
-            </div>`;
+            <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+        </div>`;
                         const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
@@ -1321,12 +1324,6 @@
                         const soTbody = soTable?.querySelector('tbody');
 
                         updateT2FooterVisibility(soTable);
-
-                        wrap.querySelector('.js-collapse-toggle')?.addEventListener('click',
-                            async (ev) => {
-                                ev.stopPropagation();
-                                await applyCollapseViewSo(soTbody, !COLLAPSE_MODE);
-                            });
 
                         if (soTbody) syncCheckAllSoHeader(soTbody);
 
@@ -1380,8 +1377,8 @@
                                 }
 
                                 box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                                     </div>`;
+                                     <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+                                 </div>`;
                                 try {
                                     const items =
                                         await ensureItemsLoadedForSO(vbeln);
@@ -1492,7 +1489,7 @@
 
                     if (tbody) syncCheckAllSoHeader(tbody);
 
-                    if (COLLAPSE_MODE && tbody) await applyCollapseViewSo(tbody, true);
+                    if (tbody && getCollapse(tbody)) await applyCollapseViewSo(tbody, true);
 
                     updateExportButton();
                     return;
@@ -1527,7 +1524,7 @@
                         if (hdr) hdr.checked = e.target.checked;
                     }
 
-                    if (COLLAPSE_MODE && tbody) await applyCollapseViewSo(tbody, true);
+                    if (tbody && getCollapse(tbody)) await applyCollapseViewSo(tbody, true);
 
                     updateExportButton();
                     return;
@@ -1542,7 +1539,7 @@
                 e.stopPropagation();
                 const soTbody = toggleBtn.closest('table')?.querySelector('tbody');
                 if (soTbody) {
-                    await applyCollapseViewSo(soTbody, !COLLAPSE_MODE);
+                    await applyCollapseViewSo(soTbody, !getCollapse(soTbody));
                 }
             });
 
@@ -1616,8 +1613,8 @@
                     } else if (itemNest && itemNest.style.display !== 'none' && box) {
                         // Jika sudah terbuka, kita harus memuat ulang konten secara paksa
                         box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
-                                     </div>`;
+                                     <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
+                                 </div>`;
 
                         const items = await ensureItemsLoadedForSO(vbeln);
 
