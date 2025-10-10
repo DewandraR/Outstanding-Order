@@ -8,8 +8,8 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel; // 🟢 FIX: Mengaktifkan Facade Excel
-use App\Exports\StockItemsExport;   // 🟢 FIX: Mengimpor Export Class
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\StockItemsExport;
 
 class StockController extends Controller
 {
@@ -95,8 +95,10 @@ class StockController extends Controller
                 $rows->appends(['q' => $request->query('q')]);
             }
 
+            // MENGAMBIL TOTAL QTY DARI PILlTOTALS
             $grandTotalQty = ($type === 'whfg') ? $pillTotals['whfg_qty'] : $pillTotals['fg_qty'];
 
+            // MENGAMBIL TOTAL NILAI BERDASARKAN CURRENCY DARI DATABASE
             $valueQuery = DB::table('so_yppr079_t1')
                 ->select('WAERK', DB::raw(
                     $type === 'whfg' ? 'SUM(NETPR * KALAB) as val' : 'SUM(NETPR * KALAB2) as val'
@@ -114,8 +116,8 @@ class StockController extends Controller
             'mapping'         => $mapping,
             'rows'            => $rows,
             'selected'        => ['werks' => $werks, 'type' => $type],
-            'grandTotalQty'   => $grandTotalQty,
-            'grandTotalsCurr' => $grandTotalsCurr,
+            'grandTotalQty'   => $grandTotalQty,   // DIKIRIM KE BLADE
+            'grandTotalsCurr' => $grandTotalsCurr, // DIKIRIM KE BLADE
             'pillTotals'      => $pillTotals,
         ]);
     }
@@ -151,7 +153,7 @@ class StockController extends Controller
                     't1.WAERK',
                     DB::raw('SUM(t1.NETPR * t1.KALAB) AS total_value'),
                     DB::raw('COUNT(t1.id) AS item_count'),
-                    DB::raw('SUM(t1.KALAB) AS total_qty') // DITAMBAHKAN: Menghitung total qty WHFG per SO
+                    DB::raw('SUM(t1.KALAB) AS total_qty')
                 );
         } else {
             $rows->where('t1.KALAB2', '>', 0)
@@ -161,7 +163,7 @@ class StockController extends Controller
                     't1.WAERK',
                     DB::raw('SUM(t1.NETPR * t1.KALAB2) AS total_value'),
                     DB::raw('COUNT(t1.id) AS item_count'),
-                    DB::raw('SUM(t1.KALAB2) AS total_qty') // DITAMBAHKAN: Menghitung total qty FG per SO
+                    DB::raw('SUM(t1.KALAB2) AS total_qty')
                 );
         }
 
@@ -196,7 +198,7 @@ class StockController extends Controller
 
         $items = DB::table('so_yppr079_t1')
             ->select(
-                'id', // <-- Tambahkan ID untuk keperluan checkbox/export
+                'id',
                 DB::raw("TRIM(LEADING '0' FROM POSNR) as POSNR"),
                 'MATNR',
                 'MAKTX',
@@ -205,7 +207,7 @@ class StockController extends Controller
                 'KALAB',  // WHFG
                 'NETPR',
                 'WAERK',
-                'VBELN', // Tambahkan VBELN untuk keperluan itemIdToSO di FE
+                'VBELN',
                 DB::raw("CASE
                     WHEN '{$type}' = 'whfg' THEN (KALAB * NETPR)
                     ELSE (KALAB2 * NETPR)
@@ -261,7 +263,7 @@ class StockController extends Controller
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
-        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+        $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName = $locationMap[$werks] ?? $werks;
         $stockType    = $type === 'whfg' ? 'WHFG' : 'PACKING';
 

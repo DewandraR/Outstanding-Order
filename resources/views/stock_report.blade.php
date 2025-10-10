@@ -13,16 +13,9 @@
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
 
-        // Mendapatkan data total (untuk footer global)
-        $rowsCol = \Illuminate\Support\Collection::make($rows ?? []);
-        $grandTotalQty = (float) $rowsCol->sum('TOTAL_QTY');
-
-        $grandTotalsCurr = [];
-        $rowsCol->each(function ($r) use (&$grandTotalsCurr) {
-            $curr = $r->WAERK ?? 'IDR';
-            $val = (float) ($r->TOTAL_VALUE ?? 0);
-            $grandTotalsCurr[$curr] = ($grandTotalsCurr[$curr] ?? 0) + $val;
-        });
+        // TOTAL GLOBAL DITANGANI OLEH CONTROLLER. INISIALISASI DI SINI HANYA UNTUK MENGHINDARI ERROR JIKA VIEW DIRENDER TANPA DATA.
+        $grandTotalQty = $grandTotalQty ?? 0;
+        $grandTotalsCurr = $grandTotalsCurr ?? [];
 
         // helpers
         $fmtNumber = fn($n, $d = 0) => number_format((float) $n, $d, ',', '.');
@@ -38,16 +31,32 @@
         };
 
         $formatTotalsStock = function (array $totals) use ($fmtMoney) {
-            if (empty($totals)) {
-                return 'Rp 0,00';
-            }
             $parts = [];
+            $allZero = true;
+
+            // Urutan: USD, IDR, mata uang lain
+            if (isset($totals['USD']) && (float) $totals['USD'] != 0) {
+                $parts[] = $fmtMoney((float) $totals['USD'], 'USD');
+                $allZero = false;
+            }
+            if (isset($totals['IDR']) && (float) $totals['IDR'] != 0) {
+                $parts[] = $fmtMoney((float) $totals['IDR'], 'IDR');
+                $allZero = false;
+            }
+
+            // Jika ada mata uang lain (hasil fallback)
             foreach ($totals as $curr => $val) {
-                if ($val > 0) {
-                    $parts[] = $fmtMoney($val, $curr);
+                if ($curr !== 'USD' && $curr !== 'IDR' && (float) $val != 0) {
+                    $parts[] = $fmtMoney((float) $val, $curr);
+                    $allZero = false;
                 }
             }
-            return implode(' | ', $parts) ?: 'Rp 0,00';
+
+            if ($allZero) {
+                return 'Rp 0,00';
+            }
+
+            return implode(' | ', $parts);
         };
 
         use Illuminate\Support\Facades\Crypt;
@@ -117,7 +126,6 @@
             <div class="card-body p-0 p-md-2">
 
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
-                    {{-- REVISI: Ubah judul menjadi "Stock By Customer" --}}
                     <h5 class="yz-table-title mb-0">
                         <i class="fas fa-users me-2"></i>
                         Stock By Customer
@@ -128,20 +136,26 @@
                 </div>
 
                 <div class="yz-customer-list px-md-3 pt-3">
-                    <div class="d-grid gap-0 mb-4">
+                    <div class="d-grid gap-0 mb-4" id="customer-list-container">
                         @forelse ($rows as $r)
                             @php
                                 $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
-                                $isHighlight = false; // Stock tidak memiliki logic highlight overdue
 
                                 $totalQty = (float) ($r->TOTAL_QTY ?? 0);
-                                $totalValueUSD = (float) ($r->TOTAL_VALUE_USD ?? 0);
-                                $totalValueIDR = (float) ($r->TOTAL_VALUE_IDR ?? 0);
 
-                                $displayTotalValue = $formatTotalsStock([
-                                    'USD' => $totalValueUSD,
-                                    'IDR' => $totalValueIDR,
-                                ]);
+                                $customerTotals = [
+                                    'USD' => (float) ($r->TOTAL_VALUE_USD ?? 0),
+                                    'IDR' => (float) ($r->TOTAL_VALUE_IDR ?? 0),
+                                ];
+
+                                // Fallback untuk customer totals (hanya jika USD dan IDR keduanya nol)
+                                if ($customerTotals['USD'] == 0 && $customerTotals['IDR'] == 0) {
+                                    if (($r->TOTAL_VALUE ?? 0) != 0) {
+                                        $customerTotals[$r->WAERK ?? 'IDR'] = (float) ($r->TOTAL_VALUE ?? 0);
+                                    }
+                                }
+
+                                $displayTotalValue = $formatTotalsStock($customerTotals);
                             @endphp
 
                             {{-- Customer Card (Level 1) --}}
@@ -157,7 +171,7 @@
                                         </div>
                                     </div>
 
-                                    {{-- KANAN: Metrik & Nilai (DIADAPTASI DARI SO REPORT) --}}
+                                    {{-- KANAN: Metrik & Nilai --}}
                                     <div id="metric-columns"
                                         class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
 
@@ -198,30 +212,34 @@
                     </div>
 
                     {{-- Global Totals Card (Pengganti TFOOT) --}}
-                    <div class="card shadow-sm yz-global-total-card mb-4">
-                        <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap">
-                            <h6 class="mb-0 text-dark-emphasis"><i class="fas fa-chart-pie me-2"></i>Total Keseluruhan</h6>
+                    {{-- Tampilkan jika ada baris data --}}
+                    @if ($rows->count() > 0)
+                        <div class="card shadow-sm yz-global-total-card mb-4">
+                            <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap">
+                                <h6 class="mb-0 text-dark-emphasis"><i class="fas fa-chart-pie me-2"></i>Total Keseluruhan
+                                </h6>
 
-                            <div id="footer-metric-columns"
-                                class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
+                                <div id="footer-metric-columns"
+                                    class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
 
-                                {{-- Total Stock Qty --}}
-                                <div class="metric-box mx-4"
-                                    style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
-                                    <div class="fw-bold text-primary text-end">
-                                        {{ $fmtNumber($grandTotalQty ?? 0) }}
+                                    {{-- Total Stock Qty --}}
+                                    <div class="metric-box mx-4"
+                                        style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
+                                        <div class="fw-bold text-primary text-end">
+                                            {{ $fmtNumber($grandTotalQty) }}
+                                        </div>
+                                        <div class="small text-muted text-end">Total Qty</div>
                                     </div>
-                                    <div class="small text-muted text-end">Total Qty</div>
-                                </div>
 
-                                {{-- Total Stock Value --}}
-                                <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold text-dark">{{ $formatTotalsStock($grandTotalsCurr ?? []) }}</div>
-                                    <div class="small text-muted">Total Value</div>
+                                    {{-- Total Stock Value --}}
+                                    <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                        <div class="fw-bold text-dark">{{ $formatTotalsStock($grandTotalsCurr) }}</div>
+                                        <div class="small text-muted">Total Value</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    @endif
                 </div>
             </div>
 
@@ -238,7 +256,6 @@
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
-        /* CSS yang ditambahkan sebelumnya tetap di sini, disesuaikan untuk stock */
         .yz-caret {
             display: inline-block;
             transition: transform .18s ease;
@@ -262,12 +279,10 @@
             vertical-align: middle
         }
 
-        /* Tambahan: Pastikan metric box di Level 1 rata kanan */
         #metric-columns .metric-box {
             text-align: right;
         }
 
-        /* Hilangkan highlight baris merah (tidak relevan untuk stok) */
         .yz-row-highlight-negative td {
             background-color: transparent !important;
         }
@@ -276,7 +291,6 @@
             background-color: #f8f9fa !important;
         }
 
-        /* tombol kolaps di header Tabel-2 */
         .yz-header-so .js-collapse-toggle {
             line-height: 1;
             padding: 2px 8px;
@@ -287,9 +301,18 @@
             transition: transform .18s ease
         }
 
-        /* sembunyikan tfoot saat customer focus mode aktif */
-        tbody.customer-focus-mode~tfoot {
-            display: none !important
+        /* BARU: Sembunyikan card customer lain saat mode fokus aktif */
+        .d-grid.customer-focus-mode .yz-customer-card:not(.is-focused) {
+            display: none;
+        }
+
+        /* PERBAIKAN: Sembunyikan nest card yang tidak relevan. Menggunakan koma untuk menggabungkan selektor */
+        .d-grid.customer-focus-mode .yz-nest-card {
+            display: none !important;
+        }
+
+        .d-grid.customer-focus-mode .yz-customer-card.is-focused+.yz-nest-card {
+            display: block !important;
         }
     </style>
 @endpush
@@ -309,10 +332,11 @@
 
             const exportDropdownContainer = document.getElementById('export-dropdown-container');
             const selectedCountSpan = document.getElementById('selected-count');
+            const globalFooter = document.querySelector('.yz-global-total-card');
 
-            const selectedItems = new Set(); // id item terpilih (untuk export)
-            const itemIdToSO = new Map(); // itemId -> VBELN
-            const itemsCache = new Map(); // VBELN -> array items
+            const selectedItems = new Set();
+            const itemIdToSO = new Map();
+            const itemsCache = new Map();
 
             let COLLAPSE_MODE = false;
 
@@ -336,10 +360,6 @@
                     maximumFractionDigits: d
                 });
             };
-            const sanitizeId = (v) => {
-                const s = String(v ?? '').replace(/\D+/g, '');
-                return s.length ? s : null;
-            };
 
             function updateExportButton() {
                 const n = selectedItems.size;
@@ -349,7 +369,7 @@
 
             function updateSODot(vbeln) {
                 const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
-                document.querySelectorAll(`.js-t2row[data-vbeln='${vbeln}'] .so-selected-dot`)
+                document.querySelectorAll(`.yz-nest-card .js-t2row[data-vbeln='${vbeln}'] .so-selected-dot`)
                     .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
             }
 
@@ -362,7 +382,6 @@
                 selectAll.indeterminate = !allChecked && Array.from(itemCheckboxes).some(ch => ch.checked);
             }
 
-            // 🟢 MODIFIED: Helper untuk sinkronisasi status checkbox header SO (Non-Indeterminate)
             function syncSelectAllSoState(tbody) {
                 const allSoCheckboxes = Array.from(tbody.querySelectorAll('.check-so'));
                 const visibleSoCheckboxes = allSoCheckboxes.filter(ch => ch.closest('tr').style.display !== 'none');
@@ -371,8 +390,7 @@
                 const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
 
                 if (!selectAllSo || soCheckboxesToConsider.length === 0) {
-                    selectAllSo.checked = false;
-                    selectAllSo.indeterminate = false;
+                    if (selectAllSo) selectAllSo.checked = false, selectAllSo.indeterminate = false;
                     return;
                 }
 
@@ -413,11 +431,15 @@
                 return jd.data;
             }
 
-            // ===== RENDER LEVEL 2 (SO) –— MENGHILANGKAN JUDUL T2 =====
+            // ===== RENDER LEVEL 2 (SO) =====
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
                 let html = `
+        <div class="p-3">
+            <h6 class="yz-title-so mb-3 fw-bold"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h6>
+        </div>
+        <div class="table-responsive">
         <table class="table table-sm mb-0 yz-mini">
             <thead class="yz-header-so">
                 <tr>
@@ -441,8 +463,6 @@
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const isSoSelected = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) ===
                         r.VBELN);
-                    // Stock Report TIDAK punya logic Overdue/Late/Today (dihilangkan)
-
                     html += `
               <tr class="yz-row js-t2row" data-vbeln="${r.VBELN}" data-tgt="${rid}">
                 <td class="text-center">
@@ -463,7 +483,7 @@
                 </td>
               </tr>`;
                 });
-                html += `</tbody></table>`;
+                html += `</tbody></table></div>`;
                 return html;
             }
 
@@ -501,8 +521,7 @@
                 return html;
             }
 
-            // ===== Helper untuk buka/tutup SO row (digunakan di mode kolaps) =====
-            async function openItemsIfNeededForSORow(soRow) {
+            function openItemsIfNeededForSORow(soRow) {
                 const vbeln = soRow.dataset.vbeln;
                 const nest = soRow?.nextElementSibling;
                 const caret = soRow?.querySelector('td:nth-child(2) .yz-caret');
@@ -511,17 +530,22 @@
                     nest.style.display = '';
                     caret?.classList.add('rot');
                 }
-                const box = nest.querySelector('.yz-slot-items');
+                const itemBox = nest.querySelector('.yz-slot-items');
+
                 if (nest.dataset.loaded !== '1') {
-                    box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                    itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
                     </div>`;
-                    const items = await ensureItemsLoadedForSO(vbeln);
-                    box.innerHTML = renderLevel3_Items(items);
-                    applySelectionsToRenderedItems(box);
-                    nest.dataset.loaded = '1';
+
+                    ensureItemsLoadedForSO(vbeln).then(items => {
+                        itemBox.innerHTML = renderLevel3_Items(items);
+                        applySelectionsToRenderedItems(itemBox);
+                        nest.dataset.loaded = '1';
+                    }).catch(e => {
+                        itemBox.innerHTML = `<div class="alert alert-danger m-3">${e.message}</div>`;
+                    });
                 } else {
-                    applySelectionsToRenderedItems(box);
+                    applySelectionsToRenderedItems(itemBox);
                 }
             }
 
@@ -534,16 +558,12 @@
                 }
             }
 
-            // 🟢 MODIFIED: applyCollapseView dengan Auto-Keluar saat nol
             async function applyCollapseView(tbodyEl, on) {
                 COLLAPSE_MODE = on;
 
                 const headerCaret = tbodyEl.closest('table')?.querySelector(
                     '.js-collapse-toggle .yz-collapse-caret');
                 if (headerCaret) headerCaret.textContent = on ? '▾' : '▸';
-
-                const oldEmpty = tbodyEl.querySelector('.yz-empty-selected-row');
-                if (oldEmpty) oldEmpty.remove();
 
                 tbodyEl.classList.remove('so-focus-mode');
                 tbodyEl.classList.toggle('collapse-mode', on);
@@ -589,24 +609,18 @@
                     const kid = row.dataset.kid;
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
-                    const tbodyEl = row.closest('.yz-customer-list').querySelector(
-                        'div.d-grid'); // Container untuk focus mode
-                    const tableEl = row.closest('div.card');
-                    const tfootEl = tableEl?.querySelector(
-                        'tfoot'); // Footer lama yang dihilangkan
+                    const customerListContainer = document.getElementById(
+                        'customer-list-container');
 
                     const wasOpen = row.classList.contains('is-open');
 
-                    // Toggle exclusif pada Level 1 (Customer Card)
+                    // 1. Logic Exclusive Toggle dan Focus Mode
                     document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
                         if (r !== row) {
                             const otherSlot = document.getElementById(r.dataset.kid);
-                            r.classList.remove('is-open');
-                            r.classList.remove('is-focused');
-                            otherSlot.style.display = 'none';
+                            r.classList.remove('is-open', 'is-focused');
                             r.querySelector('.kunnr-caret')?.classList.remove('rot');
 
-                            // Tutup semua T2/T3 di card lain
                             const otherTable = otherSlot?.querySelector('table');
                             otherTable?.querySelector('tbody')?.classList.remove(
                                 'so-focus-mode', 'collapse-mode');
@@ -615,30 +629,30 @@
                         }
                     });
 
-                    // Toggle status kartu saat ini
+                    // 2. Toggle status kartu saat ini
                     row.classList.toggle('is-open');
                     row.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
-                    slot.style.display = wasOpen ? 'none' : 'block';
 
-                    // Keluar/masuk Focus Mode
+                    // 3. Keluar/masuk Customer Focus Mode dan Global Footer
                     if (!wasOpen) {
-                        tbodyEl.classList.add('customer-focus-mode');
+                        customerListContainer.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
-                        // Sembunyikan footer total global saat fokus
-                        const globalFooter = document.querySelector('.yz-global-total-card');
-                        if (globalFooter) globalFooter.style.display = 'none';
+                        if (globalFooter) globalFooter.style.display =
+                            'none'; // Sembunyikan Total Global
+                        COLLAPSE_MODE = false; // Reset mode kolaps
                     } else {
-                        tbodyEl.classList.remove('customer-focus-mode');
+                        customerListContainer.classList.remove('customer-focus-mode');
                         row.classList.remove('is-focused');
-                        // Tampilkan kembali footer total global saat tutup
-                        const globalFooter = document.querySelector('.yz-global-total-card');
-                        if (globalFooter) globalFooter.style.display = '';
+                        if (globalFooter) globalFooter.style.display =
+                            ''; // Tampilkan Total Global
+                        COLLAPSE_MODE = false; // Reset mode kolaps
                     }
 
                     if (wasOpen) return;
 
+                    // 4. Muat data SO (Level 2)
                     if (wrap.dataset.loaded === '1') {
-                        // Re-bind click listener
+                        // Re-bind listeners jika sudah dimuat
                         const soTable = wrap.querySelector('table.yz-mini');
                         const soTbody = soTable?.querySelector('tbody');
                         const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
@@ -646,16 +660,17 @@
                             ev.stopPropagation();
                             await applyCollapseView(soTbody, !COLLAPSE_MODE);
                         });
-                        // Sync checkbox
+                        wrap.querySelectorAll('.js-t2row').forEach(soRow => {
+                            updateSODot(soRow.dataset.vbeln);
+                        });
                         if (soTbody) syncSelectAllSoState(soTbody);
                         return;
                     }
 
                     try {
-                        // Loading state
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
                         <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
-                    </div>`;
+                        </div>`;
                         const url = new URL(apiSoByCustomer, window.location.origin);
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
@@ -668,16 +683,16 @@
                         wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
                         wrap.dataset.loaded = '1';
 
-                        // Bind tombol kolaps header
+                        // 5. Bind Listeners Level 2
                         const soTable = wrap.querySelector('table.yz-mini');
                         const soTbody = soTable?.querySelector('tbody');
                         const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
+
                         collapseBtn?.addEventListener('click', async (ev) => {
                             ev.stopPropagation();
                             await applyCollapseView(soTbody, !COLLAPSE_MODE);
                         });
 
-                        // Bind Level-3 (SO -> Items) untuk klik baris dan checkbox
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             updateSODot(soRow.dataset.vbeln);
 
@@ -685,53 +700,24 @@
                                 if (ev.target.closest('.form-check-input'))
                                     return;
                                 ev.stopPropagation();
-                                const itemTr = soRow.nextElementSibling;
-                                const open = itemTr.style.display !==
-                                    'none';
+                                const open = soRow.nextElementSibling.style
+                                    .display !== 'none';
+                                const soTbody = soRow.closest('tbody');
 
-                                soRow.querySelector(
-                                        'td:nth-child(2) .yz-caret')
-                                    ?.classList.toggle('rot');
-
-                                if (!open) {
-                                    soTbody?.classList.add('so-focus-mode');
-                                    soRow.classList.add('is-focused');
-                                } else {
+                                if (open) {
+                                    closeItemsForSORow(soRow);
                                     soTbody?.classList.remove(
                                         'so-focus-mode');
                                     soRow.classList.remove('is-focused');
-                                }
-
-                                if (open) {
-                                    itemTr.style.display = 'none';
                                     return;
                                 }
 
-                                // Buka dan muat item
-                                itemTr.style.display = '';
-                                if (itemTr.dataset.loaded !== '1') {
-                                    const itemBox = itemTr.querySelector(
-                                        '.yz-slot-items');
-                                    itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                        <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                                    </div>`;
-                                    const items =
-                                        await ensureItemsLoadedForSO(soRow
-                                            .dataset.vbeln);
-                                    itemBox.innerHTML = renderLevel3_Items(
-                                        items);
-                                    applySelectionsToRenderedItems(itemBox);
-                                    itemTr.dataset.loaded = '1';
-                                } else {
-                                    applySelectionsToRenderedItems(itemTr
-                                        .querySelector('.yz-slot-items')
-                                    );
-                                }
+                                await openItemsIfNeededForSORow(soRow);
+                                soTbody?.classList.add('so-focus-mode');
+                                soRow.classList.add('is-focused');
                             });
                         });
-
                         if (soTbody) syncSelectAllSoState(soTbody);
-                        updateExportButton();
 
                     } catch (e) {
                         wrap.innerHTML =
@@ -740,10 +726,10 @@
                 });
             });
 
-            // ===== Cegah checkbox di Tabel-2 memicu toggle baris =====
+            // ===== Cegah checkbox memicu toggle baris (Level 2 & 3) =====
             document.body.addEventListener('click', (e) => {
-                if (e.target.classList.contains('check-so') || e.target.classList.contains(
-                        'check-all-sos')) {
+                if (e.target.closest('.check-so') || e.target.closest('.check-all-sos') || e.target.closest(
+                        '.check-item') || e.target.closest('.check-all-items')) {
                     e.stopPropagation();
                 }
             }, true);
@@ -751,6 +737,7 @@
 
             // ===== Change events (pilih SO / Item) =====
             document.body.addEventListener('change', async (e) => {
+                // 1. Select all items (Level 3)
                 if (e.target.classList.contains('check-all-items')) {
                     const table = e.target.closest('table');
                     if (!table) return;
@@ -775,6 +762,7 @@
                     return;
                 }
 
+                // 2. Pilih item tunggal (Level 3)
                 if (e.target.classList.contains('check-item')) {
                     const id = e.target.dataset.id;
                     if (e.target.checked) selectedItems.add(id);
@@ -794,6 +782,7 @@
                     return;
                 }
 
+                // 3. Select All SO (Level 2)
                 if (e.target.classList.contains('check-all-sos')) {
                     const tbody = e.target.closest('table')?.querySelector('tbody');
                     if (!tbody) return;
@@ -820,6 +809,7 @@
                     return;
                 }
 
+                // 4. Pilih SO tunggal (Level 2)
                 if (e.target.classList.contains('check-so')) {
                     const vbeln = e.target.dataset.vbeln;
                     const items = await ensureItemsLoadedForSO(vbeln);
@@ -877,11 +867,6 @@
                     document.body.removeChild(form);
                 });
             }
-
-            // label kolom aksesibel di mobile
-            document.querySelectorAll('.yz-customer-card').forEach(row => {
-                // Di sini tidak ada td langsung, kita skip/fokus pada logic JS di atas
-            });
         });
     </script>
 @endpush
