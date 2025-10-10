@@ -52,16 +52,16 @@
             $sumIdr = $totals['IDR'] ?? 0;
 
             if ($sumUsd == 0 && $sumIdr == 0) {
-                return 'Rp ' . number_format(0, 2, ',', '.');
+                return 'Rp ' . number_format(0, 0, ',', '.');
             }
 
             $parts = [];
 
             if ($sumUsd > 0) {
-                $parts[] = '$' . number_format($sumUsd, 2, '.', ',');
+                $parts[] = '$' . number_format($sumUsd, 0, '.', ',');
             }
             if ($sumIdr > 0) {
-                $parts[] = 'Rp ' . number_format($sumIdr, 2, ',', '.');
+                $parts[] = 'Rp ' . number_format($sumIdr, 0, ',', '.');
             }
 
             return implode(' | ', $parts);
@@ -686,7 +686,7 @@
             }
 
             // Helper untuk memformat angka (digunakan di renderers)
-            const formatCurrencyGlobal = (v, c, d = 2) => {
+            const formatCurrencyGlobal = (v, c, d = 0) => {
                 const n = parseFloat(v);
                 if (!Number.isFinite(n)) return '';
                 const opt = {
@@ -958,13 +958,13 @@
             ${overdueBadge}
         </td>
         
-        <td class="text-center">${r.item_count ?? '-'}</td>
+        <td class="text-center fw-bold">${r.item_count ?? '-'}</td>
         
         {{-- Outs. Value dipindah ke KIRI --}}
         <td class="text-start fw-bold fs-6">${displayOutsValue}</td>
         
-        <td class="text-center small text-muted">${r.FormattedEdatu || '-'}</td>
-        <td class="text-center">${formatNumberGlobal(outsQty, 0)}</td> 
+        <td class="text-center fw-bold">${r.FormattedEdatu || '-'}</td>
+        <td class="text-center fw-bold">${formatNumberGlobal(outsQty, 0)}</td> 
 
         <td class="text-center">
             <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>

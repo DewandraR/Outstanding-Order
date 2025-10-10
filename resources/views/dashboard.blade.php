@@ -29,7 +29,7 @@
         $kpiNew = $chartData['kpi_new'] ?? [];
 
         // Helper untuk format mata uang
-        $formatCurrency = function ($value, $currency, $decimals = 2) {
+        $formatCurrency = function ($value, $currency, $decimals = 0) {
             $n = (float) $value;
             if ($n == 0) {
                 return '–';
@@ -301,43 +301,6 @@
         <div>
             <h2 class="mb-0 fw-bolder text-primary">Dashboard Overview PO</h2>
             <p class="text-muted mb-0"><i class="fas fa-chart-line me-1"></i> Monitor data Outstanding Value dan Overdue</p>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
-            <span class="d-flex align-items-center text-muted small fw-semibold me-2">Drill Down Report:</span>
-            @php
-                $locations = ['3000' => 'Semarang', '2000' => 'Surabaya'];
-            @endphp
-
-            @foreach ($locations as $werks_code => $name)
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-primary dropdown-toggle shadow-sm text-truncate" type="button"
-                        data-bs-toggle="dropdown" aria-expanded="false" style="min-width: 120px;">
-                        {{ $name }}
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-lg">
-                        <h6 class="dropdown-header text-uppercase small text-primary-emphasis">Order Type
-                            {{ $name }}</h6>
-                        @php
-                            $werksMapping = $allMapping[$werks_code] ?? collect([]);
-                        @endphp
-
-                        @forelse ($werksMapping as $t)
-                            @php
-                                $auartCode = trim((string) $t->IV_AUART);
-                                $reportUrl = $encReport(['werks' => $werks_code, 'auart' => $auartCode]);
-                            @endphp
-                            <li>
-                                <a class="dropdown-item" href="{{ $reportUrl }}">
-                                    <i class="fas fa-file-alt me-2 text-info"></i> {{ $t->Deskription }}
-                                </a>
-                            </li>
-                        @empty
-                            <li><span class="dropdown-item text-muted disabled">No Order Types Found</span></li>
-                        @endforelse
-                    </ul>
-                </div>
-            @endforeach
         </div>
     </div>
     <hr class="mt-0 mb-4 border-primary opacity-25">
@@ -617,15 +580,15 @@
                 return new Intl.NumberFormat('id-ID', {
                     style: 'currency',
                     currency: 'IDR',
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
                 }).format(n).replace('IDR', 'Rp');
             }
             return new Intl.NumberFormat('en-US', {
                 style: 'currency',
                 currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
             }).format(n);
         };
 
@@ -781,7 +744,7 @@
                                         if (currency && !canvasId.startsWith('chartTopOverdueCustomers')) {
                                             let formatted = new Intl.NumberFormat('id-ID', {
                                                 minimumFractionDigits: 0,
-                                                maximumFractionDigits: 2
+                                                maximumFractionDigits: 0
                                             }).format(value);
                                             return formatted;
                                         }

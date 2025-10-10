@@ -29,7 +29,7 @@ class SODashboardController extends Controller
 
         // Filter SO dashboard
         $location = $request->query('location'); // '2000'|'3000'|null
-        $type  = $request->query('type'); // 'lokal'|'export'|null
+        $type   = $request->query('type'); // 'lokal'|'export'|null
         $auart = $request->query('auart'); // optional
 
         // Mapping (sidebar)
@@ -64,7 +64,7 @@ class SODashboardController extends Controller
         ]);
 
         $location = $request->query('location'); // 2000|3000|null
-        $type  = $request->query('type'); // lokal|export|null
+        $type   = $request->query('type'); // lokal|export|null
         $auart = $request->query('auart');
 
         // Samakan “AUART efektif” dengan dashboard SO lain
@@ -434,33 +434,12 @@ class SODashboardController extends Controller
         ];
 
         /* =====================================================================
-         * Top 5 Customers (VALUE overdue) — SAMAKAN DENGAN SO REPORT
+         * Top 5 Customers (VALUE overdue) — DIHAPUS
          * ===================================================================== */
-        // Query Dasar sudah menggunakan PACKG <> 0 karena di-clone dari $allOutstandingItemsBase
-        $topOverdueBase = (clone $allOutstandingItemsBase)
-            ->whereRaw("{$safeEdatuT2} < CURDATE()") // PENTING: Filter Overdue
-            ->groupBy('t2.KUNNR', 't1.WAERK')
-            ->selectRaw("
-            t2.KUNNR,
-            MAX(t2.NAME1) AS NAME1,
-            t1.WAERK,
-            CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) AS total_value,
-            CAST(SUM(CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t1.TOTPR2 ELSE 0 END) AS DECIMAL(18,2)) AS sby_value,
-            CAST(SUM(CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t1.TOTPR2 ELSE 0 END) AS DECIMAL(18,2)) AS smg_value,
-            COUNT(DISTINCT t2.VBELN) AS so_count
-            ")
-            ->havingRaw('SUM(t1.TOTPR2) > 0')
-            ->orderByDesc('total_value');
+        // Menambahkan placeholder untuk menghindari error di Blade / JS
+        $chartData['top_customers_value_usd'] = collect([]);
+        $chartData['top_customers_value_idr'] = collect([]);
 
-        $chartData['top_customers_value_usd'] = (clone $topOverdueBase)
-            ->where('t1.WAERK', 'USD')
-            ->limit(5)
-            ->get();
-
-        $chartData['top_customers_value_idr'] = (clone $topOverdueBase)
-            ->where('t1.WAERK', 'IDR')
-            ->limit(5)
-            ->get();
 
         /* =====================================================================
          * List “SO Due This Week” (tabel di UI) — TOTPR2

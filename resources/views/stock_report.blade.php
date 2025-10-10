@@ -22,12 +22,12 @@
         $fmtMoney = function ($value, $currency) {
             $n = (float) $value;
             if ($currency === 'IDR') {
-                return 'Rp ' . number_format($n, 2, ',', '.');
+                return 'Rp ' . number_format($n, 0, ',', '.');
             }
             if ($currency === 'USD') {
-                return '$' . number_format($n, 2, '.', ',');
+                return '$' . number_format($n, 0, '.', ',');
             }
-            return trim(($currency ?: '') . ' ' . number_format($n, 2, ',', '.'));
+            return trim(($currency ?: '') . ' ' . number_format($n, 0, ',', '.'));
         };
 
         $formatTotalsStock = function (array $totals) use ($fmtMoney) {
@@ -53,7 +53,7 @@
             }
 
             if ($allZero) {
-                return 'Rp 0,00';
+                return 'Rp 0';
             }
 
             return implode(' | ', $parts);
@@ -225,14 +225,14 @@
                                     {{-- Total Stock Qty --}}
                                     <div class="metric-box mx-4"
                                         style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
-                                        <div class="fw-bold text-primary text-end">
+                                        <div class="fw-bold fs-4 text-primary text-end">
                                             {{ $fmtNumber($grandTotalQty) }}
                                         </div>
-                                        <div class="small text-muted text-end">Total Qty</div>
+                                        <div class="text-end">Total Qty</div>
                                     </div>
 
                                     {{-- Total Stock Value --}}
-                                    <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                    <div class="metric-box fs-5 mx-4 text-end" style="min-width: 180px;">
                                         <div class="fw-bold text-dark">{{ $formatTotalsStock($grandTotalsCurr) }}</div>
                                         <div class="small text-muted">Total Value</div>
                                     </div>
@@ -350,7 +350,7 @@
             }
 
             // --- Helpers ---
-            const formatCurrency = (value, currency, d = 2) => {
+            const formatCurrency = (value, currency, d = 0) => {
                 const n = parseFloat(value);
                 if (!Number.isFinite(n)) return '';
                 const opt = {

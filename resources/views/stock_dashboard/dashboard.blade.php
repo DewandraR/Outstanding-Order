@@ -121,7 +121,7 @@
     {{-- KPI CARDS --}}
     @php
         $kpi = $dashboardData['kpi'] ?? [];
-        $fmtUsd = fn($v) => '$' . number_format((float) ($v ?? 0), 2, '.', ',');
+        $fmtUsd = fn($v) => '$' . number_format((float) ($v ?? 0), 0, '.', ',');
         $fmtNum = fn($v) => number_format((float) ($v ?? 0), 0, ',', '.'); // untuk qty
     @endphp
 

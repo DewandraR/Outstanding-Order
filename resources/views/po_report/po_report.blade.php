@@ -58,14 +58,14 @@
             $sumIdr = $totals['IDR'] ?? 0;
 
             if ($sumUsd == 0 && $sumIdr == 0) {
-                return 'Rp ' . number_format(0, 2, ',', '.');
+                return 'Rp ' . number_format(0, 0, ',', '.');
             }
 
             if ($sumUsd > 0) {
-                $parts[] = '$' . number_format($sumUsd, 2, '.', ',');
+                $parts[] = '$' . number_format($sumUsd, 0, '.', ',');
             }
             if ($sumIdr > 0) {
-                $parts[] = 'Rp ' . number_format($sumIdr, 2, ',', '.');
+                $parts[] = 'Rp ' . number_format($sumIdr, 0, ',', '.');
             }
             return implode(' | ', $parts) ?: '—';
         };
@@ -696,8 +696,8 @@ END MODAL
             const n = parseFloat(v);
             if (!Number.isFinite(n)) return '';
             const o = {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
             };
             if (c === 'IDR') return `Rp ${n.toLocaleString('id-ID', o)}`;
             if (c === 'USD') return `$${n.toLocaleString('en-US', o)}`;
@@ -884,9 +884,9 @@ END MODAL
                 {{-- KOLOM SO DITAMPILKAN DI SINI (BERWARNA BIRU) --}}
                 <td class="yz-t2-vbeln text-start fw-bold text-primary">${r.VBELN}</td>
                 
-                <td class="text-center small text-muted">${edatu}</td>
-                <td class="text-center">${fmtNum(outsQty)}</td>
-                <td class="text-center">${fmtMoney(totalVal, r.WAERK)}</td>
+                <td class="text-center fw-bold">${edatu}</td>
+                <td class="text-center fw-bold">${fmtNum(outsQty)}</td>
+                <td class="text-center fw-bold">${fmtMoney(totalVal, r.WAERK)}</td>
                 
                 {{-- DOT untuk Seleksi ITEM --}}
                 <td class="text-center"><span class="po-selected-dot"></span></td>

@@ -142,8 +142,8 @@ class PoReportController extends Controller
                 ->select(
                     't2a.KUNNR',
                     DB::raw('CAST(SUM(CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
-                    DB::raw("CAST(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE_IDR"),
-                    DB::raw("CAST(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE_USD")
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
                 )
                 ->where('t1a.IV_WERKS_PARAM', $werks)
                 ->whereIn('t1a.IV_AUART_PARAM', $auartList)
@@ -157,8 +157,8 @@ class PoReportController extends Controller
                 })
                 ->select(
                     't2_inner.KUNNR',
-                    DB::raw("CAST(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE_IDR"),
-                    DB::raw("CAST(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE_USD")
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
                 )
                 ->where('t2_inner.IV_WERKS_PARAM', $werks)
                 ->whereIn('t2_inner.IV_AUART_PARAM', $auartList)
@@ -223,8 +223,8 @@ COALESCE(
             ->whereIn('m.IV_AUART', $targetAuarts)
             ->select(
                 DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
-                DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
-                DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
+                DB::raw("CAST(ROUND(SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) as total_value_idr"),
+                DB::raw("CAST(ROUND(SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) as total_value_usd"),
                 DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
                 DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
                 DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
@@ -438,8 +438,8 @@ COALESCE(
             ->where('t2.KUNNR', $kunnr) // FILTER UTAMA KUNNR
             ->select(
                 DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
-                DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
-                DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
+                DB::raw("CAST(ROUND(SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) as total_value_idr"),
+                DB::raw("CAST(ROUND(SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) as total_value_usd"),
                 DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
                 DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
                 DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),

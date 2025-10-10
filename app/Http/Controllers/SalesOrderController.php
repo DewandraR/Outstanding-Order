@@ -166,8 +166,8 @@ class SalesOrderController extends Controller
                     't2a.KUNNR',
                     DB::raw('CAST(SUM(CAST(t1a.PACKG AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
                     // Split value ke IDR dan USD
-                    DB::raw("CAST(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE_IDR"),
-                    DB::raw("CAST(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_ALL_VALUE_USD")
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
                 )
                 ->where('t1a.IV_WERKS_PARAM', $werks)
                 ->whereIn('t1a.IV_AUART_PARAM', $auartList)
@@ -182,8 +182,8 @@ class SalesOrderController extends Controller
                 ->select(
                     't2_inner.KUNNR',
                     // Split value overdue ke IDR dan USD
-                    DB::raw("CAST(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE_IDR"),
-                    DB::raw("CAST(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE_USD")
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
                 )
                 ->where('t2_inner.IV_WERKS_PARAM', $werks)
                 ->whereIn('t2_inner.IV_AUART_PARAM', $auartList)
@@ -332,7 +332,7 @@ class SalesOrderController extends Controller
                 't2.EDATU',
                 't1.WAERK',
                 // total value: semua outstanding (tidak hanya overdue)
-                DB::raw('SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))) as total_value'),
+                DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as total_value'),
                 // outs qty: jumlah OUTS SO (PACKG) per SO
                 DB::raw('SUM(CAST(t1.PACKG  AS DECIMAL(18,3))) as outs_qty'),
                 DB::raw('COUNT(DISTINCT t1.id) as item_count'),
@@ -635,7 +635,7 @@ class SalesOrderController extends Controller
             })
             ->select(
                 't2_inner.KUNNR',
-                DB::raw('CAST(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))) AS DECIMAL(18,2)) AS TOTAL_OVERDUE_VALUE'),
+                DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE'),
                 DB::raw('MAX(t1.WAERK) as WAERK')
             )
             ->where('t2_inner.IV_WERKS_PARAM', $werks)

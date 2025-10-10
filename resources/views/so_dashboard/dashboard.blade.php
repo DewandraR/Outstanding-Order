@@ -44,7 +44,7 @@
         };
 
         // Helper untuk format mata uang (DIPERLUKAN UNTUK RENDER BLOCK Awal)
-        $formatCurrency = function ($value, $currency, $decimals = 2) {
+        $formatCurrency = function ($value, $currency, $decimals = 0) {
             $n = (float) $value;
             if ($n == 0) {
                 return '–';
@@ -289,7 +289,6 @@
                                     </a>
                                 </div>
                             </div>
-                            
                         </div>
                     </div>
                 </div>';
@@ -300,7 +299,7 @@
     <div id="yz-root" data-show="0" data-werks="{{ $werks ?? '' }}" data-auart="{{ $auart ?? '' }}" style="display:none">
     </div>
 
-    {{-- DATA HOLDER untuk Chart.js dan JS logic --}}
+    {{-- DATA HOLDER untuk JS logic --}}
     <div id="dashboard-data-holder" data-chart-data='@json($chartData)'
         data-mapping-data='@json($filteredMapping)' data-selected-type='{{ $selectedType }}'
         data-current-view='{{ $view }}' data-current-location='{{ $selectedLocation ?? '' }}'
@@ -313,45 +312,6 @@
             <h2 class="mb-0 fw-bolder text-primary">Outstanding SO Overview</h2>
             <p class="text-muted mb-0"><i class="fas fa-chart-line me-1"></i> Monitoring Sales Orders Outstanding & Overdue
             </p>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
-            <span class="d-flex align-items-center text-muted small fw-semibold me-2">Drill Down Report:</span>
-            @php
-                $locations = ['3000' => 'Semarang', '2000' => 'Surabaya'];
-            @endphp
-
-            @foreach ($locations as $werks_code => $name)
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-primary dropdown-toggle shadow-sm text-truncate" type="button"
-                        data-bs-toggle="dropdown" aria-expanded="false" style="min-width: 120px;">
-                        {{ $name }}
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-lg">
-                        <h6 class="dropdown-header text-uppercase small text-primary-emphasis">Order Type
-                            {{ $name }}</h6>
-                        @php
-                            // Menggunakan $filteredMapping yang sudah menghapus 'Replace'
-                            $werksMapping = $filteredMapping[$werks_code] ?? collect([]);
-                        @endphp
-
-                        @forelse ($werksMapping as $t)
-                            @php
-                                $auartCode = trim((string) $t->IV_AUART);
-                                // Ciptakan payload terenkripsi ke SO Report (so.index)
-                                $reportUrl = $encReport(['werks' => $werks_code, 'auart' => $auartCode]);
-                            @endphp
-                            <li>
-                                <a class="dropdown-item" href="{{ $reportUrl }}">
-                                    <i class="fas fa-file-alt me-2 text-info"></i> {{ $t->Deskription }}
-                                </a>
-                            </li>
-                        @empty
-                            <li><span class="dropdown-item text-muted disabled">No Order Types Found</span></li>
-                        @endforelse
-                    </ul>
-                </div>
-            @endforeach
         </div>
     </div>
     <hr class="mt-0 mb-4 border-primary opacity-25">
@@ -368,26 +328,7 @@
 
         <hr class="my-4 border-dashed border-secondary">
 
-        {{-- CHART TOP CUSTOMERS (Overdue Value) --}}
-        <div class="row g-4 mb-4">
-            <div class="col-12">
-                <div class="card shadow-lg h-100 yz-chart-card position-relative">
-                    <div class="card-body d-flex flex-column">
-                        <h5 class="card-title text-danger-emphasis yz-card-header-pad-top"
-                            data-help-key="so.top_overdue_customers_value">
-                            <i class="fas fa-crown me-2 text-warning"></i>Top 5 Customers by Value of Overdue Orders
-                            Awaiting Packing (USD)
-                        </h5>
-                        <hr class="mt-2 mb-3">
-                        <div class="chart-container flex-grow-1" style="min-height: 400px;">
-                            <canvas id="chartTopCustomersValueSO"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {{-- Items with Remark --}}
+        {{-- ITEMS WITH REMARK (TETAP DISEDIAKAN) --}}
         <div class="row g-4 mb-4">
             <div class="col-lg-12">
                 <div class="card yz-card shadow-sm h-100" id="remark-inline-container">
@@ -499,7 +440,7 @@
             color: var(--bs-success, #198754) !important;
         }
 
-        /* Judul Chart */
+        /* Judul Card Umum */
         .yz-chart-card .card-title {
             font-size: 1.15rem;
         }
@@ -523,13 +464,30 @@
 
         .yz-currency-toggle .btn.btn-primary {
             background-color: #ffffff !important;
-            color: #0d9488 !important;
+            color: #0d6efd !important;
+            /* Gunakan warna primary default bootstrap */
             border-color: #ffffff !important;
+        }
+
+        .yz-currency-toggle .btn.btn-outline-success {
+            /* Warna IDR non-aktif */
+            background-color: transparent !important;
+        }
+
+        /* Perlu diperbaiki agar sesuai gradient (jika perlu) */
+        .bg-teal-gradient .yz-currency-toggle .btn.btn-primary {
+            color: #0d9488 !important;
+            /* Warna teal untuk Semarang */
+        }
+
+        .bg-indigo-gradient .yz-currency-toggle .btn.btn-primary {
+            color: #4f46e5 !important;
+            /* Warna indigo untuk Surabaya */
         }
 
         .yz-currency-toggle .btn.btn-success {
             background-color: #ffffff !important;
-            color: #15803d !important;
+            color: #198754 !important;
             border-color: #ffffff !important;
         }
 
@@ -542,45 +500,7 @@
             text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
         }
 
-        /* ========================================================= */
-        /* PERBAIKAN UTAMA: Warna Toggle di dalam Chart (Latar Belakang Putih) */
-        /* ========================================================= */
-        .yz-currency-toggle-chart {
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            border-radius: 0.5rem;
-            overflow: hidden;
-        }
-
-        /* Tombol non-aktif */
-        .yz-currency-toggle-chart .btn-sm-square {
-            background-color: #f8f9fa !important;
-            color: #6c757d !important;
-            border: 1px solid #e9ecef;
-            font-weight: 600;
-        }
-
-        /* Tombol USD (Primary) saat AKTIF */
-        .yz-currency-toggle-chart .btn.btn-primary {
-            background-color: var(--bs-primary, #0d6efd) !important;
-            color: white !important;
-            border-color: var(--bs-primary, #0d6efd) !important;
-        }
-
-        /* Tombol IDR (Success) saat AKTIF */
-        .yz-currency-toggle-chart .btn.btn-success {
-            background-color: var(--bs-success, #198754) !important;
-            color: white !important;
-            border-color: var(--bs-success, #198754) !important;
-        }
-
-        /* Tombol non-aktif saat outline */
-        .yz-currency-toggle-chart .btn-outline-primary,
-        .yz-currency-toggle-chart .btn-outline-success {
-            background-color: #f8f9fa !important;
-            color: #6c757d !important;
-            border-color: #e9ecef !important;
-        }
-
+        /* Card Toolbar Umum (untuk Item with Remark jika ada toggle lain) */
         .yz-card-toolbar {
             position: absolute;
             top: .75rem;
@@ -597,9 +517,6 @@
 @endpush
 
 @push('scripts')
-    <script src="{{ asset('vendor/chartjs/chart.umd.js') }}"></script>
-    <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
-
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // Bind awal
@@ -619,12 +536,6 @@
             setTimeout(() => clearInterval(iv), 5000);
         });
 
-        // Set Default Chart Font/Style
-        Chart.defaults.font.family = 'Inter, sans-serif';
-        Chart.defaults.plugins.legend.position = 'bottom';
-        Chart.defaults.responsive = true;
-        Chart.defaults.maintainAspectRatio = false;
-
         // =========================================================
         // Helper Functions
         // =========================================================
@@ -636,15 +547,15 @@
                 return new Intl.NumberFormat('id-ID', {
                     style: 'currency',
                     currency: 'IDR',
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
                 }).format(n).replace('IDR', 'Rp');
             }
             return new Intl.NumberFormat('en-US', {
                 style: 'currency',
                 currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
             }).format(n);
         };
 
@@ -657,25 +568,6 @@
                 maximumFractionDigits: decimals
             }).format(n);
         };
-
-        function setTitleCurrencySuffixByCanvas(canvasId, currency) {
-            const titleEl = document.getElementById(canvasId)?.closest('.card')?.querySelector('.card-title');
-            if (!titleEl) return;
-            const textNodes = Array.from(titleEl.childNodes)
-                .filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length);
-
-            if (!textNodes.length) return;
-            const tn = textNodes[textNodes.length - 1];
-            let raw = tn.textContent;
-
-            raw = raw.replace(/\s*\((USD|IDR)\)\s*$/, '');
-
-            if (/\(USD|IDR\)/.test(raw)) {
-                tn.textContent = raw.replace(/\((USD|IDR)\)/, `(${currency})`);
-            } else {
-                tn.textContent = `${raw.trim()} (${currency})`;
-            }
-        }
 
         function preventInfoButtonPropagation() {
             // Fungsi ini mencegah klik pada ikon (i) memicu link <a> di luarnya.
@@ -692,133 +584,6 @@
                 btn.dataset.clickBound = '1';
             });
         }
-
-        const showNoDataMessage = (canvasId, msg = 'Data tidak tersedia untuk filter ini.') => {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas || !canvas.parentElement) return;
-            let msgEl = canvas.parentElement.querySelector('.yz-nodata');
-            if (!msgEl) {
-                msgEl = document.createElement('div');
-                msgEl.className = 'yz-nodata d-flex align-items-center justify-content-center h-100 p-3 text-muted';
-                msgEl.style.minHeight = '300px';
-                canvas.parentElement.appendChild(msgEl);
-            }
-            msgEl.innerHTML = `<i class="fas fa-info-circle me-2"></i> ${msg}`;
-            canvas.style.display = 'none';
-            msgEl.style.display = '';
-        };
-
-        const hideNoDataMessage = (canvasId) => {
-            const canvas = document.getElementById(canvasId);
-            const msgEl = canvas?.parentElement?.querySelector('.yz-nodata');
-            if (msgEl) msgEl.style.display = 'none';
-            if (canvas) canvas.style.display = '';
-        };
-
-
-        /**
-         * Fungsi untuk membuat Horizontal Bar Chart.
-         */
-        const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, currency = '') => {
-            if (!chartData || chartData.length === 0) {
-                showNoDataMessage(canvasId);
-                return null;
-            }
-            hideNoDataMessage(canvasId);
-            const ctx = document.getElementById(canvasId);
-            if (!ctx) return null;
-            const prev = Chart.getChart(canvasId);
-            if (prev) prev.destroy();
-
-            const labels = chartData.map(d => {
-                const customerName = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
-
-                // Jika data memiliki so_count, tambahkan sebagai label agar terlihat di chart
-                const soCountText = d.so_count ? ` (${d.so_count} SO)` : '';
-                return `${customerName}${soCountText}`;
-            });
-            const values = chartData.map(d => d[dataKey]);
-
-            const newChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [{
-                        label,
-                        data: values,
-                        backgroundColor: color.bg,
-                        borderColor: color.border,
-                        borderWidth: 1,
-                        borderRadius: 5
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                // Menampilkan nama Customer tanpa SO Count di title tooltip
-                                title: (items) => items[0].label.split('(')[0].trim(),
-                                label: (context) => {
-                                    const dataPoint = chartData[context.dataIndex];
-
-                                    if (currency && dataPoint) {
-                                        const totalTxt = formatFullCurrency(context.raw, currency);
-
-                                        let breakdownTxt = '';
-                                        // LOGIKA BREAKDOWN SBY/SMG
-                                        if (canvasId === 'chartTopCustomersValueSO') {
-                                            const sby = Number(dataPoint.sby_value || 0);
-                                            const smg = Number(dataPoint.smg_value || 0);
-
-                                            if (sby > 0 && smg > 0) {
-                                                breakdownTxt =
-                                                    ` (SMG: ${formatFullCurrency(smg, currency)}, SBY: ${formatFullCurrency(sby, currency)})`;
-                                            } else if (smg > 0 && sby === 0) {
-                                                breakdownTxt = ' (SMG)';
-                                            } else if (sby > 0 && smg === 0) {
-                                                breakdownTxt = ' (SBY)';
-                                            }
-                                        }
-
-                                        return `${totalTxt}${breakdownTxt}`;
-                                    }
-
-                                    return `${context.raw} SO`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            ticks: {
-                                minRotation: 20,
-                                maxRotation: 20,
-                                autoSkip: true,
-                                padding: 6,
-                                callback: (value) => {
-                                    if (Math.floor(value) === value) {
-                                        if (currency) {
-                                            let formatted = new Intl.NumberFormat('id-ID', {
-                                                minimumFractionDigits: 0,
-                                                maximumFractionDigits: 2
-                                            }).format(value);
-                                            return formatted;
-                                        }
-                                        return value;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-            return newChart;
-        };
 
 
         /* =========================================================
@@ -902,22 +667,10 @@
         };
 
         /**
-         * FUNGSI BARU UNTUK MEMPERBARUI TOMBOL TOGGLE DI CHART
-         */
-        function updateChartToggleButtons(currency) {
-            document.querySelectorAll('.yz-currency-toggle-chart button[data-cur]').forEach(b => {
-                const v = b.dataset.cur;
-                b.classList.toggle('btn-primary', v === 'USD' && currency === 'USD');
-                b.classList.toggle('btn-outline-primary', v === 'USD' && currency !== 'USD');
-                b.classList.toggle('btn-success', v === 'IDR' && currency === 'IDR');
-                b.classList.toggle('btn-outline-success', v === 'IDR' && currency !== 'IDR');
-            });
-        }
-
-        /**
          * Menginisialisasi tombol toggle KPI dan event listener-nya.
+         * (Dihapus logika sinkronisasi ke Chart Top Customers)
          */
-        function initKpiToggles(chartCurrencyFunction, initialChartCurrency) {
+        function initKpiToggles(initialChartCurrency) {
             const locations = ['smg', 'sby'];
 
             let savedKpiCur = initialChartCurrency;
@@ -932,14 +685,6 @@
             locations.forEach(loc => {
                 updateKpiBlock(loc, currentKpiCurrency);
             });
-
-            // Panggil render chart pertama kali (menggunakan currency KPI)
-            if (typeof chartCurrencyFunction === 'function') {
-                chartCurrencyFunction(currentKpiCurrency);
-            }
-
-            // PENTING: Perbarui tampilan tombol chart toggle saat inisialisasi
-            updateChartToggleButtons(currentKpiCurrency);
 
             // 2. Tambahkan event listeners untuk toggle KPI
             locations.forEach(loc => {
@@ -958,19 +703,13 @@
                     // Simpan ke Local Storage untuk preferensi
                     try {
                         localStorage.setItem('soKpiCurrency', currentKpiCurrency);
-                        // Simpan ke chart currency juga agar sinkron saat halaman dimuat ulang
-                        localStorage.setItem('soTopCustomerCurrency', currentKpiCurrency);
+                        // Hapus: localStorage.setItem('soTopCustomerCurrency', currentKpiCurrency);
                     } catch {}
 
                     // Perbarui semua blok KPI dan link
                     locations.forEach(l => updateKpiBlock(l, currentKpiCurrency));
 
-                    // Perbarui chart Top Customers
-                    if (typeof chartCurrencyFunction === 'function') {
-                        chartCurrencyFunction(currentKpiCurrency);
-                        // PENTING: Panggil fungsi update tombol chart di sini juga
-                        updateChartToggleButtons(currentKpiCurrency);
-                    }
+                    // Hapus: Tidak ada lagi update chart
                 });
             });
 
@@ -1006,153 +745,28 @@
             };
 
             const chartData = JSON.parse(dataHolder.dataset.chartData);
-            const selectedType = dataHolder.dataset.selectedType;
             if (!chartData) return;
 
-            // --- LOGIC PENENTU MATA UANG CHART AWAL ---
+            // --- LOGIC PENENTU MATA UANG KPI AWAL ---
             const hasTypeFilter = !!filterState.type;
-            const enableCurrencyToggle = (!hasTypeFilter);
 
-            // Tentukan mata uang chart default/initial
-            let initialChartCurrency = (dataHolder.dataset.selectedType === 'lokal') ? 'IDR' : 'USD';
-            if (enableCurrencyToggle) {
-                try {
-                    const saved = localStorage.getItem('soTopCustomerCurrency');
-                    if (saved === 'USD' || saved === 'IDR') initialChartCurrency = saved;
-                } catch {}
-            }
+            // Tentukan mata uang KPI default/initial
+            let initialKpiCurrency = (dataHolder.dataset.selectedType === 'lokal') ? 'IDR' : 'USD';
+            // Gunakan soKpiCurrency untuk menyimpan preferensi
+            try {
+                const saved = localStorage.getItem('soKpiCurrency');
+                if (saved === 'USD' || saved === 'IDR') initialKpiCurrency = saved;
+            } catch {}
 
-            let currentChartCurrency = initialChartCurrency;
-
-            // Chart definitions
-            let soTopCustomersChart = null;
-
-
-            // --- FUNGSI RENDER CHART TOP CUSTOMERS ---
-            function renderSoTopCustomers(currency) {
-                const canvasId = 'chartTopCustomersValueSO';
-                if (soTopCustomersChart) Chart.getChart(canvasId)?.destroy?.();
-                soTopCustomersChart = null;
-
-                // PENTING: Update currentChartCurrency agar mountCurrencyToggleIfNeeded menggunakan nilai terbaru
-                currentChartCurrency = currency;
-
-                // Judul
-                const titleEl = document.getElementById(canvasId)?.closest('.card')?.querySelector('.card-title');
-                if (titleEl) {
-                    titleEl.innerHTML =
-                        `<i class="fas fa-crown me-2 text-warning"></i>Top 5 Customers by Value of Overdue Orders Awaiting Packing (${currency})`;
-                }
-
-                // Data
-                const data = (currency === 'IDR') ?
-                    chartData.top_customers_value_idr :
-                    chartData.top_customers_value_usd;
-
-                const colors = (currency === 'IDR') ? {
-                    bg: 'rgba(25, 135, 84, 0.7)',
-                    border: 'rgba(25, 135, 84, 1)'
-                } : {
-                    bg: 'rgba(59, 130, 246, 0.7)',
-                    border: 'rgba(59, 130, 246, 1)'
-                };
-
-                const newChart = createHorizontalBarChart(
-                    canvasId,
-                    data,
-                    'total_value',
-                    'Value of Overdue Orders',
-                    colors,
-                    currency
-                );
-                soTopCustomersChart = newChart;
-            }
-
-            // FUNGSI INI AKAN DIPANGGIL DARI initKpiToggles.
-            function rerenderSoCurrencyDependentCharts(currency) {
-                renderSoTopCustomers(currency);
-            }
-
-            // --- INISIALISASI KPI TOGGLE (Memicu render chart pertama) ---
+            // --- INISIALISASI KPI TOGGLE ---
             if (chartData.kpi_new) {
-                // Gunakan chartData.kpi_new untuk inisialisasi KPI
-                initKpiToggles(rerenderSoCurrencyDependentCharts, initialChartCurrency);
+                initKpiToggles(initialKpiCurrency);
             } else {
-                // Fallback untuk render chart saja (jika filter tidak menampilkan KPI detail)
-                rerenderSoCurrencyDependentCharts(currentChartCurrency);
+                // Fallback: hanya update KPI dengan nilai default
+                const locations = ['smg', 'sby'];
+                locations.forEach(l => updateKpiBlock(l, initialKpiCurrency));
             }
             // --- END INISIALISASI KPI TOGGLE ---
-
-
-            /* Mounting Currency Toggle Chart (memperindah bagian chart) */
-            function mountCurrencyToggleIfNeeded() {
-                if (!enableCurrencyToggle) return;
-
-                const canvasIds = ['chartTopCustomersValueSO'];
-
-                const makeToggle = () => {
-                    const holder = document.createElement('div');
-                    holder.className = 'yz-card-toolbar';
-                    // PENTING: Toggle Chart diinisialisasi dengan currentChartCurrency
-                    holder.innerHTML = `
-                            <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
-                                <button type="button" data-cur="USD"
-                                class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
-                                <button type="button" data-cur="IDR"
-                                class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
-                            </div>
-                            `;
-                    return holder;
-                };
-
-                canvasIds.forEach(canvasId => {
-                    const targetCanvas = document.getElementById(canvasId);
-                    if (!targetCanvas) return;
-
-                    const card = targetCanvas.closest('.card');
-                    const titleEl = card?.querySelector('.card-title');
-                    const headerRow = titleEl?.parentElement;
-
-                    if (!card || !headerRow) return;
-
-                    card.style.position = 'relative';
-                    // Cek dan hapus toolbar lama jika ada
-                    headerRow.querySelector('.yz-card-toolbar')?.remove();
-
-                    const toolbar = makeToggle();
-                    headerRow.appendChild(toolbar);
-                });
-
-
-                // LOGIC KLIK UNTUK CHART (untuk klik langsung pada chart toggle)
-                document.querySelectorAll('.yz-currency-toggle-chart').forEach(toggleEl => {
-                    toggleEl.addEventListener('click', (e) => {
-                        const btn = e.target.closest('button[data-cur]');
-                        if (!btn) return;
-                        const next = btn.dataset.cur;
-                        if (next !== 'USD' && next !== 'IDR') return;
-                        if (next === currentChartCurrency) return;
-
-                        currentChartCurrency = next;
-                        try {
-                            localStorage.setItem('soTopCustomerCurrency', currentChartCurrency);
-                            // Simpan ke KPI currency juga agar sinkron saat halaman dimuat ulang
-                            localStorage.setItem('soKpiCurrency', currentChartCurrency);
-                        } catch {}
-
-                        // PENTING: Perbarui tampilan semua elemen
-                        rerenderSoCurrencyDependentCharts(currentChartCurrency);
-                        updateChartToggleButtons(currentChartCurrency);
-
-                        // Perbarui semua blok KPI
-                        const locations = ['smg', 'sby'];
-                        locations.forEach(l => updateKpiBlock(l, currentChartCurrency));
-                    });
-                });
-            }
-
-            // Panggil mounting toggle chart
-            mountCurrencyToggleIfNeeded();
 
 
             /* ======================== ITEM WITH REMARK (INLINE) ======================== */
@@ -1220,12 +834,12 @@
                             <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
                             <td class="text-center">
                             <button type="button"
-                                        class="btn btn-sm btn-outline-danger js-del-remark"
-                                        title="Hapus remark"
-                                        data-vbeln="${so}"
-                                        data-posnr="${posnr6}"
-                                        data-werks="${werks}"
-                                        data-auart="${auart}">
+                                            class="btn btn-sm btn-outline-danger js-del-remark"
+                                            title="Hapus remark"
+                                            data-vbeln="${so}"
+                                            data-posnr="${posnr6}"
+                                            data-werks="${werks}"
+                                            data-auart="${auart}">
                                 <i class="fas fa-trash"></i>
                             </button>
                             </td>
