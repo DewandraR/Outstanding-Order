@@ -1893,7 +1893,7 @@
             if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
 
             smallQtyDetailsTitle.textContent =
-                `Detail Item Outstanding untuk ${customerName}`;
+                `Detail Item Outstanding (≤5) untuk ${customerName}`;
             smallQtyMeta.textContent = '';
             exportSmallQtyPdfBtn.disabled = true;
             smallQtyDetailsTable.innerHTML =
@@ -1904,11 +1904,6 @@
             smallQtyDetailsContainer.style.display = 'block';
 
             if (smallQtySection) smallQtySection.style.display = '';
-
-            smallQtyDetailsContainer.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
 
             try {
                 const apiUrl = new URL("{{ route('so.api.small_qty_details') }}", window.location.origin);

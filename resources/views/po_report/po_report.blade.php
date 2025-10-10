@@ -559,7 +559,7 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                     <div class="d-flex justify-content-between align-items-center">
                         <h5 class="card-title mb-0 text-primary-emphasis">
                             <i class="fas fa-list-ol me-2"></i>
-                            <span id="smallQtyDetailsTitle">Detail Item Outstanding</span>
+                            <span id="smallQtyDetailsTitle">Detail Item Outstanding </span>
                             <small id="smallQtyMeta" class="text-muted ms-2"></small>
                         </h5>
 
@@ -1097,17 +1097,13 @@ END MODAL
                     .display = 'none';
             }
 
-            smallQtyDetailsTitle.textContent = `Detail Item Outstanding untuk ${customerName}`;
+            smallQtyDetailsTitle.textContent = `Detail Item Outstanding (≤5) untuk ${customerName}`;
             smallQtyMeta.textContent = '';
             exportSmallQtyPdfBtn.disabled = true;
             smallQtyDetailsTable.innerHTML = `<div class="d-flex justify-content-center align-items-center p-5">
                 <div class="spinner-border text-primary" role="status"></div>
                 <span class="ms-3 text-muted">Memuat data...</span></div>`;
             smallQtyDetailsContainer.style.display = 'block';
-            smallQtyDetailsContainer.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
 
             const apiUrl = new URL("{{ route('dashboard.api.smallQtyDetails') }}", window.location.origin);
             apiUrl.searchParams.append('customerName', customerName);
