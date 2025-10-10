@@ -436,9 +436,6 @@
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
                 let html = `
-        <div class="p-3">
-            <h6 class="yz-title-so mb-3 fw-bold"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h6>
-        </div>
         <div class="table-responsive">
         <table class="table table-sm mb-0 yz-mini">
             <thead class="yz-header-so">
