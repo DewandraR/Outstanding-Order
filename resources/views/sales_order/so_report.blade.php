@@ -8,6 +8,7 @@
         // Ambil nilai dari controller / query
         $selectedWerks = $selected['werks'] ?? null;
         $selectedAuart = trim((string) ($selected['auart'] ?? ''));
+        $mapping = $mapping ?? [];
         $typesForPlant = collect($mapping[$selectedWerks] ?? []);
 
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
@@ -29,6 +30,9 @@
         $totalSOTotal = (float) $rowsCol->sum(fn($r) => (float) ($r->SO_TOTAL_COUNT ?? 0));
         // Total Overdue SO Count Keseluruhan
         $totalOverdueSOTotal = (float) $rowsCol->sum(fn($r) => (float) ($r->SO_LATE_COUNT ?? 0));
+        // Global Overdue Ratio
+        $globalOverdueRatio = $totalSOTotal > 0 ? ($totalOverdueSOTotal / $totalSOTotal) * 100 : 0;
+        $globalOverdueColor = $totalOverdueSOTotal > 0 ? 'bg-danger' : 'bg-success';
 
         // total "Outs. Value" (semua outstanding value) per currency
         $pageTotalsAll = [
@@ -123,120 +127,188 @@
         </div>
     @endif
 
-    {{-- TABEL LEVEL-1 --}}
+    {{-- TABEL LEVEL-1 (Customer Card-Row BARU) --}}
     @if (isset($rows) && $rows->count())
         <div class="card yz-card shadow-sm">
             <div class="card-body p-0 p-md-2">
+
+                {{-- Judul Utama --}}
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
-                    <h5 class="yz-table-title mb-0"><i class="fas fa-users me-2"></i>Overview Customer</h5>
+                    <h5 class="yz-table-title mb-0"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
                 </div>
 
-                <div class="table-responsive yz-table px-md-3">
-                    <table class="table table-hover mb-0 align-middle yz-grid">
-                        <thead class="yz-header-customer">
-                            <tr>
-                                <th style="width:50px;"></th>
-                                <th class="text-start" style="min-width:250px;">Customer</th>
-                                <th class="text-center" style="min-width:100px;">Total SO</th>
-                                <th class="text-center" style="min-width:120px;">Overdue SO</th>
-                                <th class="text-center" style="min-width:150px;">Outs. Value</th>
-                                <th class="text-center" style="min-width:160px;">Overdue Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($rows as $r)
-                                @php
-                                    $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
+                <div class="yz-customer-list px-md-3 pt-3">
 
-                                    // Nilai yang diharapkan dari controller (sudah dipecah IDR/USD):
-                                    $outsValueUSD = (float) ($r->TOTAL_ALL_VALUE_USD ?? 0);
-                                    $outsValueIDR = (float) ($r->TOTAL_ALL_VALUE_IDR ?? 0);
-                                    $overdueValueUSD = (float) ($r->TOTAL_OVERDUE_VALUE_USD ?? 0);
-                                    $overdueValueIDR = (float) ($r->TOTAL_OVERDUE_VALUE_IDR ?? 0);
+                    {{-- Customer Cards Container --}}
+                    <div class="d-grid gap-0 mb-4">
+                        @forelse ($rows as $r)
+                            @php
+                                $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
 
-                                    // Format tampilan untuk kolom Outs. Value (USD | IDR)
-                                    $displayOutsValue = '';
-                                    if ($outsValueUSD > 0) {
-                                        $displayOutsValue .= '$' . number_format($outsValueUSD, 2, '.', ',');
-                                    }
-                                    if ($outsValueUSD > 0 && $outsValueIDR > 0) {
-                                        $displayOutsValue .= ' | ';
-                                    }
-                                    if ($outsValueIDR > 0) {
-                                        $displayOutsValue .= 'Rp ' . number_format($outsValueIDR, 2, ',', '.');
-                                    }
-                                    if (empty($displayOutsValue)) {
-                                        $displayOutsValue = 'Rp ' . number_format(0, 2, ',', '.');
-                                    }
+                                $totalSO = (int) ($r->SO_TOTAL_COUNT ?? 0);
+                                $totalOverdueSO = (int) ($r->SO_LATE_COUNT ?? 0);
+                                $overdueRatio = $totalSO > 0 ? ($totalOverdueSO / $totalSO) * 100 : 0;
+                                $overdueColor = $totalOverdueSO > 0 ? 'bg-danger' : 'bg-success';
 
-                                    // Format tampilan untuk kolom Overdue Value (USD | IDR)
-                                    $displayOverdueValue = '';
-                                    if ($overdueValueUSD > 0) {
-                                        $displayOverdueValue .= '$' . number_format($overdueValueUSD, 2, '.', ',');
-                                    }
-                                    if ($overdueValueUSD > 0 && $overdueValueIDR > 0) {
-                                        $displayOverdueValue .= ' | ';
-                                    }
-                                    if ($overdueValueIDR > 0) {
-                                        $displayOverdueValue .= 'Rp ' . number_format($overdueValueIDR, 2, ',', '.');
-                                    }
-                                    if (empty($displayOverdueValue)) {
-                                        $displayOverdueValue = 'Rp ' . number_format(0, 2, ',', '.');
-                                    }
-                                @endphp
-                                <tr class="yz-kunnr-row" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}"
-                                    data-cname="{{ $r->NAME1 }}" title="Klik untuk melihat detail SO">
-                                    <td class="sticky-col-mobile-disabled">
-                                        <span class="kunnr-caret"><i class="fas fa-chevron-right"></i></span>
-                                    </td>
-                                    <td class="sticky-col-mobile-disabled text-start">
-                                        <span class="fw-bold">{{ $r->NAME1 }}</span>
-                                    </td>
-                                    <td class="text-center">{{ $r->SO_TOTAL_COUNT ?? 0 }}</td>
-                                    <td class="text-center">{{ $r->SO_LATE_COUNT }}</td>
-                                    <td class="text-center">
-                                        {{ $displayOutsValue }}
-                                    </td>
-                                    <td class="text-center">
-                                        {{ $displayOverdueValue }}
-                                    </td>
-                                </tr>
-                                <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                                    <td colspan="6" class="p-0">
-                                        <div class="yz-nest-wrap">
-                                            <div
-                                                class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                                Memuat data…
-                                            </div>
+                                $outsValueUSD = (float) ($r->TOTAL_ALL_VALUE_USD ?? 0);
+                                $outsValueIDR = (float) ($r->TOTAL_ALL_VALUE_IDR ?? 0);
+                                $displayOutsValue = $formatTotals([
+                                    'USD' => $outsValueUSD,
+                                    'IDR' => $outsValueIDR,
+                                ]);
+
+                                $overdueValueUSD = (float) ($r->TOTAL_OVERDUE_VALUE_USD ?? 0);
+                                $overdueValueIDR = (float) ($r->TOTAL_OVERDUE_VALUE_IDR ?? 0);
+                                $displayOverdueValue = $formatTotals([
+                                    'USD' => $overdueValueUSD,
+                                    'IDR' => $overdueValueIDR,
+                                ]);
+                                $overdueValueStyle =
+                                    $overdueValueUSD > 0 || $overdueValueIDR > 0 ? 'text-danger' : 'text-success';
+
+                                $isOverdue = $totalOverdueSO > 0;
+                                $highlightClass = $isOverdue ? 'yz-customer-card-overdue' : '';
+                            @endphp
+
+                            {{-- Custom Card Row --}}
+                            <div class="yz-customer-card {{ $highlightClass }}" data-kunnr="{{ $r->KUNNR }}"
+                                data-kid="{{ $kid }}" data-cname="{{ $r->NAME1 }}"
+                                title="Klik untuk melihat detail SO">
+                                <div class="d-flex align-items-center justify-content-between p-3">
+
+                                    {{-- KIRI: Customer Name & Caret --}}
+                                    <div class="d-flex align-items-center flex-grow-1 me-3">
+                                        <span class="kunnr-caret me-3"><i class="fas fa-chevron-right"></i></span>
+                                        <div class="customer-info">
+                                            <div class="fw-bold fs-5 text-truncate">{{ $r->NAME1 }}</div>
+                                            {{-- MODIFIKASI SEBELUMNYA: ID Pelanggan dihapus --}}
                                         </div>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="6" class="text-center p-5">
-                                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                                        <h5 class="text-muted">Data tidak ditemukan</h5>
-                                        <p>Tidak ada data yang cocok untuk filter yang Anda pilih.</p>
-                                    </td>
-                                </tr>
-                            @endforelse
-                        </tbody>
+                                    </div>
 
-                        <tfoot class="yz-footer-customer">
-                            <tr>
-                                <th colspan="2" class="text-center">Total</th>
-                                {{-- Total SO --}}
-                                <th class="text-center">{{ number_format($totalSOTotal, 0, ',', '.') }}</th>
+                                    {{-- KANAN: Metrik & Nilai --}}
+                                    <div id="metric-columns"
+                                        class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
+
+                                        {{-- Total SO --}}
+                                        <div class="metric-box mx-4" style="min-width: 100px;">
+                                            <div class="metric-value fs-4 fw-bold text-primary text-end">
+                                                {{ number_format($totalSO, 0, ',', '.') }}</div>
+                                            <div class="metric-label text-muted small text-end">Total SO</div>
+                                        </div>
+
+                                        {{-- Overdue SO with Visual Indicator --}}
+                                        <div class="metric-box mx-4" style="min-width: 100px;">
+                                            <div
+                                                class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
+                                                {{ number_format($totalOverdueSO, 0, ',', '.') }}</div>
+                                            <div class="metric-label text-muted small text-end">Overdue SO</div>
+
+                                            {{-- Progress Bar --}}
+                                            @if ($totalSO > 0)
+                                                <div class="progress mt-1 mx-auto"
+                                                    style="height: 5px; width: 60px; max-width: 100%;">
+                                                    <div class="progress-bar {{ $overdueColor }}" role="progressbar"
+                                                        style="width: {{ $overdueRatio }}%"
+                                                        aria-valuenow="{{ $overdueRatio }}" aria-valuemin="0"
+                                                        aria-valuemax="100"></div>
+                                                </div>
+                                            @else
+                                                <div style="height: 5px;"></div>
+                                            @endif
+
+                                        </div>
+
+                                        {{-- Outstanding Value --}}
+                                        <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                            <div class="metric-value fw-bold text-dark">{{ $displayOutsValue }}</div>
+                                            <div class="metric-label text-muted small">Outstanding Value</div>
+                                        </div>
+
+                                        {{-- Overdue Value --}}
+                                        <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                            <div class="metric-value fw-bold {{ $overdueValueStyle }}">
+                                                {{ $displayOverdueValue }}
+                                            </div>
+                                            <div class="metric-label text-muted small">Overdue Value</div>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Detail Row (Nested Table Container) --}}
+                            <div id="{{ $kid }}" class="yz-nest-card" style="display:none;">
+                                <div class="yz-nest-wrap">
+                                    <div
+                                        class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                        Memuat data…
+                                    </div>
+                                </div>
+                            </div>
+                        @empty
+                            <div class="alert alert-warning text-center">
+                                <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">Data tidak ditemukan</h5>
+                                <p>Tidak ada data yang cocok untuk filter yang Anda pilih.</p>
+                            </div>
+                        @endforelse
+                    </div>
+
+                    {{-- Global Totals Card (Menggantikan TFOOT) --}}
+                    <div class="card shadow-sm yz-global-total-card mb-4">
+                        <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap">
+                            <h6 class="mb-0 text-dark-emphasis"><i class="fas fa-chart-pie me-2"></i>Total Keseluruhan</h6>
+
+                            {{-- STRUKTUR METRIK FOOTER HARUS SAMA PERSIS DENGAN metric-columns di atas --}}
+                            <div id="footer-metric-columns"
+                                class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
+
+                                {{-- Total SO Count --}}
+                                <div class="metric-box mx-4"
+                                    style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
+                                    <div class="fw-bold text-primary text-end">
+                                        {{ number_format($totalSOTotal, 0, ',', '.') }}</div>
+                                    <div class="small text-muted text-end">Total SO Count</div>
+                                </div>
+
                                 {{-- Total Overdue SO --}}
-                                <th class="text-center">{{ number_format($totalOverdueSOTotal, 0, ',', '.') }}</th>
+                                <div class="metric-box mx-4" style="min-width: 100px;">
+                                    <div class="fw-bold text-danger text-end">
+                                        {{ number_format($totalOverdueSOTotal, 0, ',', '.') }}
+                                    </div>
+                                    <div class="small text-muted text-end">Total Overdue SO</div>
+
+                                    {{-- Progress Bar --}}
+                                    @if ($totalSOTotal > 0)
+                                        <div class="progress mt-1 mx-auto"
+                                            style="height: 5px; width: 60px; max-width: 100%;">
+                                            <div class="progress-bar {{ $globalOverdueColor }}" role="progressbar"
+                                                style="width: {{ $globalOverdueRatio }}%"
+                                                aria-valuenow="{{ $globalOverdueRatio }}" aria-valuemin="0"
+                                                aria-valuemax="100"></div>
+                                        </div>
+                                    @else
+                                        <div style="height: 5px;"></div>
+                                    @endif
+                                </div>
+
                                 {{-- Total Outs. Value --}}
-                                <th class="text-center">{{ $formatTotals($pageTotalsAll ?? []) }}</th>
+                                <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                    <div class="fw-bold text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
+                                    <div class="small text-muted">Total Outs. Value</div>
+                                </div>
+
                                 {{-- Total Overdue Value --}}
-                                <th class="text-center">{{ $formatTotals($pageTotalsOverdue ?? []) }}</th>
-                            </tr>
-                        </tfoot>
-                    </table>
+                                <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                    <div class="fw-bold text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
+                                    <div class="small text-muted">Total Overdue Value</div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -247,7 +319,7 @@
         </div>
     @endif
 
-    {{-- --}}
+    {{-- Small Quantity Chart & Details --}}
     <div class="row g-4 mt-1" id="small-qty-section">
         <div class="col-12">
             <div class="card shadow-sm yz-chart-card">
@@ -303,7 +375,7 @@
         </div>
     </div>
 
-    {{-- --}}
+    {{-- Remark Modal --}}
     <div class="modal fade" id="remarkModal" tabindex="-1" aria-labelledby="remarkModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -361,11 +433,6 @@
             display: none
         }
 
-        .yz-footer-customer th {
-            background: #f4faf7;
-            border-top: 2px solid #cfe9dd
-        }
-
         .so-remark-flag {
             color: #6c757d;
             margin-right: 6px;
@@ -415,18 +482,110 @@
             transform: rotate(90deg)
         }
 
-        tbody.customer-focus-mode~tfoot.yz-footer-customer {
-            display: none !important
+        /* Mengatur focus mode untuk Card-Row Level 1 */
+        .customer-focus-mode .yz-customer-card:not(.is-focused) {
+            display: none !important;
         }
 
+        /* Menyembunyikan total global saat detail customer dibuka */
+        .customer-focus-mode~.yz-global-total-card {
+            display: none;
+        }
+
+        /* Tambahan CSS agar metrik sejajar atas-bawah */
+        #metric-columns,
+        #footer-metric-columns {
+            /* Pastikan elemen ini memegang lebar yang sama dan kolomnya terstruktur */
+            width: 100%;
+            justify-content: flex-end;
+            /* Dorong ke kanan */
+        }
+
+        #footer-metric-columns .metric-box {
+            /* Hapus border vertikal di footer agar terlihat lebih bersih */
+            border-left: none !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* Atur metrik boxes agar selalu sejajar vertikal */
+        .yz-customer-card #metric-columns>.metric-box,
+        #footer-metric-columns>div {
+            /* Hilangkan gap yang diatur d-flex gap-4 */
+            margin-left: 2rem !important;
+            margin-right: 2rem !important;
+        }
+
+        /* Metrik box pertama harus lurus dengan container */
+        .yz-customer-card #metric-columns>.metric-box:first-child {
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+        }
+
+        /* Metrik box pertama di footer harus lurus dengan container */
+        #footer-metric-columns>div:first-child {
+            margin-left: 0 !important;
+        }
+
+        /* Atur alignment teks di dalam metric box untuk memastikan angka sejajar kanan */
+        .metric-box .metric-value,
+        .metric-box .metric-label {
+            text-align: right !important;
+        }
+
+        /* Perbaikan: Atur progress bar agar tetap di tengah horizontal di dalam metric-box */
+        .metric-box .progress {
+            margin: 4px auto 0 !important;
+            /* Mengatur ulang margin yang mungkin terpengaruh oleh alignment text-end */
+        }
+
+        .so-focus-mode .js-t2row {
+            display: none;
+        }
+
+        .so-focus-mode .js-t2row.is-focused {
+            display: table-row;
+        }
+
+
+        /* MODIFIKASI: Menghilangkan highlight baris merah penuh yang lama */
         .yz-row-highlight-negative>td,
         .yz-row-highlight-negative td {
-            background-color: #ffe5e5 !important
+            background-color: transparent !important;
         }
 
         .table-hover tbody tr.yz-row-highlight-negative:hover>td,
         .table-hover tbody tr.yz-row-highlight-negative:hover td {
-            background-color: #ffd6d6 !important
+            background-color: #f8f9fa !important;
+            /* Kembali ke hover abu-abu normal */
+        }
+
+        /* Gaya kustom untuk bubble Overdue/On Track */
+        .overdue-badge-bubble {
+            padding: 0.35em 0.7em;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #fff;
+            text-align: center;
+            border-radius: 1rem;
+            /* Bentuk bubble/pill */
+            white-space: nowrap;
+        }
+
+        .bubble-late {
+            background-color: #c53030;
+            /* Merah gelap/Bordeaux */
+        }
+
+        .bubble-track {
+            background-color: #38a3a5;
+            /* Hijau Teal */
+        }
+
+        .bubble-today {
+            background-color: #b7791f;
+            /* Kuning Gelap/Coklat */
+            color: #fff;
         }
 
         /* Tambahkan style untuk tombol collapse header Tabel 2 */
@@ -724,74 +883,105 @@
                 const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ?? 0), 0);
 
                 let html = `
-    <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
+    
     <table class="table table-sm mb-0 yz-mini">
-      <thead class="yz-header-so">
+        <thead class="yz-header-so">
         <tr>
-          <th style="width:40px;" class="text-center">
-            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
-          </th>
-          <th style="width:40px;" class="text-center">
-              <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
-                  <span class="yz-collapse-caret">▸</span>
-              </button>
-          </th>
-          <th class="text-start">SO</th>
-          <th class="text-center">SO Item Count</th>
-          <th class="text-center">Req. Deliv. Date</th>
-          <th class="text-center">Overdue (Days)</th>
-          <th class="text-center">Outs. Qty</th>
-          <th class="text-center">Outs. Value</th>
-          <th style="width:28px;"></th>
+            <th style="width:40px;" class="text-center">
+                <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+            </th>
+            <th style="width:40px;" class="text-center">
+                <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
+                    <span class="yz-collapse-caret">▸</span>
+                </button>
+            </th>
+            {{-- MODIFIKASI STRUKTUR KOLOM: Memindahkan Outs. Value dan menghapus Overdue (Days) --}}
+            <th class="text-start" style="width: 250px;">SO & Status</th>
+            <th class="text-center">SO Item Count</th>
+            <th class="text-start">Outs. Value</th>
+            <th class="text-center">Req. Deliv. Date</th>
+            <th class="text-center">Outs. Qty</th>
+            <th style="width:28px;"></th>
         </tr>
-      </thead>
-      <tbody>`;
+        </thead>
+        <tbody>`;
                 const rowsSorted = [...rows].sort((a, b) => {
+                    // Sortir: Overdue (Terbesar) -> On Track (Terkecil) -> Normal
                     const oa = Number(a.Overdue || 0);
                     const ob = Number(b.Overdue || 0);
-                    const aOver = oa > 0;
-                    const bOver = ob > 0;
-                    if (aOver !== bOver) return aOver ? -1 : 1;
-                    return ob - oa;
+
+                    if (oa > 0 && ob <= 0) return -1; // A (Overdue) di atas B
+                    if (oa <= 0 && ob > 0) return 1; // A (On Track/Today) di bawah B (Overdue)
+
+                    // Jika keduanya Overdue atau keduanya On Track
+                    return ob - oa; // Overdue: Menurun (72, 52...); On Track: Menurun (-5, -46...)
                 });
 
                 rowsSorted.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                    const rowHi = r.Overdue > 0 ? 'yz-row-highlight-negative' : '';
+                    const rowHi = ''; // MODIFIKASI: Menghilangkan highlight baris merah penuh
+                    const overdueDays = Number(r.Overdue || 0);
                     const hasRemark = Number(r.remark_count || 0) > 0;
                     const outsQty = (typeof r.outs_qty !== 'undefined') ? r.outs_qty : (r.OUTS_QTY ?? 0);
                     const displayOutsValue = formatCurrencyGlobal(r.total_value, r.WAERK);
 
+                    // LOGIKA BARU UNTUK BADGE/BUBBLE
+                    let overdueBadge = '';
+                    if (overdueDays > 0) {
+                        // Overdue: Merah Gelap
+                        overdueBadge =
+                            `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
+                    } else if (overdueDays < 0) {
+                        // On Track: Hijau Teal
+                        const daysLeft = Math.abs(overdueDays);
+                        overdueBadge =
+                            `<span class="overdue-badge-bubble bubble-track" title="${daysLeft} hari tersisa">-${daysLeft} DAYS LEFT</span>`;
+                    } else {
+                        // Tepat Hari Ini (0)
+                        overdueBadge =
+                            `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
+                    }
+
                     html += `
         <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
-          <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}" onclick="event.stopPropagation()"></td>
-          <td class="text-center"><span class="yz-caret">▸</span></td>
-          <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
-          <td class="text-center">${r.item_count ?? '-'}</td>
-          <td class="text-center">${r.FormattedEdatu || '-'}</td>
-          <td class="text-center">${r.Overdue}</td>
-          <td class="text-center">${formatNumberGlobal(outsQty, 0)}</td> <td class="text-center">${displayOutsValue}</td>
-          <td class="text-center">
-            <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
-            <span class="so-selected-dot"></span>
-          </td>
+            <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}" onclick="event.stopPropagation()"></td>
+            <td class="text-center"><span class="yz-caret">▸</span></td>
+            
+            {{-- KOLOM BARU: SO & STATUS (Bubble) --}}
+            <td class="text-start">
+                <div class="fw-bold text-primary mb-1">${r.VBELN}</div>
+                ${overdueBadge}
+            </td>
+            
+            <td class="text-center">${r.item_count ?? '-'}</td>
+            
+            {{-- Outs. Value dipindah ke KIRI --}}
+            <td class="text-start fw-bold fs-6">${displayOutsValue}</td>
+            
+            <td class="text-center small text-muted">${r.FormattedEdatu || '-'}</td>
+            <td class="text-center">${formatNumberGlobal(outsQty, 0)}</td> 
+
+            <td class="text-center">
+                <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+                <span class="so-selected-dot"></span>
+            </td>
         </tr>
         <tr id="${rid}" class="yz-nest" style="display:none;">
-          <td colspan="9" class="p-0">
-            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-              <div class="yz-slot-items p-2"></div>
-            </div>
-          </td>
+            <td colspan="8" class="p-0"> {{-- colspan disesuaikan dari 9 ke 8 --}}
+                <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+                    <div class="yz-slot-items p-2"></div>
+                </div>
+            </td>
         </tr>`;
                 });
 
                 html += `</tbody>
-      <tfoot class="t2-footer">
-          <tr class="table-light yz-t2-total-outs" style="background-color: #e9ecef;">
-              <th colspan="6" class="text-end">Total Outstanding Qty</th>
-              <th class="text-center fw-bold">${formatNumberGlobal(totalOutsQtyT2, 0)}</th> <th colspan="2"></th>
-          </tr>
-      </tfoot>
+        <tfoot class="t2-footer">
+            <tr class="table-light yz-t2-total-outs" style="background-color: #e9ecef;">
+                <th colspan="6" class="text-end">Total Outstanding Qty</th>
+                <th class="text-center fw-bold">${formatNumberGlobal(totalOutsQtyT2, 0)}</th> <th colspan="1"></th> {{-- colspan disesuaikan dari 2 ke 1 --}}
+            </tr>
+        </tfoot>
     </table>`;
                 return html;
             }
@@ -822,48 +1012,222 @@
                  data-vbeln="${r.VBELN_KEY}" 
                  data-posnr="${r.POSNR}"
                  data-posnr-key="${r.POSNR_KEY}">
-                    <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
-                    <td>${r.POSNR ?? ''}</td>
-                    <td>${r.MATNR ?? ''}</td>
-                    <td>${r.MAKTX ?? ''}</td>
-                    <td>${formatNumberGlobal(r.KWMENG, 0)}</td> <td>${formatNumberGlobal(r.PACKG, 0)}</td> <td>${formatNumberGlobal(r.KALAB2, 0)}</td> <td>${formatNumberGlobal(r.ASSYM, 0)}</td> <td>${formatNumberGlobal(r.PAINT, 0)}</td> <td>${formatNumberGlobal(r.MENGE, 0)}</td> <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
-                    <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
-                    <td class="text-center">
-                        <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
-                        <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
-                    </td>
-                </tr>`;
+                        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
+                        <td>${r.POSNR ?? ''}</td>
+                        <td>${r.MATNR ?? ''}</td>
+                        <td>${r.MAKTX ?? ''}</td>
+                        <td>${formatNumberGlobal(r.KWMENG, 0)}</td> <td>${formatNumberGlobal(r.PACKG, 0)}</td> <td>${formatNumberGlobal(r.KALAB2, 0)}</td> <td>${formatNumberGlobal(r.ASSYM, 0)}</td> <td>${formatNumberGlobal(r.PAINT, 0)}</td> <td>${formatNumberGlobal(r.MENGE, 0)}</td> <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
+                        <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
+                        <td class="text-center">
+                            <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
+                            <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
+                        </td>
+                    </tr>`;
                 });
                 html += `</tbody></table></div>`;
                 return html;
             }
 
-            /* ---------- Expand Level-1 (load T2) ---------- */
-            document.querySelectorAll('.yz-kunnr-row').forEach(row => {
+            /* ... sisa kode JavaScript lainnya tetap sama ... */
+
+            async function ensureItemsLoadedForSO(vbeln) {
+                if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
+                const u = new URL(apiItemsBySo, window.location.origin);
+                u.searchParams.set('vbeln', vbeln);
+                u.searchParams.set('werks', WERKS);
+                u.searchParams.set('auart', AUART);
+                const r = await fetch(u);
+                const jd = await r.json();
+                if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
+                jd.data.forEach(x => itemIdToSO.set(String(x.id), vbeln));
+                itemsCache.set(vbeln, jd.data);
+                return jd.data;
+            }
+
+            function updateSODot(vbeln) {
+                const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
+                    .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
+            }
+
+            function applySelectionsToRenderedItems(container) {
+                container.querySelectorAll('.check-item').forEach(chk => {
+                    chk.checked = selectedItems.has(chk.dataset.id);
+                });
+            }
+
+            // Sinkronisasi checkbox header Item (T3)
+            function syncCheckAllHeader(itemBox) {
+                const table = itemBox?.querySelector('table');
+                if (!table) return;
+                const hdr = table.querySelector('.check-all-items');
+                if (!hdr) return;
+                const all = Array.from(table.querySelectorAll('.check-item'));
+                const allChecked = (all.length > 0 && all.every(ch => ch.checked));
+                const anyChecked = all.some(ch => ch.checked);
+
+                hdr.checked = allChecked;
+                hdr.indeterminate = !allChecked && anyChecked;
+            }
+
+            // 🟢 Sinkronisasi checkbox header SO (T2) - Mengimplementasikan kotak kosong
+            function syncCheckAllSoHeader(tbody) {
+                // Hanya lihat SO yang TAMPIL (tidak disembunyikan oleh collapse mode)
+                const allSOCheckboxes = Array.from(tbody.querySelectorAll('.check-so')).filter(ch => ch.closest(
+                    'tr').style.display !== 'none');
+                const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
+
+                if (!selectAllSo || allSOCheckboxes.length === 0) return;
+
+                const allChecked = allSOCheckboxes.every(ch => ch.checked);
+                const checkedCount = allSOCheckboxes.filter(ch => ch.checked).length;
+                const totalCount = allSOCheckboxes.length;
+
+                if (allChecked) {
+                    selectAllSo.checked = true;
+                    selectAllSo.indeterminate = false;
+                } else {
+                    // [PERBAIKAN]: Jika sebagian atau tidak ada yang dicentang, jadikan kotak kosong.
+                    selectAllSo.checked = false;
+                    selectAllSo.indeterminate = false;
+                }
+            }
+
+            // 🟢 Fungsi untuk mengelola Collapse Mode di Tabel 2 (SO List) DENGAN BUKA OTOMATIS T3
+            async function applyCollapseViewSo(tbodyEl, on) {
+                COLLAPSE_MODE = on;
+
+                const headerCaret = tbodyEl.closest('table')?.querySelector(
+                    '.js-collapse-toggle .yz-collapse-caret');
+                if (headerCaret) headerCaret.textContent = on ? '▾' : '▸';
+
+                tbodyEl.querySelector('.yz-empty-selected-row')?.remove();
+
+                tbodyEl.classList.remove('so-focus-mode');
+                tbodyEl.classList.toggle('collapse-mode', on);
+
+                const soRows = tbodyEl.querySelectorAll('.js-t2row');
+
+                if (on) {
+                    let visibleCount = 0;
+                    for (const r of soRows) {
+                        const chk = r.querySelector('.check-so');
+                        r.classList.remove('is-focused');
+
+                        // Cek apakah item T3 sedang terbuka secara manual
+                        const isT3Open = r.nextElementSibling.style.display !== 'none';
+
+                        if (chk?.checked) {
+                            r.style.display = ''; // Tampilkan SO yang dipilih
+                            visibleCount++;
+
+                            // PERBAIKAN: Klik baris SO untuk MEMBUKA/MEMUAT Tabel 3 jika belum terbuka
+                            if (!isT3Open) {
+                                r.click();
+                            }
+
+                        } else {
+                            r.style.display = 'none'; // Sembunyikan SO yang tidak dipilih
+                            // Tutup paksa T3 jika terbuka
+                            if (isT3Open) {
+                                r.click(); // Memanggil click untuk menutup
+                            } else {
+                                r.nextElementSibling.style.display = 'none';
+                                r.querySelector('.yz-caret')?.classList.remove('rot');
+                            }
+                        }
+                    }
+
+                    // [PERBAIKAN UTAMA] Jika tidak ada PO yang tersisa, matikan mode kolaps secara otomatis
+                    if (visibleCount === 0 && COLLAPSE_MODE) {
+                        await applyCollapseViewSo(tbodyEl, false); // Rekursif ke mode normal
+                        return; // Keluar dari fungsi ini setelah menonaktifkan
+                    }
+                } else {
+                    // Mode normal: Tampilkan semua SO & tutup semua item (T3)
+                    soRows.forEach(r => {
+                        r.style.display = '';
+                        r.classList.remove('is-focused');
+                        // Tutup paksa T3 jika terbuka
+                        if (r.nextElementSibling.style.display !== 'none') {
+                            r.nextElementSibling.style.display = 'none';
+                            r.querySelector('.yz-caret')?.classList.remove('rot');
+                        }
+                    });
+                }
+
+                if (tbodyEl) syncCheckAllSoHeader(tbodyEl);
+                updateT2FooterVisibility(tbodyEl.closest('table'));
+            }
+
+
+            function updateSoRemarkFlagFromCache(vbeln) {
+                const items = itemsCache.get(vbeln) || [];
+                const hasAny = items.some(it => (it.remark || '').trim() !== '');
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
+                    .forEach(el => {
+                        el.style.display = hasAny ? 'inline-block' : 'none';
+                        el.classList.toggle('active', hasAny);
+                    });
+            }
+
+            function recalcSoRemarkFlagFromDom(vbeln) {
+                const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
+                    ?.nextElementSibling;
+                let hasAny = false;
+                if (nest) {
+                    nest.querySelectorAll('.remark-icon').forEach(ic => {
+                        const t = decodeURIComponent(ic.dataset.remark || '');
+                        if (t.trim() !== '') hasAny = true;
+                    });
+                }
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
+                    .forEach(el => {
+                        el.style.display = hasAny ? 'inline-block' : 'none';
+                        el.classList.toggle('active', hasAny);
+                    });
+            }
+
+            function updateT2FooterVisibility(t2Table) {
+                if (!t2Table) return;
+                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
+                    'none' && tr.offsetParent !== null);
+                const tfoot = t2Table.querySelector('tfoot.t2-footer');
+                if (tfoot) tfoot.style.display = (anyOpen || COLLAPSE_MODE) ? 'none' : '';
+            }
+
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
+                    .stopPropagation();
+            }, true);
+
+            /* ... sisa kode lainnya tetap sama ... */
+
+
+            /* ---------- Expand Level-1 (load T2) - Menggunakan .yz-customer-card BARU ---------- */
+            document.querySelectorAll('.yz-customer-card').forEach(row => {
                 row.addEventListener('click', async () => {
                     const kunnr = row.dataset.kunnr;
                     const kid = row.dataset.kid;
                     const cname = row.dataset.cname;
+                    // Target nested container
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
 
-                    const tbody = row.closest('tbody');
-                    const tableEl = row.closest('table');
-                    const tfootEl = tableEl?.querySelector('tfoot.yz-footer-customer');
-
+                    const customerListContainer = row.closest('.d-grid');
                     const wasOpen = row.classList.contains('is-open');
 
-                    // Close all other open rows (exclusive toggle)
-                    document.querySelectorAll('.yz-kunnr-row.is-open').forEach(r => {
+                    // --- 1. Close all other open rows (exclusive toggle) ---
+                    document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
                         if (r !== row) {
+                            const otherSlot = document.getElementById(r.dataset.kid);
                             r.classList.remove('is-open');
-                            document.getElementById(r.dataset.kid)?.style.setProperty(
-                                'display', 'none', 'important');
+                            otherSlot.style.display = 'none'; // Tutup slot detail card
                             r.querySelector('.kunnr-caret')?.classList.remove('rot');
-                            const otherWrap = document.getElementById(r.dataset.kid)
-                                ?.querySelector('.yz-nest-wrap');
+
+                            // Opsional: Tutup semua T3 di dalam T2 card lain
+                            const otherWrap = otherSlot?.querySelector('.yz-nest-wrap');
                             otherWrap?.querySelectorAll('.js-t2row').forEach(so => {
-                                // Tutup T3 jika terbuka
                                 if (so.nextElementSibling.style.display !==
                                     'none') {
                                     so.nextElementSibling.style.display =
@@ -876,15 +1240,22 @@
                         }
                     });
 
-                    // Toggle focus and caret
-                    row.classList.toggle('is-open');
+                    // --- 2. Toggle current row ---
+                    row.classList.toggle('is-open', !wasOpen);
                     row.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
-                    slot.style.display = wasOpen ? 'none' : '';
+                    slot.style.display = wasOpen ? 'none' : 'block';
 
+                    // --- 3. Manage customer-focus-mode (manual hiding) ---
                     if (!wasOpen) {
-                        tbody.classList.add('customer-focus-mode');
+                        // Masuk ke focus mode: Sembunyikan semua card customer KECUALI yang sedang dibuka.
+                        customerListContainer.classList.add('customer-focus-mode');
+
+                        // Tambahkan class is-focused ke card yang sedang dibuka
+                        document.querySelectorAll('.yz-customer-card').forEach(c => c.classList
+                            .remove('is-focused'));
                         row.classList.add('is-focused');
 
+                        // Logika small qty (tetap)
                         const hasSmallQtyData = initialSmallQtyDataRaw.some(item => item
                             .NAME1 === cname);
 
@@ -898,9 +1269,12 @@
                                 .display = 'none';
                         }
                     } else {
-                        tbody.classList.remove('customer-focus-mode');
-                        row.classList.remove('is-focused');
+                        // Keluar dari focus mode
+                        customerListContainer.classList.remove('customer-focus-mode');
+                        document.querySelectorAll('.yz-customer-card').forEach(c => c.classList
+                            .remove('is-focused'));
 
+                        // Logika small qty (tetap)
                         if (smallQtySection) smallQtySection.style.display =
                             '';
                         if (smallQtyDetailsContainer) smallQtyDetailsContainer.style.display =
@@ -913,16 +1287,8 @@
                         }
                     }
 
-                    if (tfootEl) {
-                        const anyVisible = [...tableEl.querySelectorAll('tr.yz-nest')]
-                            .some(tr => tr.style.display !== 'none' && tr.offsetParent !==
-                                null);
-                        tfootEl.style.display = anyVisible ? 'none' : '';
-                    }
-                    wrap?.querySelectorAll('table').forEach(tbl => updateT2FooterVisibility(
-                        tbl));
 
-
+                    // Logika loading T2 (Detail SO)
                     if (wasOpen) return;
                     if (wrap.dataset.loaded === '1') {
                         const soTbody = wrap.querySelector('table tbody');
@@ -1014,8 +1380,8 @@
                                 }
 
                                 box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                             <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                           </div>`;
+                                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+                                     </div>`;
                                 try {
                                     const items =
                                         await ensureItemsLoadedForSO(vbeln);
@@ -1234,8 +1600,6 @@
                     if (!response.ok || !result.ok) throw new Error(result.message ||
                         'Gagal menyimpan catatan.');
 
-                    // --- PERBAIKAN UNTUK MEMBUKA/MEMUAT ULANG T3 & MENJAGA T3 TETAP TERBUKA ---
-
                     // 1. Hapus data SO dari itemsCache
                     itemsCache.delete(vbeln);
 
@@ -1252,8 +1616,8 @@
                     } else if (itemNest && itemNest.style.display !== 'none' && box) {
                         // Jika sudah terbuka, kita harus memuat ulang konten secara paksa
                         box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                            <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
-                        </div>`;
+                                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
+                                     </div>`;
 
                         const items = await ensureItemsLoadedForSO(vbeln);
 
@@ -1277,10 +1641,7 @@
                         'none');
 
                     // 5. Recalculate remark flag di Level 2
-                    // Jika langkah 3 berhasil, ini akan meng-update bendera pensil di Level 2.
                     recalcSoRemarkFlagFromDom(vbeln);
-
-                    // --- Akhir Perbaikan ---
 
                     remarkFeedback.textContent = 'Catatan berhasil disimpan!';
                     remarkFeedback.className = 'small mt-2 text-success';
@@ -1437,7 +1798,8 @@
 
                 let crow = null;
                 if (KUNNR) {
-                    crow = document.querySelector(`.yz-kunnr-row[data-kunnr='${CSS.escape(KUNNR)}']`);
+                    // Cari customer card baru
+                    crow = document.querySelector(`.yz-customer-card[data-kunnr='${CSS.escape(KUNNR)}']`);
                 }
 
                 if (VBELN && crow) {
@@ -1461,7 +1823,7 @@
                     let foundSoRow = null,
                         foundItemsBox = null;
 
-                    const customerRows = Array.from(document.querySelectorAll('.yz-kunnr-row'));
+                    const customerRows = Array.from(document.querySelectorAll('.yz-customer-card'));
                     for (const row of customerRows) {
                         const {
                             soRow,
@@ -1531,7 +1893,7 @@
             if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
 
             smallQtyDetailsTitle.textContent =
-                `Detail Item Outstanding untuk ${customerName} - (${locationName})`;
+                `Detail Item Outstanding untuk ${customerName}`;
             smallQtyMeta.textContent = '';
             exportSmallQtyPdfBtn.disabled = true;
             smallQtyDetailsTable.innerHTML =
@@ -1562,8 +1924,6 @@
                         Boolean));
                     const totalSO = uniqSO.size;
                     const totalItem = result.data.length;
-
-                    smallQtyMeta.textContent = `• ${totalSO} SO • ${totalItem} Item`;
                     exportSmallQtyPdfBtn.disabled = false;
 
                     if (exportForm) {
@@ -1625,27 +1985,36 @@
             const barColor = (werks === '3000') ? '#198754' : '#ffc107';
 
             const customerMap = new Map();
+            const totalItemCountMap = new Map(); // Map untuk total item (hanya untuk footer kecil)
             dataToRender.forEach(item => {
                 const name = (item.NAME1 || '').trim();
                 if (!name) return;
+
+                // MODIFIKASI: Gunakan 'so_count' dari Controller
                 const currentCount = customerMap.get(name) || 0;
-                // Menggunakan parseInt untuk memastikan perhitungan item_count benar
-                customerMap.set(name, currentCount + parseInt(item.item_count, 10));
+                customerMap.set(name, currentCount + parseInt(item.so_count, 10)); // MENGHITUNG SO
+
+                // Tetap hitung total ITEM untuk keterangan di judul
+                const currentItemCount = totalItemCountMap.get(name) || 0;
+                totalItemCountMap.set(name, currentItemCount + parseInt(item.item_count, 10)); // MENGHITUNG ITEM
             });
 
             const sortedCustomers = [...customerMap.entries()].sort((a, b) => b[1] - a[1]);
             const labels = sortedCustomers.map(item => item[0]);
-            const itemCounts = sortedCustomers.map(item => item[1]);
-            const totalItemCount = itemCounts.reduce((sum, count) => sum + count, 0);
 
-            // Update title
-            if (smallQtyChartTitle) {
-                smallQtyTotalItem.textContent = `(Total Item: ${formatNumberChart(totalItemCount)})`;
-            }
+            // MODIFIKASI: Ambil itemCounts dari SO Count
+            const soCounts = sortedCustomers.map(item => item[1]);
+
+            // Total SO Count Keseluruhan (untuk chart)
+            const totalSoCount = soCounts.reduce((sum, count) => sum + count, 0);
+
+            // Total ITEM Count Keseluruhan (untuk label judul)
+            const totalItemCount = dataToRender.reduce((sum, item) => sum + parseInt(item.item_count, 10), 0);
 
             // Handle No Data
+            // ... (Logika No Data tetap sama, menggunakan totalSoCount untuk pengecekan) ...
             const noDataEl = ctxSmallQty?.closest('.chart-container').querySelector('.yz-nodata');
-            if (!ctxSmallQty || dataToRender.length === 0 || totalItemCount === 0) {
+            if (!ctxSmallQty || dataToRender.length === 0 || totalSoCount === 0) { // Pengecekan menggunakan totalSoCount
                 if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
                 if (chartCanvas) chartCanvas.style.display = 'none';
                 if (noDataEl) noDataEl.style.display = 'block';
@@ -1656,6 +2025,7 @@
                 if (chartCanvas) chartCanvas.style.display = 'block';
                 if (noDataEl) noDataEl.style.display = 'none';
             }
+
 
             // Set height
             const dynamicHeight = Math.max(200, Math.min(50 * labels.length, 600));
@@ -1671,7 +2041,8 @@
                     labels,
                     datasets: [{
                         label: plantCode,
-                        data: itemCounts,
+                        // MODIFIKASI: Menggunakan soCounts
+                        data: soCounts,
                         backgroundColor: barColor
                     }]
                 },
@@ -1685,7 +2056,8 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Item (With Qty Outstanding ≤ 5)'
+                                // MODIFIKASI LABEL: Menampilkan "SO"
+                                text: 'Sales Order (With Outs. Item Qty ≤ 5)'
                             },
                             ticks: {
                                 callback: (value) => {
@@ -1703,7 +2075,8 @@
                         },
                         tooltip: {
                             callbacks: {
-                                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x} Item`
+                                // MODIFIKASI TOOLTIP: Menampilkan "SO"
+                                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x} SO`
                             }
                         }
                     },

@@ -46,10 +46,16 @@
                     }
                 }
 
-                // Status route aktif
-                $isDashboard = request()->routeIs('dashboard'); // PO Dashboard (visual)
-                $isSoDashboard = request()->routeIs('so.dashboard'); // SO Dashboard (visual)
-                $isStockDash = request()->routeIs('stock.dashboard'); // Stock dashboard
+                // --- LOGIKA AKTIVASI SIDEBAR ---
+                // Aktif jika di Dashboard ATAU Report Detail PO
+                $isPoActive = request()->routeIs('dashboard') || request()->routeIs('po.report');
+
+                // Aktif jika di Dashboard ATAU Report Detail SO
+                $isSoActive = request()->routeIs('so.dashboard') || request()->routeIs('so.index');
+
+                // Aktif jika di Dashboard ATAU Report Detail Stock
+                $isStockActive = request()->routeIs('stock.dashboard') || request()->routeIs('stock.index');
+                // -----------------------------
             @endphp
 
             {{-- NAV & SEARCH hanya untuk user login --}}
@@ -73,23 +79,23 @@
                     {{-- Dashboard View --}}
                     <li class="nav-heading">Dashboard View</li>
 
-                    {{-- PO Dashboard (visual) --}}
+                    {{-- PO Dashboard (visual) & Report --}}
                     <li class="nav-item">
-                        <a class="nav-link {{ $isDashboard ? 'active' : '' }}" href="{{ route('dashboard') }}">
+                        <a class="nav-link {{ $isPoActive ? 'active' : '' }}" href="{{ route('dashboard') }}">
                             <i class="fas fa-chart-line nav-icon"></i> Outstanding PO
                         </a>
                     </li>
 
-                    {{-- SO Dashboard (visual) --}}
+                    {{-- SO Dashboard (visual) & Report --}}
                     <li class="nav-item">
-                        <a class="nav-link {{ $isSoDashboard ? 'active' : '' }}" href="{{ route('so.dashboard') }}">
+                        <a class="nav-link {{ $isSoActive ? 'active' : '' }}" href="{{ route('so.dashboard') }}">
                             <i class="fas fa-chart-pie nav-icon"></i> Outstanding SO
                         </a>
                     </li>
 
-                    {{-- Stock Dashboard --}}
+                    {{-- Stock Dashboard & Report --}}
                     <li class="nav-item">
-                        <a class="nav-link {{ $isStockDash ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">
+                        <a class="nav-link {{ $isStockActive ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">
                             <i class="fas fa-warehouse nav-icon"></i> Stock Dashboard
                         </a>
                     </li>

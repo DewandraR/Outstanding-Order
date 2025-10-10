@@ -268,7 +268,8 @@ COALESCE(
                 ->where('t1.QTY_GI', '>', 0); // hanya yang sudah pernah shipped
 
             $smallQtyByCustomer = (clone $smallQtyBase)
-                ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(t1.POSNR) AS item_count'))
+                // MODIFIKASI INI: Mengubah COUNT(t1.POSNR) menjadi COUNT(DISTINCT t2.VBELN)
+                ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(DISTINCT t2.VBELN) AS so_count'))
                 ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
                 ->orderBy('t2.NAME1')
                 ->get();

@@ -6,11 +6,23 @@
 @section('content')
 
     @php
+        // Ambil nilai dari controller / query
         $selectedWerks = $selected['werks'] ?? null;
         $selectedType = $selected['type'] ?? null;
 
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$selectedWerks] ?? $selectedWerks;
+
+        // Mendapatkan data total (untuk footer global)
+        $rowsCol = \Illuminate\Support\Collection::make($rows ?? []);
+        $grandTotalQty = (float) $rowsCol->sum('TOTAL_QTY');
+
+        $grandTotalsCurr = [];
+        $rowsCol->each(function ($r) use (&$grandTotalsCurr) {
+            $curr = $r->WAERK ?? 'IDR';
+            $val = (float) ($r->TOTAL_VALUE ?? 0);
+            $grandTotalsCurr[$curr] = ($grandTotalsCurr[$curr] ?? 0) + $val;
+        });
 
         // helpers
         $fmtNumber = fn($n, $d = 0) => number_format((float) $n, $d, ',', '.');
@@ -25,6 +37,19 @@
             return trim(($currency ?: '') . ' ' . number_format($n, 2, ',', '.'));
         };
 
+        $formatTotalsStock = function (array $totals) use ($fmtMoney) {
+            if (empty($totals)) {
+                return 'Rp 0,00';
+            }
+            $parts = [];
+            foreach ($totals as $curr => $val) {
+                if ($val > 0) {
+                    $parts[] = $fmtMoney($val, $curr);
+                }
+            }
+            return implode(' | ', $parts) ?: 'Rp 0,00';
+        };
+
         use Illuminate\Support\Facades\Crypt;
     @endphp
 
@@ -32,7 +57,7 @@
     </div>
 
     {{-- =========================================================
-      HEADER: Pills (Stock Type) • Export Items
+    HEADER: Pills (Stock Type) • Export Items
     ========================================================= --}}
     <div class="card yz-card shadow-sm mb-3 overflow-visible">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
@@ -85,97 +110,127 @@
     </div>
 
     {{-- =========================
-      TABEL UTAMA (Overview Customer)
-      ========================= --}}
+    TABEL UTAMA (Stock By Customer)
+    ========================= --}}
     @if ($rows)
         <div class="card yz-card shadow-sm">
             <div class="card-body p-0 p-md-2">
 
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
+                    {{-- REVISI: Ubah judul menjadi "Stock By Customer" --}}
                     <h5 class="yz-table-title mb-0">
                         <i class="fas fa-users me-2"></i>
-                        Overview Customer
+                        Stock By Customer
                         @if ($selectedWerks)
                             <span class="text-muted small ms-2">— {{ $locName }}</span>
                         @endif
                     </h5>
                 </div>
 
-                <div class="table-responsive yz-table px-md-3">
-                    <table class="table table-hover mb-0 align-middle yz-grid">
-                        <thead class="yz-header-customer">
-                            <tr>
-                                <th style="width:50px;"></th>
-                                <th class="text-start" style="min-width:250px;">Customer</th>
-                                <th style="min-width:150px; text-align:center;">Total Stock Qty</th>
-                                <th style="min-width:150px; text-align:center;">Total Value</th>
-                            </tr>
-                        </thead>
+                <div class="yz-customer-list px-md-3 pt-3">
+                    <div class="d-grid gap-0 mb-4">
+                        @forelse ($rows as $r)
+                            @php
+                                $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
+                                $isHighlight = false; // Stock tidak memiliki logic highlight overdue
 
-                        <tbody>
-                            @forelse ($rows as $r)
-                                @php $kid = 'krow_'.$r->KUNNR.'_'.$loop->index; @endphp
-                                <tr class="yz-kunnr-row" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}"
-                                    title="Klik untuk melihat detail">
-                                    <td class="sticky-col-mobile-disabled">
-                                        <span class="kunnr-caret"><i class="fas fa-chevron-right"></i></span>
-                                    </td>
-                                    <td class="sticky-col-mobile-disabled text-start">
-                                        <span class="fw-bold">{{ $r->NAME1 }}</span>
-                                    </td>
-                                    <td class="text-center">{{ $fmtNumber($r->TOTAL_QTY) }}</td>
-                                    <td class="text-center">@php echo $fmtMoney($r->TOTAL_VALUE, $r->WAERK); @endphp</td>
-                                </tr>
-                                <tr id="{{ $kid }}" class="yz-nest" style="display:none;">
-                                    <td colspan="4" class="p-0">
-                                        <div class="yz-nest-wrap">
-                                            <div
-                                                class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                                Memuat data…
-                                            </div>
+                                $totalQty = (float) ($r->TOTAL_QTY ?? 0);
+                                $totalValueUSD = (float) ($r->TOTAL_VALUE_USD ?? 0);
+                                $totalValueIDR = (float) ($r->TOTAL_VALUE_IDR ?? 0);
+
+                                $displayTotalValue = $formatTotalsStock([
+                                    'USD' => $totalValueUSD,
+                                    'IDR' => $totalValueIDR,
+                                ]);
+                            @endphp
+
+                            {{-- Customer Card (Level 1) --}}
+                            <div class="yz-customer-card" data-kunnr="{{ $r->KUNNR }}" data-kid="{{ $kid }}"
+                                data-cname="{{ $r->NAME1 }}" title="Klik untuk melihat detail SO">
+                                <div class="d-flex align-items-center justify-content-between p-3">
+
+                                    {{-- KIRI: Customer Name & Caret --}}
+                                    <div class="d-flex align-items-center flex-grow-1 me-3">
+                                        <span class="kunnr-caret me-3"><i class="fas fa-chevron-right"></i></span>
+                                        <div class="customer-info">
+                                            <div class="fw-bold fs-5 text-truncate">{{ $r->NAME1 }}</div>
                                         </div>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="4" class="text-center p-5">
-                                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                                        <h5 class="text-muted">Data tidak ditemukan</h5>
-                                        <p>Tidak ada data yang cocok untuk filter yang Anda pilih.</p>
-                                    </td>
-                                </tr>
-                            @endforelse
-                        </tbody>
+                                    </div>
 
-                        @if ($rows && $rows->count())
-                            <tfoot>
-                                <tr class="table-light">
-                                    <th></th>
-                                    <th class="text-start"><span class="fw-bold">TOTAL</span></th>
-                                    <th class="text-center">{{ $fmtNumber($grandTotalQty ?? 0) }}</th>
-                                    <th class="text-center">
-                                        @if (!empty($grandTotalsCurr))
-                                            @foreach ($grandTotalsCurr as $curr => $val)
-                                                <div class="small">{{ $fmtMoney($val, $curr) }}</div>
-                                            @endforeach
-                                        @else
-                                            <span class="text-muted">-</span>
-                                        @endif
-                                    </th>
-                                </tr>
-                            </tfoot>
-                        @endif
-                    </table>
-                </div>
+                                    {{-- KANAN: Metrik & Nilai (DIADAPTASI DARI SO REPORT) --}}
+                                    <div id="metric-columns"
+                                        class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
 
-                {{-- pagination --}}
-                @if ($rows)
-                    <div class="px-3 py-2">
-                        {{ $rows->links() }}
+                                        {{-- Total Stock Qty --}}
+                                        <div class="metric-box mx-4" style="min-width: 100px;">
+                                            <div class="metric-value fs-4 fw-bold text-primary text-end">
+                                                {{ $fmtNumber($totalQty) }}
+                                            </div>
+                                            <div class="metric-label text-muted small text-end">Total Qty</div>
+                                        </div>
+
+                                        {{-- Total Stock Value --}}
+                                        <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                            <div class="metric-value fw-bold text-dark">{{ $displayTotalValue }}</div>
+                                            <div class="metric-label text-muted small">Total Value</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Detail Row (Nested Table Container - Level 2) --}}
+                            <div id="{{ $kid }}" class="yz-nest-card" style="display:none;">
+                                <div class="yz-nest-wrap">
+                                    <div
+                                        class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                        Memuat data…
+                                    </div>
+                                </div>
+                            </div>
+                        @empty
+                            <div class="alert alert-warning text-center">
+                                <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">Data tidak ditemukan</h5>
+                                <p>Tidak ada data yang cocok untuk filter yang Anda pilih.</p>
+                            </div>
+                        @endforelse
                     </div>
-                @endif
+
+                    {{-- Global Totals Card (Pengganti TFOOT) --}}
+                    <div class="card shadow-sm yz-global-total-card mb-4">
+                        <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap">
+                            <h6 class="mb-0 text-dark-emphasis"><i class="fas fa-chart-pie me-2"></i>Total Keseluruhan</h6>
+
+                            <div id="footer-metric-columns"
+                                class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
+
+                                {{-- Total Stock Qty --}}
+                                <div class="metric-box mx-4"
+                                    style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
+                                    <div class="fw-bold text-primary text-end">
+                                        {{ $fmtNumber($grandTotalQty ?? 0) }}
+                                    </div>
+                                    <div class="small text-muted text-end">Total Qty</div>
+                                </div>
+
+                                {{-- Total Stock Value --}}
+                                <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                    <div class="fw-bold text-dark">{{ $formatTotalsStock($grandTotalsCurr ?? []) }}</div>
+                                    <div class="small text-muted">Total Value</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            {{-- pagination --}}
+            @if ($rows)
+                <div class="px-3 py-2">
+                    {{ $rows->links() }}
+                </div>
+            @endif
         </div>
     @endif
 @endsection
@@ -183,24 +238,18 @@
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
+        /* CSS yang ditambahkan sebelumnya tetap di sini, disesuaikan untuk stock */
         .yz-caret {
             display: inline-block;
             transition: transform .18s ease;
             user-select: none;
-            /* Tambahkan margin di sini untuk mengatur posisi awal */
             margin-right: 5px;
             vertical-align: middle;
             line-height: 1;
-            /* Pastikan tinggi baris 1 */
         }
 
         .yz-caret.rot {
             transform: rotate(90deg)
-        }
-
-        /* sembunyikan tfoot saat customer focus mode aktif */
-        tbody.customer-focus-mode~tfoot {
-            display: none !important
         }
 
         .so-selected-dot {
@@ -213,35 +262,34 @@
             vertical-align: middle
         }
 
+        /* Tambahan: Pastikan metric box di Level 1 rata kanan */
+        #metric-columns .metric-box {
+            text-align: right;
+        }
+
+        /* Hilangkan highlight baris merah (tidak relevan untuk stok) */
+        .yz-row-highlight-negative td {
+            background-color: transparent !important;
+        }
+
+        .yz-row-highlight-negative:hover td {
+            background-color: #f8f9fa !important;
+        }
+
         /* tombol kolaps di header Tabel-2 */
         .yz-header-so .js-collapse-toggle {
             line-height: 1;
             padding: 2px 8px;
-            /* Pastikan lebar tombol header tidak terlalu besar/kecil */
         }
 
-        /* Sesuaikan style caret di header agar seragam dengan caret di baris data */
         .yz-header-so .yz-collapse-caret {
             display: inline-block;
             transition: transform .18s ease
         }
 
-        /* Mengatur posisi caret di baris SO agar sejajar dengan tombol collapse di header */
-        .yz-t2-vbeln .yz-caret {
-            /* Hapus margin-right di sini jika sudah diatur di .yz-caret global,
-                               atau gunakan posisi relatif/absolut jika pengaturan kolom tabel tidak ideal */
-            margin-right: 5px;
-        }
-
-        /* Tambahkan padding/margin kiri pada sel VBELN jika perlu */
-        .yz-t2-vbeln {
-            padding-left: 0.75rem !important;
-            /* Contoh: Menyesuaikan padding sel */
-        }
-
-
-        tbody.so-focus-mode~tfoot {
-            display: none !important;
+        /* sembunyikan tfoot saat customer focus mode aktif */
+        tbody.customer-focus-mode~tfoot {
+            display: none !important
         }
     </style>
 @endpush
@@ -264,13 +312,11 @@
 
             const selectedItems = new Set(); // id item terpilih (untuk export)
             const itemIdToSO = new Map(); // itemId -> VBELN
-            const itemsCache = new Map(); // VBELN  -> array items
+            const itemsCache = new Map(); // VBELN -> array items
 
-            // NEW: mode kolaps/fokus pada Tabel-2
             let COLLAPSE_MODE = false;
 
             // --- Helpers ---
-            // Helper standar
             const formatCurrency = (value, currency, d = 2) => {
                 const n = parseFloat(value);
                 if (!Number.isFinite(n)) return '';
@@ -295,7 +341,6 @@
                 return s.length ? s : null;
             };
 
-
             function updateExportButton() {
                 const n = selectedItems.size;
                 if (selectedCountSpan) selectedCountSpan.textContent = n;
@@ -314,9 +359,6 @@
                 if (!selectAll || !itemCheckboxes.length) return;
                 const allChecked = Array.from(itemCheckboxes).every(ch => ch.checked);
                 selectAll.checked = allChecked;
-                // [STOCK REPORT ASLI] menggunakan indeterminate untuk partial selection
-                // Namun, untuk konsistensi dengan permintaan di PO Report (menjadi kotak kosong),
-                // kita akan ubah logika indeterminate menjadi false.
                 selectAll.indeterminate = !allChecked && Array.from(itemCheckboxes).some(ch => ch.checked);
             }
 
@@ -344,7 +386,6 @@
                     selectAllSo.checked = true;
                     selectAllSo.indeterminate = false;
                 } else {
-                    // [PERBAIKAN] Jika hanya sebagian yang tercentang, jadikan kotak kosong, BUKAN strip.
                     selectAllSo.checked = false;
                     selectAllSo.indeterminate = false;
                 }
@@ -356,15 +397,6 @@
                     else chk.checked = false;
                 });
                 syncSelectAllItemsState(container);
-            }
-
-            function clearRenderedItemsUnderSO(nest) {
-                if (!nest) return;
-                const box = nest.querySelector('.yz-slot-items');
-                if (!box) return;
-                box.querySelectorAll('.check-item').forEach(ch => ch.checked = false);
-                const selAll = box.querySelector('.check-all-items');
-                if (selAll) selAll.checked = false, selAll.indeterminate = false;
             }
 
             async function ensureItemsLoadedForSO(vbeln) {
@@ -381,18 +413,17 @@
                 return jd.data;
             }
 
-            // ===== RENDER LEVEL 2 (SO) –— SESUAIKAN KOLOM KE-2/KE-3 UNTUK CARET =====
+            // ===== RENDER LEVEL 2 (SO) –— MENGHILANGKAN JUDUL T2 =====
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
                 let html = `
-        <h5 class="yz-table-title-nested yz-title-so"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
         <table class="table table-sm mb-0 yz-mini">
             <thead class="yz-header-so">
                 <tr>
                     <th style="width:40px;" class="text-center">
                         <input type="checkbox" class="form-check-input check-all-sos"
-                                 title="Pilih semua SO" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+                                title="Pilih semua SO" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
                     </th>
                     <th style="width:40px;" class="text-center">
                         <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
@@ -410,15 +441,17 @@
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                     const isSoSelected = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) ===
                         r.VBELN);
+                    // Stock Report TIDAK punya logic Overdue/Late/Today (dihilangkan)
+
                     html += `
               <tr class="yz-row js-t2row" data-vbeln="${r.VBELN}" data-tgt="${rid}">
                 <td class="text-center">
                   <input type="checkbox" class="form-check-input check-so"
-                                 data-vbeln="${r.VBELN}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+                                data-vbeln="${r.VBELN}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
                 </td>
                 <td class="text-center">
                   <span class="yz-caret">▸</span> </td>
-                <td class="yz-t2-vbeln text-start">${r.VBELN}</td>
+                <td class="yz-t2-vbeln text-start fw-bold text-primary">${r.VBELN}</td>
                 <td class="text-center">${formatNumber(r.total_qty)}</td>
                 <td class="text-center">${formatCurrency(r.total_value, r.WAERK)}</td>
                 <td class="text-center"><span class="so-selected-dot" style="display:${isSoSelected?'inline-block':'none'};"></span></td>
@@ -472,7 +505,6 @@
             async function openItemsIfNeededForSORow(soRow) {
                 const vbeln = soRow.dataset.vbeln;
                 const nest = soRow?.nextElementSibling;
-                // Ambil caret dari kolom ke-2
                 const caret = soRow?.querySelector('td:nth-child(2) .yz-caret');
                 if (!nest) return;
                 if (nest.style.display === 'none') {
@@ -481,6 +513,9 @@
                 }
                 const box = nest.querySelector('.yz-slot-items');
                 if (nest.dataset.loaded !== '1') {
+                    box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                        <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+                    </div>`;
                     const items = await ensureItemsLoadedForSO(vbeln);
                     box.innerHTML = renderLevel3_Items(items);
                     applySelectionsToRenderedItems(box);
@@ -492,7 +527,6 @@
 
             function closeItemsForSORow(soRow) {
                 const nest = soRow?.nextElementSibling;
-                // Ambil caret dari kolom ke-2
                 const caret = soRow?.querySelector('td:nth-child(2) .yz-caret');
                 if (nest) {
                     nest.style.display = 'none';
@@ -504,18 +538,15 @@
             async function applyCollapseView(tbodyEl, on) {
                 COLLAPSE_MODE = on;
 
-                // Update caret tombol header
                 const headerCaret = tbodyEl.closest('table')?.querySelector(
                     '.js-collapse-toggle .yz-collapse-caret');
                 if (headerCaret) headerCaret.textContent = on ? '▾' : '▸';
 
-                // Bersihkan placeholder lama
                 const oldEmpty = tbodyEl.querySelector('.yz-empty-selected-row');
                 if (oldEmpty) oldEmpty.remove();
 
-                // HAPUS efek "so-focus-mode" agar baris SO tidak disembunyikan global
-                tbodyEl.classList.remove('so-focus-mode'); // <-- kunci
-                tbodyEl.classList.toggle('collapse-mode', on); // (opsional) kelas baru hanya untuk penanda
+                tbodyEl.classList.remove('so-focus-mode');
+                tbodyEl.classList.toggle('collapse-mode', on);
 
                 if (on) {
                     let visibleCount = 0;
@@ -523,27 +554,23 @@
 
                     for (const r of rows) {
                         const chk = r.querySelector('.check-so');
-                        // pastikan semua baris tidak membawa status fokus lama
                         r.classList.remove('is-focused');
 
                         if (chk?.checked) {
-                            r.style.display = ''; // tampilkan baris SO
-                            await openItemsIfNeededForSORow(r); // buka Tabel-3
+                            r.style.display = '';
+                            await openItemsIfNeededForSORow(r);
                             visibleCount++;
                         } else {
-                            r.style.display = 'none'; // sembunyikan SO yang tak dipilih
-                            closeItemsForSORow(r); // tutup Tabel-3-nya bila terbuka
+                            r.style.display = 'none';
+                            closeItemsForSORow(r);
                         }
                     }
 
-                    // [PERBAIKAN UTAMA] Jika tidak ada yang terlihat, matikan mode kolaps
                     if (visibleCount === 0) {
-                        await applyCollapseView(tbodyEl, false); // Rekursif ke mode normal
-                        return; // Keluar
+                        await applyCollapseView(tbodyEl, false);
+                        return;
                     }
-
                 } else {
-                    // Mode normal: tampilkan semua SO & tutup semua Tabel-3
                     const rows = tbodyEl.querySelectorAll('.js-t2row');
                     rows.forEach(r => {
                         r.style.display = '';
@@ -552,54 +579,80 @@
                     });
                 }
 
-                // 🟢 Sinkronisasi status checkbox header SO setelah applyCollapseView
                 if (tbodyEl) syncSelectAllSoState(tbodyEl);
             }
 
             // ===== Expand/collapse Level-1 (Customer) -> Level-2 (SO) =====
-            document.querySelectorAll('.yz-kunnr-row').forEach(row => {
+            document.querySelectorAll('.yz-customer-card').forEach(row => {
                 row.addEventListener('click', async () => {
                     const kunnr = row.dataset.kunnr;
                     const kid = row.dataset.kid;
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
-                    const tbodyEl = row.closest('tbody');
-                    const tableEl = row.closest('table');
-                    const tfootEl = tableEl?.querySelector('tfoot');
+                    const tbodyEl = row.closest('.yz-customer-list').querySelector(
+                        'div.d-grid'); // Container untuk focus mode
+                    const tableEl = row.closest('div.card');
+                    const tfootEl = tableEl?.querySelector(
+                        'tfoot'); // Footer lama yang dihilangkan
 
                     const wasOpen = row.classList.contains('is-open');
 
-                    // FOCUS MODE utk klik Customer (tetap seperti semula)
+                    // Toggle exclusif pada Level 1 (Customer Card)
+                    document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
+                        if (r !== row) {
+                            const otherSlot = document.getElementById(r.dataset.kid);
+                            r.classList.remove('is-open');
+                            r.classList.remove('is-focused');
+                            otherSlot.style.display = 'none';
+                            r.querySelector('.kunnr-caret')?.classList.remove('rot');
+
+                            // Tutup semua T2/T3 di card lain
+                            const otherTable = otherSlot?.querySelector('table');
+                            otherTable?.querySelector('tbody')?.classList.remove(
+                                'so-focus-mode', 'collapse-mode');
+                            otherTable?.querySelectorAll('.js-t2row').forEach(r =>
+                                closeItemsForSORow(r));
+                        }
+                    });
+
+                    // Toggle status kartu saat ini
+                    row.classList.toggle('is-open');
+                    row.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
+                    slot.style.display = wasOpen ? 'none' : 'block';
+
+                    // Keluar/masuk Focus Mode
                     if (!wasOpen) {
                         tbodyEl.classList.add('customer-focus-mode');
                         row.classList.add('is-focused');
+                        // Sembunyikan footer total global saat fokus
+                        const globalFooter = document.querySelector('.yz-global-total-card');
+                        if (globalFooter) globalFooter.style.display = 'none';
                     } else {
                         tbodyEl.classList.remove('customer-focus-mode');
                         row.classList.remove('is-focused');
-                        wrap?.querySelectorAll('tbody.so-focus-mode').forEach(tb => tb.classList
-                            .remove('so-focus-mode'));
-                        wrap?.querySelectorAll('.js-t2row.is-focused').forEach(r => r.classList
-                            .remove('is-focused'));
-                        wrap?.querySelectorAll('.yz-caret.rot').forEach(c => c.classList.remove(
-                            'rot'));
-                        wrap?.querySelectorAll('tr.yz-nest').forEach(tr => tr.style.display =
-                            'none');
-                        COLLAPSE_MODE = false; // reset mode kolaps saat tutup customer
+                        // Tampilkan kembali footer total global saat tutup
+                        const globalFooter = document.querySelector('.yz-global-total-card');
+                        if (globalFooter) globalFooter.style.display = '';
                     }
-
-                    row.classList.toggle('is-open');
-                    slot.style.display = wasOpen ? 'none' : '';
-
-                    // sembunyikan tfoot saat ada nest terlihat
-                    const anyVisibleNest = [...tableEl.querySelectorAll('tr.yz-nest')]
-                        .some(tr => tr.style.display !== 'none' && tr.offsetParent !== null);
-                    if (tfootEl) tfootEl.style.display = anyVisibleNest ? 'none' : '';
 
                     if (wasOpen) return;
 
-                    if (wrap.dataset.loaded === '1') return;
+                    if (wrap.dataset.loaded === '1') {
+                        // Re-bind click listener
+                        const soTable = wrap.querySelector('table.yz-mini');
+                        const soTbody = soTable?.querySelector('tbody');
+                        const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
+                        collapseBtn?.addEventListener('click', async (ev) => {
+                            ev.stopPropagation();
+                            await applyCollapseView(soTbody, !COLLAPSE_MODE);
+                        });
+                        // Sync checkbox
+                        if (soTbody) syncSelectAllSoState(soTbody);
+                        return;
+                    }
 
                     try {
+                        // Loading state
                         wrap.innerHTML = `<div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
                         <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
                     </div>`;
@@ -624,27 +677,21 @@
                             await applyCollapseView(soTbody, !COLLAPSE_MODE);
                         });
 
-                        // Bind Level-3 (SO -> Items) untuk klik baris (tetap ada untuk manual buka/tutup)
+                        // Bind Level-3 (SO -> Items) untuk klik baris dan checkbox
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             updateSODot(soRow.dataset.vbeln);
 
                             soRow.addEventListener('click', async (ev) => {
+                                if (ev.target.closest('.form-check-input'))
+                                    return;
                                 ev.stopPropagation();
-                                const vbeln = soRow.dataset.vbeln;
-                                const tgtId = soRow.dataset.tgt;
-                                const itemTr = wrap.querySelector('#' +
-                                    tgtId);
-                                const itemBox = itemTr.querySelector(
-                                    '.yz-slot-items');
+                                const itemTr = soRow.nextElementSibling;
                                 const open = itemTr.style.display !==
                                     'none';
-                                const soTbody = soRow.closest('tbody');
 
-                                // Ambil caret dari kolom ke-2
                                 soRow.querySelector(
                                         'td:nth-child(2) .yz-caret')
-                                    ?.classList
-                                    .toggle('rot');
+                                    ?.classList.toggle('rot');
 
                                 if (!open) {
                                     soTbody?.classList.add('so-focus-mode');
@@ -660,30 +707,32 @@
                                     return;
                                 }
 
+                                // Buka dan muat item
                                 itemTr.style.display = '';
-                                if (itemTr.dataset.loaded === '1') {
-                                    applySelectionsToRenderedItems(itemBox);
-                                    return;
-                                }
-
-                                itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                            </div>`;
-                                try {
+                                if (itemTr.dataset.loaded !== '1') {
+                                    const itemBox = itemTr.querySelector(
+                                        '.yz-slot-items');
+                                    itemBox.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+                                    </div>`;
                                     const items =
-                                        await ensureItemsLoadedForSO(vbeln);
+                                        await ensureItemsLoadedForSO(soRow
+                                            .dataset.vbeln);
                                     itemBox.innerHTML = renderLevel3_Items(
                                         items);
                                     applySelectionsToRenderedItems(itemBox);
                                     itemTr.dataset.loaded = '1';
-                                } catch (e) {
-                                    itemBox.innerHTML =
-                                        `<div class="alert alert-danger m-3">${e.message}</div>`;
+                                } else {
+                                    applySelectionsToRenderedItems(itemTr
+                                        .querySelector('.yz-slot-items')
+                                    );
                                 }
                             });
                         });
-                        // 🟢 BARU: Sinkronisasi status checkbox header SO saat pertama kali dimuat
+
                         if (soTbody) syncSelectAllSoState(soTbody);
+                        updateExportButton();
+
                     } catch (e) {
                         wrap.innerHTML =
                             `<div class="alert alert-danger m-3">${e.message}</div>`;
@@ -699,9 +748,9 @@
                 }
             }, true);
 
+
             // ===== Change events (pilih SO / Item) =====
             document.body.addEventListener('change', async (e) => {
-                // Select all items pada Tabel-3
                 if (e.target.classList.contains('check-all-items')) {
                     const table = e.target.closest('table');
                     if (!table) return;
@@ -717,7 +766,6 @@
                         const vbeln = itemIdToSO.get(String(anyItem.dataset.id));
                         if (vbeln) {
                             updateSODot(vbeln);
-                            // 🟢 BARU: Panggil sinkronisasi untuk Tabel 2 (SO) setelah mengubah item
                             const soRow = document.querySelector(`.js-t2row[data-vbeln='${vbeln}']`);
                             const tbody = soRow?.closest('tbody');
                             if (tbody) syncSelectAllSoState(tbody);
@@ -727,7 +775,25 @@
                     return;
                 }
 
-                // Select All SO dalam satu customer
+                if (e.target.classList.contains('check-item')) {
+                    const id = e.target.dataset.id;
+                    if (e.target.checked) selectedItems.add(id);
+                    else selectedItems.delete(id);
+
+                    const box = e.target.closest('.yz-slot-items') || document;
+                    syncSelectAllItemsState(box);
+
+                    const vbeln = itemIdToSO.get(String(id));
+                    if (vbeln) {
+                        updateSODot(vbeln);
+                        const soRow = document.querySelector(`.js-t2row[data-vbeln='${vbeln}']`);
+                        const tbody = soRow?.closest('tbody');
+                        if (tbody) syncSelectAllSoState(tbody);
+                    }
+                    updateExportButton();
+                    return;
+                }
+
                 if (e.target.classList.contains('check-all-sos')) {
                     const tbody = e.target.closest('table')?.querySelector('tbody');
                     if (!tbody) return;
@@ -748,17 +814,12 @@
                         }
                         updateSODot(vbeln);
                     }
-
-                    // 🟢 Panggil sinkronisasi status checkbox header SO
                     if (tbody) syncSelectAllSoState(tbody);
-
                     if (COLLAPSE_MODE) await applyCollapseView(tbody, true);
-
                     updateExportButton();
                     return;
                 }
 
-                // Pilih satu SO
                 if (e.target.classList.contains('check-so')) {
                     const vbeln = e.target.dataset.vbeln;
                     const items = await ensureItemsLoadedForSO(vbeln);
@@ -772,35 +833,11 @@
                     }
 
                     updateSODot(vbeln);
-
                     const tbody = e.target.closest('tbody');
-                    // 🟢 BARU: Panggil sinkronisasi status checkbox header SO
                     if (tbody) syncSelectAllSoState(tbody);
 
-                    // 🟢 PENTING: Cek dan panggil applyCollapseView jika mode aktif (untuk auto-exit)
-                    if (COLLAPSE_MODE && tbody) await applyCollapseView(tbody, true);
+                    if (COLLAPSE_MODE) await applyCollapseView(tbody, true);
 
-                    updateExportButton();
-                    return;
-                }
-
-                // Pilih item
-                if (e.target.classList.contains('check-item')) {
-                    const id = e.target.dataset.id;
-                    if (e.target.checked) selectedItems.add(id);
-                    else selectedItems.delete(id);
-
-                    const box = e.target.closest('.yz-slot-items') || document;
-                    syncSelectAllItemsState(box);
-
-                    const vbeln = itemIdToSO.get(String(id));
-                    if (vbeln) {
-                        updateSODot(vbeln);
-                        // 🟢 BARU: Panggil sinkronisasi status checkbox header SO setelah mengubah item
-                        const soRow = document.querySelector(`.js-t2row[data-vbeln='${vbeln}']`);
-                        const tbody = soRow?.closest('tbody');
-                        if (tbody) syncSelectAllSoState(tbody);
-                    }
                     updateExportButton();
                     return;
                 }
@@ -842,10 +879,8 @@
             }
 
             // label kolom aksesibel di mobile
-            document.querySelectorAll('.yz-kunnr-row').forEach(row => {
-                row.querySelector('td:nth-child(2)')?.setAttribute('data-label', 'Customer');
-                row.querySelector('td:nth-child(3)')?.setAttribute('data-label', 'Total Stock Qty');
-                row.querySelector('td:nth-child(4)')?.setAttribute('data-label', 'Total Value');
+            document.querySelectorAll('.yz-customer-card').forEach(row => {
+                // Di sini tidak ada td langsung, kita skip/fokus pada logic JS di atas
             });
         });
     </script>

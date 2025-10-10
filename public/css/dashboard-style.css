@@ -7,10 +7,11 @@
     border-radius: 0.3rem;
 }
 
+/* Mengatur ulang yz-grid agar lebih fleksibel */
 .yz-grid {
     width: 100%;
     border-collapse: separate;
-    border-spacing: 0 10px;
+    border-spacing: 0; /* Dihapus untuk Level 1 yang baru */
 }
 
 .yz-card {
@@ -66,6 +67,7 @@ thead th {
     border-top: 0;
 }
 
+/* YZ-HEADER-CUSTOMER TIDAK DIGUNAKAN DI STRUKTUR BARU */
 .yz-header-customer th {
     background: #f0fdfa;
     color: #0f766e;
@@ -82,9 +84,10 @@ thead th {
     background: #e0e7ff; /* Warna latar biru yang sangat lembut */
     color: #3730a3; /* Warna teks ungu-biru tua yang kontras */
     border-bottom: 2px solid #c7d2fe; /* Warna border yang serasi */
-    font-weight: 600; /* Dibuat sama seperti header lain (tidak terlalu tebal) */
+    font-weight: 600;
 }
 
+/* Gaya lama untuk T1 (Tabel) TIDAK DIGUNAKAN/DIABAIKAN */
 .yz-header-customer th,
 .yz-kunnr-row td {
     text-align: center;
@@ -95,33 +98,20 @@ thead th {
     text-align: left;
 }
 
-.sticky-col {
-    position: sticky;
-    left: 0;
-    background: inherit;
-}
-
+/* Gaya lama untuk T1 (Tabel) TIDAK DIGUNAKAN/DIABAIKAN */
 .yz-kunnr-row td {
     background: #fff;
     border-top: 1px solid #e2e8f0;
     border-bottom: 1px solid #e2e8f0;
     transition: 0.2s background-color;
 }
+/* ... semua gaya .yz-kunnr-row, .yz-kunnr-row:hover, .yz-kunnr-row.is-open DIABAIKAN */
+/* ... Semua sticky-col yang terkait T1 lama juga DIABAIKAN */
 
-.yz-kunnr-row td:first-child {
-    border-left: 1px solid #e2e8f0;
-    border-top-left-radius: 25px;
-    border-bottom-left-radius: 25px;
-}
-
-.yz-kunnr-row td:last-child {
-    border-right: 1px solid #e2e8f0;
-    border-top-right-radius: 25px;
-    border-bottom-right-radius: 25px;
-}
-
-.yz-kunnr-row:hover td {
-    background: #f8f9fa;
+.sticky-col {
+    position: sticky;
+    left: 0;
+    background: inherit;
 }
 
 .yz-kunnr-row {
@@ -150,6 +140,13 @@ thead th {
     font-size: 0.8rem;
 }
 
+/* PERBARUAN: Style Caret untuk Card Row Level 1 */
+.yz-customer-card .kunnr-caret {
+    font-size: 1.25rem;
+    color: #1e40af; /* Warna biru untuk Caret */
+}
+
+.yz-customer-card.is-open .kunnr-caret,
 .yz-kunnr-row.is-open .kunnr-caret {
     transform: rotate(90deg);
 }
@@ -176,6 +173,13 @@ thead th {
     }
 }
 
+/* PERBARUAN: Style untuk Nested Container di Card Row Level 1 */
+.yz-nest-card .yz-nest-wrap {
+    background: #eff6ff; /* Latar belakang untuk konten nested (T2) */
+    padding: 1rem;
+    margin-left: 0;
+}
+
 .yz-nest[style=""] .yz-nest-wrap {
     animation: slideDown 0.4s ease-out;
 }
@@ -191,6 +195,82 @@ thead th {
         transform: translateY(0);
     }
 }
+
+/* --- OVERVIEW CUSTOMER CARD-ROW STYLES BARU (Tabel 1) --- */
+
+.yz-customer-list .d-grid {
+    padding: 0 1rem;
+}
+
+.yz-customer-card {
+    background: #ffffff;
+    border: 1px solid #e0e7ff; /* Border lembut dari warna item header */
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease-in-out;
+    position: relative;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.yz-customer-card:hover {
+    background-color: #f7f9ff;
+    border-color: #c7d2fe;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 10px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+}
+
+.yz-customer-card-overdue {
+    border-left: 5px solid #ef4444; /* Garis merah menonjol di kiri */
+}
+
+.yz-customer-card-overdue:hover {
+    border-left-color: #dc2626;
+}
+
+.yz-customer-card.is-open {
+    background-color: #eff6ff;
+    border-color: #bfdbfe;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: none;
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.yz-customer-card.is-open + .yz-nest-card {
+    border: 1px solid #bfdbfe;
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+}
+
+.yz-nest-card {
+    display: none; /* Diatur oleh JS */
+}
+
+.metric-box {
+    min-width: 90px;
+    border-left: 1px solid #e5e7eb;
+    padding-left: 1rem;
+}
+
+.metric-box:first-child {
+    border-left: none;
+    padding-left: 0;
+}
+
+/* Global Totals Card (Pengganti TFOOT Level 1) */
+.yz-global-total-card {
+    background: #d1fae5;
+    border: 1px solid #a7f3d0;
+    border-radius: 12px;
+}
+.yz-global-total-card h6 {
+    color: #059669;
+}
+
+
+/* --- END CUSTOMER CARD-ROW STYLES --- */
 
 .yz-mini {
     border: none;
@@ -262,6 +342,10 @@ thead th {
     50% {
         opacity: 0.6;
     }
+}
+
+.customer-focus-mode .yz-customer-card:not(.is-open) {
+    display: none !important;
 }
 
 .customer-focus-mode .yz-kunnr-row {
@@ -423,7 +507,7 @@ thead th {
 }
 
 .yz-scrollable-table-container {
-    max-height: 500px; /* Anda bisa sesuaikan tinggi maksimum sesuai kebutuhan */
+    max-height: 500px;
     overflow-y: auto;
     position: relative;
 }
@@ -432,8 +516,6 @@ thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    /* [PENTING] Pastikan baris ini ada dan aktif. 
-       Warnanya akan mengikuti class .table-light yang sudah ada di thead */
     background-color: #f8f9fa;
 }
 
@@ -479,37 +561,33 @@ thead th {
     position: absolute;
     inset: 0;
     z-index: 10;
-    padding: 1rem; /* Beri sedikit jarak dari tepi kartu induk */
-    display: none; /* Diubah oleh JavaScript saat di-klik */
-
-    /* Efek backdrop */
+    padding: 1rem;
     background-color: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(5px);
-    border-radius: 0.75rem; /* Menyesuaikan sudut kartu induk */
+    border-radius: 0.75rem;
+    display: none;
 }
 
-/* Mengatur kartu di dalam overlay agar mengisi 100% ruang
-    dan menjadi wadah flexbox vertikal. */
+/* Mengatur kartu di dalam overlay agar mengisi 100% ruang */
 #so-status-details > .card {
     height: 100%;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* Mencegah konten keluar dari sudut kartu */
+    overflow: hidden;
 }
 
-/* Mengatur card-body untuk "tumbuh" dan mengisi sisa ruang
-    dan juga menjadi wadah flexbox vertikal. */
+/* Mengatur card-body untuk "tumbuh" dan mengisi sisa ruang */
 #so-status-details .card-body {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* Penting agar tabel tidak membuat card-body melar */
+    overflow: hidden;
 }
 
 /* KUNCI UTAMA: Membuat HANYA area tabel yang bisa di-scroll. */
 #so-status-details .yz-scrollable-table-container {
-    flex-grow: 1; /* Perintahkan untuk mengisi semua sisa ruang vertikal */
-    overflow-y: auto; /* Tampilkan scrollbar jika kontennya lebih panjang */
+    flex-grow: 1;
+    overflow-y: auto;
 }
 
 #so-status-details,
@@ -579,7 +657,7 @@ thead th {
     z-index: 10;
     padding: 1rem;
     background: var(--bs-card-bg, #fff);
-    display: flex; /* penting: jadikan container flex */
+    display: flex;
     border-radius: 0.75rem;
 }
 
@@ -589,7 +667,7 @@ thead th {
     height: 100%;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* agar sudut radius rapi */
+    overflow: hidden;
 }
 
 /* Body kartu juga flex column dan boleh menyusut */
@@ -598,7 +676,7 @@ thead th {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
-    min-height: 0; /* kunci agar child bisa shrink (Chrome/Firefox) */
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -607,7 +685,7 @@ thead th {
 #po-overdue-details .yz-scrollable-table-container {
     flex: 1 1 auto;
     overflow: auto;
-    max-height: none !important; /* override 500px */
+    max-height: none !important;
 }
 
 /* Header tabel tetap lengket */
@@ -629,9 +707,9 @@ thead th {
 }
 
 .yz-scrollable-table-container {
-    max-height: 420px; /* Anda bisa sesuaikan tingginya */
+    max-height: 420px;
     overflow-y: auto;
-    position: relative; /* Penting untuk header tabel yang 'sticky' */
+    position: relative;
 }
 
 .yz-sticky-thead {

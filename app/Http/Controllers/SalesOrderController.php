@@ -246,7 +246,8 @@ class SalesOrderController extends Controller
                 // FILTER BARU: HANYA YANG Qty SO != Outs. SO
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
                 ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-                ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(t1.POSNR) as item_count')
+                // MODIFIKASI: Mengubah COUNT item menjadi COUNT SO unik
+                ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count, COUNT(t1.POSNR) as item_count')
                 ->orderBy('t2.NAME1')
                 ->get();
         }
@@ -707,7 +708,8 @@ class SalesOrderController extends Controller
             // FILTER BARU: Outs. SO != Qty SO (Item sudah pernah dikirim)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
             ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-            ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(t1.POSNR) as item_count')
+            // MODIFIKASI: Mengubah COUNT item menjadi COUNT SO unik
+            ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count')
             ->orderBy('t2.NAME1')
             ->get();
 
