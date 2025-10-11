@@ -514,9 +514,17 @@
             font-weight: 600;
         }
 
-        .yz-currency-toggle .btn.btn-primary {
+        .bg-teal-gradient .yz-currency-toggle .btn.btn-primary {
             background-color: #ffffff !important;
             color: #0d9488 !important;
+            /* Warna Teal untuk Semarang */
+            border-color: #ffffff !important;
+        }
+
+        .bg-indigo-gradient .yz-currency-toggle .btn.btn-primary {
+            background-color: #ffffff !important;
+            color: #4f46e5 !important;
+            /* Warna Indigo untuk Surabaya */
             border-color: #ffffff !important;
         }
 
@@ -1125,7 +1133,8 @@
         /* ======================== PO: ITEM WITH REMARK (INLINE) ======================== */
         (function poItemWithRemarkTableOnly() {
             const apiRemarkItems = "{{ route('po.api.remark_items') }}";
-            const apiRemarkDelete = "{{ route('po.api.remark_delete') }}";
+            const apiRemarkDelete = "{{ route('po.api.remark_delete') }}"; // Route ini sudah dihapus di Controller
+
             const listBox = document.getElementById('po-remark-list-box-inline');
             if (!listBox) return;
 
@@ -1200,17 +1209,7 @@
                 <td class="text-center">${plant || '-'}</td>
                 <td class="text-center">${otName}</td>
                 <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-                <td class="text-center">
-                    <button type="button"
-                            class="btn btn-sm btn-outline-danger js-del-remark"
-                            title="Hapus remark"
-                            data-vbeln="${so}"
-                            data-posnr="${posnr6}"
-                            data-werks="${werks}"
-                            data-auart="${auart}">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
+                {{-- Kolom Aksi DIHAPUS, hanya menyisakan data --}}
             </tr>`;
                 }).join('');
 
@@ -1226,7 +1225,7 @@
                         <th class="text-center" style="min-width:110px;">Plant</th>
                         <th class="text-center" style="min-width:160px;">Order Type</th>
                         <th style="min-width:240px;">Remark</th>
-                        <th class="text-center" style="width:70px;">Aksi</th>
+                        {{-- Kolom Aksi DIHAPUS --}}
                     </tr>
                 </thead>
                 <tbody>${body}</tbody>
@@ -1264,7 +1263,7 @@
 
             // Klik baris => buka PO Report (via redirector)
             listBox.addEventListener('click', (ev) => {
-                if (ev.target.closest('.js-del-remark')) return;
+                // Baris ini dihapus: if (ev.target.closest('.js-del-remark')) return;
                 const tr = ev.target.closest('.js-remark-row');
                 if (!tr?.dataset.payload) return;
 
@@ -1295,48 +1294,6 @@
                 document.body.appendChild(form);
                 form.submit();
             });
-
-            // Hapus remark
-            listBox.addEventListener('click', async (ev) => {
-                const btn = ev.target.closest('.js-del-remark');
-                if (!btn) return;
-                ev.stopPropagation();
-
-                const vbeln = btn.dataset.vbeln || '';
-                const posnr = btn.dataset.posnr || ''; // sudah 6 digit
-                const werks = btn.dataset.werks || '';
-                const auart = btn.dataset.auart || '';
-
-                const ok = confirm(`Hapus remark untuk SO ${vbeln} / Item ${stripZeros(posnr)}?`);
-                if (!ok) return;
-
-                btn.disabled = true;
-                try {
-                    const res = await fetch(apiRemarkDelete, {
-                        method: 'DELETE',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')
-                                .getAttribute('content'),
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        body: JSON.stringify({
-                            vbeln,
-                            posnr,
-                            werks,
-                            auart
-                        })
-                    });
-                    const json = await res.json();
-                    if (!json.ok) throw new Error(json.error || 'Gagal menghapus remark.');
-                    await loadList();
-                } catch (e) {
-                    alert(e.message || 'Gagal menghapus remark.');
-                    btn.disabled = false;
-                }
-            });
-
-            // mulai muat
             loadList();
         })();
     </script>

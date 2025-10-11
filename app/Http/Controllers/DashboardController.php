@@ -50,9 +50,9 @@ class DashboardController extends Controller
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
         // 4) Variabel dashboard
-        $chartData                     = [];
-        $selectedLocationName         = 'All Locations';
-        $selectedTypeName              = 'All Types';
+        $chartData = [];
+        $selectedLocationName = 'All Locations';
+        $selectedTypeName = 'All Types';
 
         // ===== PO DASHBOARD =====
         $today = now()->startOfDay();
@@ -200,9 +200,9 @@ class DashboardController extends Controller
 
         // Status ring (DIKOSONGKAN)
         $chartData['so_status'] = [
-            'overdue'         => 0,
+            'overdue'       => 0,
             'due_this_week' => 0,
-            'on_time'         => 0,
+            'on_time'       => 0,
         ];
 
         // =========================================================================
@@ -340,13 +340,13 @@ class DashboardController extends Controller
 
         // 5) Return view PO dashboard
         return view('dashboard', [
-            'mapping'                 => $mapping,
-            'chartData'             => $chartData,
-            'selectedLocation'         => $location,
-            'selectedLocationName'     => $selectedLocationName,
-            'selectedType'             => $type,
-            'selectedTypeName'         => $selectedTypeName,
-            'view'                     => 'po', // fix ke 'po'
+            'mapping'                   => $mapping,
+            'chartData'                 => $chartData,
+            'selectedLocation'          => $location,
+            'selectedLocationName'      => $selectedLocationName,
+            'selectedType'              => $type,
+            'selectedTypeName'          => $selectedTypeName,
+            'view'                      => 'po', // fix ke 'po'
         ]);
     }
 
@@ -394,9 +394,9 @@ class DashboardController extends Controller
             ->selectRaw("
         TRIM(t2.BSTNK)      AS PO,
         TRIM(t2.VBELN)      AS SO,
-        DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')  AS EDATU,   
-        DATEDIFF(CURDATE(), {$safeEdatu})  AS OVERDUE_DAYS,
-        MAX(t2.NAME1)       AS CUSTOMER_NAME_MODAL  -- <<< PENAMBAHAN KOLOM
+        DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')   AS EDATU,   
+        DATEDIFF(CURDATE(), {$safeEdatu})   AS OVERDUE_DAYS,
+        MAX(t2.NAME1)       AS CUSTOMER_NAME_MODAL       -- <<< PENAMBAHAN KOLOM
         ")
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->whereIn('t2.IV_AUART_PARAM', $auartList)
@@ -495,29 +495,29 @@ class DashboardController extends Controller
 
                 // total value all
                 DB::raw("(SELECT COALESCE(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))),0)
-                  FROM so_yppr079_t1 AS t1
-                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                  " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                  {$auartWhereInClause}
-                 ) AS total_value"),
+                    FROM so_yppr079_t1 AS t1
+                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
+                    {$auartWhereInClause}
+                   ) AS total_value"),
 
                 // outs qty
                 DB::raw("(SELECT COALESCE(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))),0)
-                  FROM so_yppr079_t1 AS t1
-                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                  " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                  {$auartWhereInClause}
-                  AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
-                 ) AS outs_qty"),
+                    FROM so_yppr079_t1 AS t1
+                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
+                    {$auartWhereInClause}
+                    AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
+                   ) AS outs_qty"),
 
                 // >>> NEW: jumlah remark pada item untuk VBELN ini
                 DB::raw("(SELECT COUNT(*)
-                  FROM item_remarks_po AS ir
-                  WHERE TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                  {$werksClauseIr}
-                  {$auartWhereInClauseIr}
-                  AND TRIM(COALESCE(ir.remark,'')) <> ''
-                 ) AS po_remark_count"),
+                    FROM item_remarks_po AS ir
+                    WHERE TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                    {$werksClauseIr}
+                    {$auartWhereInClauseIr}
+                    AND TRIM(COALESCE(ir.remark,'')) <> ''
+                   ) AS po_remark_count"),
             ])
             // Filter utama berdasarkan KUNNR
             ->where(function ($q) use ($kunnr) {
@@ -666,29 +666,30 @@ class DashboardController extends Controller
         // - langsung expand Tabel-1 -> Tabel-2
         // - highlight baris SO (dan/atau PO)
         $params = [
-            'view'             => 'po',                  // paksa konteks PO
-            'werks'            => $so_info->IV_WERKS_PARAM,
-            'auart'            => $so_info->IV_AUART_PARAM,
-            'compact'          => 1,
-            'auto_expand'      => 1,                     // sinyal buka T2
-            'highlight_kunnr'  => $so_info->KUNNR,       // buka customer yang tepat
-            'highlight_vbeln'  => $so_info->VBELN,       // sorot baris SO
-            'highlight_bstnk'  => $so_info->BSTNK,       // jika user cari PO, tetap tersorot
-            'search_term'      => $term,
+            'view'              => 'po',              // paksa konteks PO
+            'werks'             => $so_info->IV_WERKS_PARAM,
+            'auart'             => $so_info->IV_AUART_PARAM,
+            'compact'           => 1,
+            'auto_expand'       => 1,                     // sinyal buka T2
+            'highlight_kunnr'   => $so_info->KUNNR,       // buka customer yang tepat
+            'highlight_vbeln'   => $so_info->VBELN,       // sorot baris SO
+            'highlight_bstnk'   => $so_info->BSTNK,       // jika user cari PO, tetap tersorot
+            'search_term'       => $term,
             // (opsional) kompatibilitas lama bila ada JS yang membaca 'auto'
-            'auto'             => 1,
+            'auto'              => 1,
         ];
 
         $encrypted = Crypt::encrypt($params);
 
         return redirect()->route('po.report', [
-            'q'               => $encrypted,
-            'auto_expand'     => 1,
-            'highlight_kunnr' => $so_info->KUNNR,
-            'highlight_vbeln' => $so_info->VBELN,
-            'highlight_bstnk' => $so_info->BSTNK,
+            'q'                 => $encrypted,
+            'auto_expand'       => 1,
+            'highlight_kunnr'   => $so_info->KUNNR,
+            'highlight_vbeln'   => $so_info->VBELN,
+            'highlight_bstnk'   => $so_info->BSTNK,
         ]);
     }
+
     public function redirector(Request $request)
     {
         try {
@@ -736,11 +737,11 @@ class DashboardController extends Controller
 
             if ($route === 'po.report') {
                 $plain = array_filter([
-                    'auto_expand'      => $clean['auto_expand'] ?? null,
-                    'highlight_kunnr'  => $clean['highlight_kunnr'] ?? null,
-                    'highlight_vbeln'  => $clean['highlight_vbeln'] ?? null,
-                    'highlight_posnr'  => $clean['highlight_posnr'] ?? null,
-                    'highlight_bstnk'  => $clean['highlight_bstnk'] ?? null,
+                    'auto_expand'       => $clean['auto_expand'] ?? null,
+                    'highlight_kunnr'   => $clean['highlight_kunnr'] ?? null,
+                    'highlight_vbeln'   => $clean['highlight_vbeln'] ?? null,
+                    'highlight_posnr'   => $clean['highlight_posnr'] ?? null,
+                    'highlight_bstnk'   => $clean['highlight_bstnk'] ?? null,
                 ], fn($v) => $v !== null && $v !== '');
                 return redirect()->route('po.report', array_merge(['q' => $q], $plain));
             }
@@ -885,7 +886,8 @@ class DashboardController extends Controller
         })->pluck('IV_AUART')->unique()->toArray();
 
         // Tentukan AUART List: Gabungkan Export + Replace jika AUART yang dikirim termasuk Export codes.
-        $auartList = [$request->query('auart')];
+        $auartFromRequest = $request->input('auart');
+        $auartList = [$auartFromRequest];
         if (!empty($auartList[0]) && in_array($auartList[0], $exportAuartCodes)) {
             $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
         }
@@ -917,7 +919,9 @@ class DashboardController extends Controller
             't1.MAKTX',
             't1.KWMENG',
             't1.QTY_GI',
-            't1.QTY_BALANCE2'
+            't1.QTY_BALANCE2',
+            't1.KALAB',
+            't1.KALAB2'
         )
             ->orderBy('t2.VBELN', 'asc')
             ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
@@ -930,14 +934,14 @@ class DashboardController extends Controller
     public function apiSoStatusDetails(Request $request)
     {
         $request->validate([
-            'status'      => 'required|string|in:overdue,due_this_week,on_time',
+            'status'        => 'required|string|in:overdue,due_this_week,on_time',
             'location'      => 'nullable|string|in:2000,3000',
             'type'          => 'nullable|string|in:lokal,export',
         ]);
 
-        $status      = $request->query('status');
-        $location      = $request->query('location');
-        $type          = $request->query('type');
+        $status         = $request->query('status');
+        $location       = $request->query('location');
+        $type           = $request->query('type');
 
         // --- LOGIKA PENGGABUNGAN ---
         $mapping = DB::table('maping')->get();
@@ -1013,13 +1017,13 @@ class DashboardController extends Controller
         $validated = $request->validate([
             'customerName' => 'required|string',
             'locationName' => 'required|string|in:Semarang,Surabaya',
-            'type'       => 'nullable|string', // Mengubah validasi menjadi nullable string
+            'type'          => 'nullable|string', // Mengubah validasi menjadi nullable string
         ]);
 
         $customerName = $validated['customerName'];
         $locationName = $validated['locationName'];
-        $type       = $validated['type'] ?? null;
-        $werks        = $locationName === 'Semarang' ? '3000' : '2000';
+        $type           = $validated['type'] ?? null;
+        $werks          = $locationName === 'Semarang' ? '3000' : '2000';
 
         // --- LOGIKA PENGGABUNGAN ---
         $mapping = DB::table('maping')->get();
@@ -1069,7 +1073,9 @@ class DashboardController extends Controller
             't1.MAKTX',
             't1.KWMENG',
             't1.QTY_GI',
-            't1.QTY_BALANCE2'
+            't1.QTY_BALANCE2',
+            't1.KALAB', // <<< BARU
+            't1.KALAB2' // <<< BARU
         )
             ->orderBy('t2.VBELN')
             ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
@@ -1077,14 +1083,14 @@ class DashboardController extends Controller
 
         $totals = [
             'total_item' => $items->count(),
-            'total_po'     => $items->pluck('PO')->filter()->unique()->count(),
+            'total_po'   => $items->pluck('PO')->filter()->unique()->count(),
         ];
 
         $meta = [
             'customerName' => $customerName,
             'locationName' => $locationName,
             'type'       => $type,
-            'generatedAt'    => now()->format('d-m-Y'),
+            'generatedAt'      => now()->format('d-m-Y'),
         ];
 
         if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
@@ -1112,6 +1118,7 @@ class DashboardController extends Controller
             'totals' => $totals,
         ]);
     }
+
     public function apiPoRemarkItems(Request $request)
     {
         $request->validate([
@@ -1137,15 +1144,20 @@ class DashboardController extends Controller
         })->pluck('IV_AUART')->unique()->toArray();
 
         $rows = DB::table('item_remarks_po as ir')
-            ->leftJoin('so_yppr079_t1 as t1', function ($j) {
+            // =========================================================================
+            // PERUBAHAN UTAMA: LEFT JOIN -> INNER JOIN
+            // INNER JOIN ke t1 untuk memastikan item PO/SO masih ada di so_yppr079_t1
+            // =========================================================================
+            ->join('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
                     ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
+            // LEFT JOIN ke t2 untuk mendapatkan data PO/KUNNR
             ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
             ->selectRaw("
             TRIM(ir.VBELN) AS VBELN,
             TRIM(ir.POSNR) AS POSNR,
-            COALESCE(t2.BSTNK,'') AS BSTNK,          -- PO
+            COALESCE(t2.BSTNK,'') AS BSTNK,         -- PO
             COALESCE(t1.MATNR,'') AS MATNR,
             COALESCE(t1.MAKTX,'') AS MAKTX,
             COALESCE(t1.WAERK,'') AS WAERK,
@@ -1175,33 +1187,5 @@ class DashboardController extends Controller
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);
-    }
-
-    public function apiPoRemarkDelete(Request $request)
-    {
-        $request->validate([
-            'vbeln' => 'required|string',
-            'posnr' => 'required|string', // kirim 6 digit (atau bebas, nanti dipad)
-            'werks' => 'nullable|string|in:2000,3000',
-            'auart' => 'nullable|string',
-        ]);
-
-        $vbeln  = trim($request->vbeln);
-        $posnr6 = str_pad(trim($request->posnr), 6, '0', STR_PAD_LEFT);
-        $werks  = $request->filled('werks') ? trim($request->werks) : null;
-        $auart  = $request->filled('auart') ? trim($request->auart) : null;
-
-        $q = DB::table('item_remarks_po')
-            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$vbeln])
-            ->whereRaw('LPAD(TRIM(CAST(POSNR AS CHAR)), 6, "0") = ?', [$posnr6])
-            ->when($werks, fn($qq) => $qq->where('IV_WERKS_PARAM', $werks))
-            ->when($auart, fn($qq) => $qq->where('IV_AUART_PARAM', $auart));
-
-        $deleted = $q->delete();
-
-        if (!$deleted) {
-            return response()->json(['ok' => false, 'error' => 'Data tidak ditemukan.'], 404);
-        }
-        return response()->json(['ok' => true, 'deleted' => (int)$deleted]);
     }
 }

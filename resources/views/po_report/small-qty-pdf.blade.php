@@ -92,6 +92,7 @@
         $items = collect($items ?? []);
         $fmtInt = fn($n) => number_format((float) $n, 0, ',', '.');
         $rows = $items->sortBy([['SO', 'asc'], ['POSNR', 'asc']])->values();
+        $colspan = 10;
     @endphp
 
     <div class="header">
@@ -104,17 +105,23 @@
         <thead class="customer-header-group">
             {{-- TAMPILKAN Customer SEKALI SAJA di header tabel --}}
             <tr class="customer-header-row">
-                <td colspan="8">Customer: {{ $meta['customerName'] }} — Location: {{ $meta['locationName'] }}</td>
+                {{-- PERUBAHAN: Sesuaikan colspan --}}
+                <td colspan="{{ $colspan }}">Customer: {{ $meta['customerName'] }} — Location:
+                    {{ $meta['locationName'] }}</td>
             </tr>
             <tr class="item-thead-row">
                 <th style="width:4%;">No.</th>
-                <th style="width:12%;">PO</th>
-                <th style="width:12%;">SO</th>
-                <th style="width:6%;">Item</th>
-                <th class="text-left" style="width:40%;">Desc FG</th>
-                <th style="width:8%;">Qty PO</th>
-                <th style="width:8%;">Shipped</th>
-                <th style="width:10%;">Outstanding</th>
+                <th style="width:10%;">PO</th>
+                <th style="width:10%;">SO</th>
+                <th style="width:5%;">Item</th>
+                <th class="text-left" style="width:30%;">Desc FG</th>
+                <th style="width:7%;">Qty PO</th>
+                <th style="width:7%;">Shipped</th>
+                <th style="width:7%;">Outstanding</th>
+                {{-- <<< PERUBAHAN: Kolom WHFG dan Stock Packing >>> --}}
+                <th style="width:7%;">WHFG</th>
+                <th style="width:10%;">Stock Packing</th>
+                {{-- <<< AKHIR PERUBAHAN >>> --}}
             </tr>
         </thead>
         <tbody>
@@ -129,10 +136,16 @@
                     <td class="text-right">{{ $fmtInt($r->QTY_GI ?? 0) }}</td>
                     <td class="text-right"><strong>{{ $fmtInt($r->QTY_BALANCE2 ?? 0) }}</strong>
                     </td>
+                    {{-- <<< PERUBAHAN: Tambahkan data KALAB dan KALAB2 >>> --}}
+                    <td class="text-right">{{ $fmtInt($r->KALAB ?? 0) }}</td>
+                    <td class="text-right">{{ $fmtInt($r->KALAB2 ?? 0) }}</td>
+                    {{-- <<< AKHIR PERUBAHAN >>> --}}
                 </tr>
             @empty
                 <tr>
-                    <td colspan="8" class="item-row text-center">Tidak ada data.</td>
+                    {{-- PERUBAHAN: Sesuaikan colspan --}}
+                    <td colspan="{{ $colspan }}" class="item-row text-center">Tidak ada data.
+                    </td>
                 </tr>
             @endforelse
         </tbody>

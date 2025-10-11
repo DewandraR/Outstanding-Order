@@ -280,14 +280,11 @@ class SalesOrderController extends Controller
      */
     public function apiGetSoByCustomer(Request $request)
     {
-        // ... (Fungsi ini tidak berubah)
-        // ... (Karena fungsi ini tidak melayani chart Small Qty, tidak perlu diubah)
         $request->validate([
             'kunnr' => 'required|string',
             'werks' => 'required|string',
             'auart' => 'required|string',
         ]);
-        // ... (sisanya tidak berubah)
         $werks = $request->werks;
         $auart = $request->auart;
 
@@ -386,8 +383,6 @@ class SalesOrderController extends Controller
      */
     public function apiGetItemsBySo(Request $request)
     {
-        // ... (Fungsi ini tidak berubah)
-        // ... (Karena fungsi ini tidak melayani chart Small Qty, tidak perlu diubah)
         $request->validate([
             'vbeln' => 'required|string',
             'werks' => 'required|string',
@@ -460,8 +455,6 @@ class SalesOrderController extends Controller
      */
     public function exportData(Request $request)
     {
-        // ... (Fungsi ini tidak berubah)
-        // ... (Fungsi ini tidak melayani chart Small Qty, tidak perlu diubah)
         $validated = $request->validate([
             'item_ids'      => 'required|array',
             'item_ids.*'    => 'integer',
@@ -541,13 +534,12 @@ class SalesOrderController extends Controller
      */
     public function apiSaveRemark(Request $request)
     {
-        // ... (Fungsi ini tidak berubah)
         $validated = $request->validate([
             'werks'  => 'required|string',
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string',
-            'remark' => 'nullable|string|max:1000',
+            'remark' => 'nullable|string|max:60',
         ]);
 
         $remarkText = trim($validated['remark'] ?? '');
@@ -583,8 +575,6 @@ class SalesOrderController extends Controller
 
     public function exportCustomerSummary(Request $request)
     {
-        // ... (Fungsi ini tidak berubah)
-        // ... (Fungsi ini tidak melayani chart Small Qty, tidak perlu diubah)
         if ($request->filled('q')) {
             try {
                 $data = Crypt::decrypt($request->query('q'));
@@ -725,7 +715,6 @@ class SalesOrderController extends Controller
      */
     public function apiSmallQtyDetails(Request $request)
     {
-        // ... (Logika di sini juga harus ditambahkan filter baru)
         $request->validate([
             'customerName' => 'required|string',
             'werks' => 'required|string',
@@ -755,7 +744,9 @@ class SalesOrderController extends Controller
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
                 't1.MAKTX',
                 't1.KWMENG',
-                't1.PACKG'
+                't1.PACKG',
+                't1.KALAB', // <<< TAMBAH WHFG
+                't1.KALAB2' // <<< TAMBAH Stock Packing
             )
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 
@@ -767,7 +758,6 @@ class SalesOrderController extends Controller
      */
     public function exportSmallQtyPdf(Request $request)
     {
-        // ... (Logika di sini juga harus ditambahkan filter baru)
         $validated = $request->validate([
             'customerName' => 'required|string',
             'werks' => 'required|string',
@@ -796,7 +786,9 @@ class SalesOrderController extends Controller
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
                 't1.MAKTX',
                 't1.KWMENG',
-                't1.PACKG'
+                't1.PACKG',
+                't1.KALAB', // <<< TAMBAH WHFG
+                't1.KALAB2' // <<< TAMBAH Stock Packing
             )
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 

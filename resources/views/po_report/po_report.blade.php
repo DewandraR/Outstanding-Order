@@ -361,7 +361,8 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
 
                                 {{-- Total Overdue Value --}}
                                 <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
+                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}
+                                    </div>
                                     <div class="metric-label">Total Overdue Value</div>
                                 </div>
 
@@ -621,8 +622,8 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
     </div>
     {{-- Remark Modal (DISALIN DARI SO REPORT) --}}
     <div class="modal fade" id="remarkModal" tabindex="-1" aria-labelledby="remarkModalLabel" aria-hidden="true"
-        data-bs-backdrop="false" data-bs-keyboard="true">
-        <div class="modal-dialog">
+        data-bs-backdrop="static" data-bs-keyboard="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="remarkModalLabel">Tambah/Edit Catatan PO</h5>
@@ -632,12 +633,19 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                     <form>
                         <div class="mb-3">
                             <label for="remark-text" class="col-form-label">Catatan untuk Item:</label>
-                            <textarea class="form-control" id="remark-text" rows="4"></textarea>
+                            <textarea class="form-control" id="remark-text" rows="3" maxlength="60" placeholder="Maks. 60 karakter"></textarea>
+                            <div class="form-text text-end">
+                                <span id="remark-count">0</span>/60
+                            </div>
                         </div>
                     </form>
                     <div id="remark-feedback" class="small mt-2"></div>
                 </div>
                 <div class="modal-footer">
+                    {{-- 💡 MODIFIKASI: Tombol Hapus Catatan --}}
+                    <button type="button" class="btn btn-outline-danger me-auto" id="delete-remark-btn"
+                        style="display: none;">Hapus Catatan</button>
+
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
                     <button type="button" class="btn btn-primary" id="save-remark-btn">Simpan Catatan</button>
                 </div>
@@ -1228,6 +1236,8 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                         <th class="text-center">Qty PO</th>
                         <th class="text-center">Shipped</th>
                         <th class="text-center">Outstanding</th>
+                        <th class="text-center">WHFG</th>
+                        <th class="text-center">Packing Stock</th>
                         </tr>`;
 
                     let tableBodyHtml = result.data.map((item, idx) => {
@@ -1235,6 +1245,8 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                         const qtyPo = fmtNum(item.KWMENG, 0);
                         const qtyShp = fmtNum(item.QTY_GI, 0);
                         const qtyOuts = fmtNum(item.QTY_BALANCE2, 0);
+                        const qtyWhfg = fmtNum(item.KALAB, 0);
+                        const qtyPaking = fmtNum(item.KALAB2, 0);
                         return `<tr>
                         <td class="text-center">${idx+1}</td>
                         <td class="text-center">${po}</td>
@@ -1244,6 +1256,8 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                         <td class="text-center">${qtyPo}</td>
                         <td class="text-center">${qtyShp}</td>
                         <td class="text-center fw-bold text-danger">${qtyOuts}</td>
+                        <td class="text-center">${qtyWhfg}</td>
+                        <td class="text-center">${qtyPaking}</td>
                         </tr>`;
                     }).join('');
 
@@ -1691,12 +1705,28 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
             // === FIX: inisialisasi elemen & modal Remark + endpoint (WAJIB ADA) ===
             const remarkModalEl = document.getElementById('remarkModal');
-            const remarkModal = remarkModalEl ? (bootstrap.Modal.getInstance(remarkModalEl) || new bootstrap.Modal(
-                remarkModalEl)) : null;
+            const deleteRemarkBtn = document.getElementById('delete-remark-btn');
+            if (remarkModalEl && remarkModalEl.parentElement !== document.body) {
+                document.body.appendChild(remarkModalEl);
+            }
+            const remarkModal = remarkModalEl ?
+                (bootstrap.Modal.getInstance(remarkModalEl) || new bootstrap.Modal(remarkModalEl)) :
+                null;
             const remarkTextarea = document.getElementById('remark-text');
             const saveRemarkBtn = document.getElementById('save-remark-btn');
             const remarkFeedback = document.getElementById('remark-feedback');
             const apiSavePoRemark = "{{ route('api.po.remark.save') }}"; // pastikan route ini didefinisikan
+
+            const REMARK_MAX = 60;
+            const remarkCountEl = document.getElementById('remark-count');
+            const updateRemarkCounter = () => {
+                if (!remarkTextarea || !remarkCountEl) return;
+                remarkCountEl.textContent = String(remarkTextarea.value.length);
+            };
+            if (remarkTextarea) {
+                +remarkTextarea.setAttribute('maxlength', REMARK_MAX);
+                remarkTextarea.addEventListener('input', updateRemarkCounter);
+            }
 
             // Helper: nyalakan/matikan bendera remark di baris PO (T2) berdasarkan dot di T3
             function updatePoRemarkFlagFromDom(vbeln) {
@@ -2339,10 +2369,12 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
             document.body.addEventListener('click', (e) => {
                 // Memicu modal Remark (ikon pensil di T3)
+                // 💡 MODIFIKASI: Ganti 'po-remark-icon'
                 if (!e.target.classList.contains('po-remark-icon')) return;
 
                 const rowEl = e.target.closest('tr');
                 const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
+                const hasRemark = currentRemark.trim() !== ''; // 💡 BARU
 
                 if (!remarkModalEl || !saveRemarkBtn || !remarkModal) return;
 
@@ -2352,19 +2384,38 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 saveRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
                 saveRemarkBtn.dataset.posnr = rowEl.dataset.posnrDb; // POSNR versi DB ('000010')
 
+                // 💡 BARU: Atur tombol Hapus Catatan
+                if (deleteRemarkBtn) {
+                    deleteRemarkBtn.style.display = hasRemark ? 'inline-block' : 'none';
+                    // Salin data key ke tombol delete (agar bisa diakses di handler delete)
+                    deleteRemarkBtn.dataset.werks = rowEl.dataset.werksKey;
+                    deleteRemarkBtn.dataset.auart = rowEl.dataset.auartKey;
+                    deleteRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
+                    deleteRemarkBtn.dataset.posnr = rowEl.dataset.posnrDb;
+                }
+
                 remarkTextarea.value = currentRemark;
                 remarkFeedback.textContent = '';
+                updateRemarkCounter();
 
                 remarkModal.show();
             });
 
             saveRemarkBtn?.addEventListener('click', async function() {
+                const text = (remarkTextarea.value || '').trim();
+                if (text.length > 60) {
+                    remarkFeedback.textContent =
+                        `Maksimal ${REMARK_MAX} karakter. (${text.length}/${REMARK_MAX})`;
+                    remarkFeedback.className = 'small mt-2 text-danger';
+                    updateRemarkCounter();
+                    return;
+                }
                 const payload = {
                     werks: this.dataset.werks,
                     auart: this.dataset.auart,
                     vbeln: this.dataset.vbeln,
                     posnr: this.dataset.posnr,
-                    remark: remarkTextarea.value
+                    remark: text
                 };
                 const vbeln = payload.vbeln;
                 this.disabled = true;
@@ -2435,6 +2486,26 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     this.disabled = false;
                     this.innerHTML = 'Simpan Catatan';
                 }
+            });
+
+            deleteRemarkBtn?.addEventListener('click', async function() {
+                // Konfirmasi user sebelum menghapus
+                if (!confirm("Anda yakin ingin menghapus catatan ini?")) {
+                    return;
+                }
+
+                // Kosongkan textarea agar logic saveRemarkBtn menghapus dari database
+                remarkTextarea.value = '';
+                saveRemarkBtn.dataset.werks = this.dataset.werks;
+                saveRemarkBtn.dataset.auart = this.dataset.auart;
+                saveRemarkBtn.dataset.vbeln = this.dataset.vbeln;
+                saveRemarkBtn.dataset.posnr = this.dataset.posnr;
+
+                // Simulasikan klik tombol simpan (memakai logika yang sama untuk menghapus saat value kosong)
+                await saveRemarkBtn.click();
+
+                // Saat penghapusan berhasil, sembunyikan tombol Hapus
+                this.style.display = 'none';
             });
             // ---------- END REMARK HANDLERS ----------
 

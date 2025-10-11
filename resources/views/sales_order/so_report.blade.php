@@ -301,7 +301,8 @@
 
                                 {{-- Total Overdue Value --}}
                                 <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
+                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}
+                                    </div>
                                     <div class="metric-label">Total Overdue Value</div>
                                 </div>
 
@@ -387,12 +388,21 @@
                     <form>
                         <div class="mb-3">
                             <label for="remark-text" class="col-form-label">Catatan untuk Item:</label>
-                            <textarea class="form-control" id="remark-text" rows="4"></textarea>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <small class="text-muted">Maks. 60 karakter</small>
+                                <small id="remark-count" class="text-muted">0/60</small>
+                            </div>
+
+                            <textarea class="form-control" id="remark-text" rows="4" maxlength="60"></textarea>
                         </div>
                     </form>
                     <div id="remark-feedback" class="small mt-2"></div>
                 </div>
                 <div class="modal-footer">
+                    {{-- 💡 TOMBOL BARU: Hapus Catatan --}}
+                    <button type="button" class="btn btn-outline-danger me-auto" id="delete-remark-btn"
+                        style="display: none;">Hapus Catatan</button>
+
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
                     <button type="button" class="btn btn-primary" id="save-remark-btn">Simpan Catatan</button>
                 </div>
@@ -653,7 +663,85 @@
             if (!remarkModal) remarkModal = new bootstrap.Modal(remarkModalEl);
             const remarkTextarea = document.getElementById('remark-text');
             const saveRemarkBtn = document.getElementById('save-remark-btn');
+            const deleteRemarkBtn = document.getElementById('delete-remark-btn'); // 💡 BARU
             const remarkFeedback = document.getElementById('remark-feedback');
+            /* ===== Remark limiter (max 60) - inline ===== */
+            const MAX_REMARK = 60;
+
+            if (remarkTextarea) {
+                // hard limit di elemen
+                remarkTextarea.setAttribute('maxlength', String(MAX_REMARK));
+
+                // buat counter jika belum ada
+                let remarkCountEl = document.getElementById('remark-count');
+                if (!remarkCountEl) {
+                    const label = document.querySelector('label[for="remark-text"]');
+                    const wrap = document.createElement('div');
+                    wrap.className = 'd-flex justify-content-between align-items-center mb-1';
+
+                    const left = document.createElement('small');
+                    left.className = 'text-muted';
+                    left.textContent = 'Maks. 60 karakter';
+
+                    remarkCountEl = document.createElement('small');
+                    remarkCountEl.id = 'remark-count';
+                    remarkCountEl.className = 'text-muted';
+                    remarkCountEl.textContent = `0/${MAX_REMARK}`;
+
+                    wrap.appendChild(left);
+                    wrap.appendChild(remarkCountEl);
+
+                    if (label && label.parentNode) {
+                        label.insertAdjacentElement('afterend', wrap);
+                    } else {
+                        // fallback: taruh di atas textarea
+                        remarkTextarea.parentNode.insertBefore(wrap, remarkTextarea);
+                    }
+
+                    // gaya kecil saat limit tercapai
+                    const styleTag = document.createElement('style');
+                    styleTag.textContent = '#remark-count.limit{color:#dc3545;font-weight:600;}';
+                    document.head.appendChild(styleTag);
+                }
+
+                function updateRemarkCounter() {
+                    const len = (remarkTextarea.value || '').length;
+                    remarkCountEl.textContent = `${len}/${MAX_REMARK}`;
+                    remarkCountEl.classList.toggle('limit', len >= MAX_REMARK);
+                }
+
+                function enforceMax() {
+                    if (remarkTextarea.value.length > MAX_REMARK) {
+                        remarkTextarea.value = remarkTextarea.value.slice(0, MAX_REMARK);
+                    }
+                    updateRemarkCounter();
+                }
+
+                // ketik & paste
+                remarkTextarea.addEventListener('input', enforceMax);
+                remarkTextarea.addEventListener('paste', () => requestAnimationFrame(enforceMax));
+
+                // saat modal tampil, sinkronkan counter
+                if (remarkModalEl) {
+                    remarkModalEl.addEventListener('shown.bs.modal', () => {
+                        enforceMax();
+                        // fokuskan textarea
+                        try {
+                            remarkTextarea.focus({
+                                preventScroll: false
+                            });
+                        } catch {}
+                    });
+                }
+
+                // init
+                updateRemarkCounter();
+
+                // expose kecil agar bisa dipakai di handler lain
+                window.__updateRemarkCounter = updateRemarkCounter;
+                window.__enforceRemarkMax = enforceMax;
+            }
+
 
             const smallQtyChartContainer = document.getElementById('chartSmallQtyByCustomer')?.closest(
                 '.chart-container');
@@ -1033,8 +1121,6 @@
                 return html;
             }
 
-            /* ... sisa kode JavaScript lainnya tetap sama ... */
-
             async function ensureItemsLoadedForSO(vbeln) {
                 if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
                 const u = new URL(apiItemsBySo, window.location.origin);
@@ -1207,8 +1293,6 @@
                 if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
                     .stopPropagation();
             }, true);
-
-            /* ... sisa kode lainnya tetap sama ... */
 
 
             /* ---------- Expand Level-1 (load T2) - Menggunakan .yz-customer-card BARU ---------- */
@@ -1549,6 +1633,7 @@
                 if (!e.target.classList.contains('remark-icon')) return;
                 const rowEl = e.target.closest('tr');
                 const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
+                const hasRemark = currentRemark.trim() !== ''; // 💡 BARU
 
                 saveRemarkBtn.dataset.werks = rowEl.dataset.werks;
                 saveRemarkBtn.dataset.auart = rowEl.dataset.auart;
@@ -1556,28 +1641,56 @@
                 saveRemarkBtn.dataset.posnr = rowEl.dataset.posnr; // POSNR dari UI
                 saveRemarkBtn.dataset.posnrKey = rowEl.dataset.posnrKey; // POSNR_KEY (6 digit)
 
-                remarkTextarea.value = currentRemark;
+                // 💡 BARU: Atur tombol Hapus Catatan
+                if (deleteRemarkBtn) {
+                    deleteRemarkBtn.style.display = hasRemark ? 'inline-block' : 'none';
+                    // Salin data key ke tombol delete (berguna untuk logic delete)
+                    deleteRemarkBtn.dataset.werks = rowEl.dataset.werks;
+                    deleteRemarkBtn.dataset.auart = rowEl.dataset.auart;
+                    deleteRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
+                    deleteRemarkBtn.dataset.posnrKey = rowEl.dataset.posnrKey;
+                }
+
+                // isi + trim bila > 60
+                remarkTextarea.value = currentRemark || '';
+                if (typeof window.__enforceRemarkMax === 'function') window.__enforceRemarkMax();
                 remarkFeedback.textContent = '';
+
                 if (remarkModalEl.parentElement !== document.body) document.body.appendChild(remarkModalEl);
-                if (bootstrap.Modal.getInstance(remarkModalEl)) bootstrap.Modal.getInstance(remarkModalEl)
-                    .hide();
+                const inst = bootstrap.Modal.getInstance(remarkModalEl);
+                if (inst) inst.hide();
                 remarkModal.show();
             });
 
             saveRemarkBtn.addEventListener('click', async function() {
+                const txt = (remarkTextarea.value || '').trim();
+
+                // Guard: maksimal 60 karakter
+                if (txt.length > MAX_REMARK) {
+                    if (remarkFeedback) {
+                        remarkFeedback.textContent = `Maksimal ${MAX_REMARK} karakter.`;
+                        remarkFeedback.className = 'small mt-2 text-danger';
+                    }
+                    // sinkronkan counter biar user tahu posisinya
+                    if (typeof window.__updateRemarkCounter === 'function') window
+                        .__updateRemarkCounter();
+                    return; // jangan lanjut kirim
+                }
+
                 const payload = {
                     werks: this.dataset.werks,
                     auart: this.dataset.auart,
                     vbeln: this.dataset.vbeln,
-                    // Menggunakan data-posnr-key untuk payload ke API/DB
-                    posnr: this.dataset.posnrKey,
-                    remark: remarkTextarea.value
+                    posnr: this.dataset.posnrKey, // kirim POSNR_KEY ke API/DB
+                    remark: txt
                 };
+
                 const vbeln = payload.vbeln;
                 this.disabled = true;
                 this.innerHTML =
                     `<span class="spinner-border spinner-border-sm" role="status"></span> Menyimpan...`;
 
+                // ====== (lanjutan kode asli kamu di bawah ini — tidak diubah) ======
                 // Cari elemen yang relevan di DOM
                 const soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
                 const itemNest = soRow?.nextElementSibling;
@@ -1605,29 +1718,22 @@
                         itemNest.removeAttribute('data-loaded');
                     }
 
-                    // 3. Jika T3 terbuka ATAU bisa dibuka (itemNest ada)
+                    // 3. Reload konten jika perlu
                     if (itemNest && itemNest.style.display === 'none') {
-                        // Jika tertutup, panggil click pada baris SO untuk MEMBUKA dan memicu pemuatan ulang
                         soRow.click();
-                        // Kita tidak perlu render manual di sini karena .click() akan menangani pemuatan dan rendering
                     } else if (itemNest && itemNest.style.display !== 'none' && box) {
-                        // Jika sudah terbuka, kita harus memuat ulang konten secara paksa
                         box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                     <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
-                                 </div>`;
-
+                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
+                       </div>`;
                         const items = await ensureItemsLoadedForSO(vbeln);
-
-                        // Render ulang konten item
                         box.innerHTML = renderLevel3_Items(items);
                         applySelectionsToRenderedItems(box);
                         syncCheckAllHeader(box);
                         itemNest.dataset.loaded = '1';
-                        updateSoRemarkFlagFromCache(
-                            vbeln); // Update flag Level 2 berdasarkan cache baru
+                        updateSoRemarkFlagFromCache(vbeln);
                     }
 
-                    // 4. Update status remark di item yang bersangkutan (Jika sudah di DOM sebelum refresh)
+                    // 4. Update status remark di DOM saat ini (jika ada)
                     const rowSel =
                         `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr-key='${payload.posnr}']`;
                     const rowEl = document.querySelector(rowSel);
@@ -1644,8 +1750,7 @@
                     remarkFeedback.className = 'small mt-2 text-success';
                     setTimeout(() => remarkModal.hide(), 800);
                 } catch (err) {
-
-                    // Jika T3 terbuka, pastikan ikon pensil di update minimal di DOM saat ini (jika tidak terjadi reload total)
+                    // fallback update minimal DOM
                     const rowSel =
                         `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr-key='${payload.posnr}']`;
                     const rowEl = document.querySelector(rowSel);
@@ -1662,6 +1767,22 @@
                     this.disabled = false;
                     this.innerHTML = 'Simpan Catatan';
                 }
+            });
+
+            deleteRemarkBtn.addEventListener('click', async function() {
+                // Konfirmasi user sebelum menghapus
+                if (!confirm("Anda yakin ingin menghapus catatan ini?")) {
+                    return;
+                }
+
+                // Kosongkan textarea agar logic saveRemarkBtn menghapus dari database
+                remarkTextarea.value = '';
+
+                // Simulasikan klik tombol simpan (dengan logika yang sudah ada untuk menghapus saat value kosong)
+                await saveRemarkBtn.click();
+
+                // Saat penghapusan berhasil, sembunyikan tombol Hapus
+                this.style.display = 'none';
             });
 
             /* ---------- Export ---------- */
@@ -1931,11 +2052,15 @@
                         <th>Description</th>
                         <th class="text-end">Qty SO</th>
                         <th class="text-end">Outs. SO (≤5)</th>
+                        <th class="text-end">WHFG</th>
+                        <th class="text-end">Stock Packing</th>
                         </tr>`;
 
                     let tableBodyHtml = result.data.map((item, idx) => {
                         const qtySo = formatNumberChart(item.KWMENG);
                         const qtyOuts = formatNumberChart(item.PACKG);
+                        const kalab = formatNumberChart(item.KALAB);
+                        const kalab2 = formatNumberChart(item.KALAB2);
                         return `<tr>
                         <td class="text-center">${idx+1}</td>
                         <td class="text-center">${item.SO}</td>
@@ -1943,6 +2068,8 @@
                         <td>${item.MAKTX}</td>
                         <td class="text-end">${qtySo}</td>
                         <td class="text-end fw-bold text-danger">${qtyOuts}</td>
+                        <td class="text-end">${kalab}</td>  {{-- <<< BARU >>> --}}
+                        <td class="text-end">${kalab2}</td>
                         </tr>`;
                     }).join('');
 
@@ -2003,8 +2130,6 @@
             // Total ITEM Count Keseluruhan (untuk label judul)
             const totalItemCount = dataToRender.reduce((sum, item) => sum + parseInt(item.item_count, 10), 0);
 
-            // Handle No Data
-            // ... (Logika No Data tetap sama, menggunakan totalSoCount untuk pengecekan) ...
             const noDataEl = ctxSmallQty?.closest('.chart-container').querySelector('.yz-nodata');
             if (!ctxSmallQty || dataToRender.length === 0 || totalSoCount === 0) { // Pengecekan menggunakan totalSoCount
                 if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';

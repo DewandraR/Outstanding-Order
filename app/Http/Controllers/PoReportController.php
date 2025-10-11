@@ -495,7 +495,7 @@ COALESCE(
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string', // boleh "10", nanti dipad ke 6 digit
-            'remark' => 'nullable|string|max:1000',
+            'remark' => 'nullable|string|max:60',
         ]);
 
         $posnrDb   = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);

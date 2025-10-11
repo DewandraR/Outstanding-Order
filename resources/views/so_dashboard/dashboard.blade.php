@@ -820,7 +820,7 @@
                             compact: 1,
                             highlight_kunnr: kunnr,
                             highlight_vbeln: so,
-                            highlight_posnr: posnr6, // ***PERBAIKAN: Kirim POSNR 6 digit***
+                            highlight_posnr: posnr6,
                             auto_expand: '1'
                         };
 
@@ -832,17 +832,6 @@
                             <td class="text-center">${plant || '-'}</td>
                             <td class="text-center">${otName}</td>
                             <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-                            <td class="text-center">
-                            <button type="button"
-                                            class="btn btn-sm btn-outline-danger js-del-remark"
-                                            title="Hapus remark"
-                                            data-vbeln="${so}"
-                                            data-posnr="${posnr6}"
-                                            data-werks="${werks}"
-                                            data-auart="${auart}">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                            </td>
                         </tr>`;
                     }).join('');
 
@@ -857,7 +846,7 @@
                                         <th class="text-center" style="min-width:110px;">Plant</th>
                                         <th class="text-center" style="min-width:160px;">Order Type</th>
                                         <th style="min-width:220px;">Remark</th>
-                                        <th class="text-center" style="width:70px;">Aksi</th>
+                                        {{-- Kolom Aksi Dihapus --}}
                                     </tr>
                                 </thead>
                                 <tbody>${body}</tbody>
@@ -894,7 +883,9 @@
                 }
 
                 listBox.addEventListener('click', (ev) => {
+                    // Cek jika yang diklik BUKAN tombol .js-del-remark (sudah tidak ada, tapi dipertahankan untuk keamanan)
                     if (ev.target.closest('.js-del-remark')) return;
+
                     const tr = ev.target.closest('.js-remark-row');
                     if (!tr || !tr.dataset.payload) return;
 
@@ -926,51 +917,6 @@
 
                     document.body.appendChild(form);
                     form.submit();
-                });
-
-                listBox.addEventListener('click', async (ev) => {
-                    const btn = ev.target.closest('.js-del-remark');
-                    if (!btn) return;
-                    ev.stopPropagation();
-
-                    const vbeln = btn.dataset.vbeln || '';
-                    const posnr = btn.dataset.posnr || ''; // Sudah 6 digit padded
-                    const werks = btn.dataset.werks || '';
-                    const auart = btn.dataset.auart || '';
-
-                    // Konfirmasi
-                    const ok = confirm(`Hapus remark untuk SO ${vbeln} / Item ${stripZeros(posnr)}?`);
-                    if (!ok) return;
-
-                    // UX: disable sementara
-                    btn.disabled = true;
-
-                    try {
-                        const res = await fetch(`{{ route('so.api.remark_delete') }}`, {
-                            method: 'DELETE',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector(
-                                    'meta[name="csrf-token"]').getAttribute('content'),
-                                'X-Requested-With': 'XMLHttpRequest'
-                            },
-                            body: JSON.stringify({
-                                vbeln: vbeln,
-                                posnr: posnr,
-                                werks: werks,
-                                auart: auart,
-                            })
-                        });
-
-                        const json = await res.json();
-                        if (!json.ok) throw new Error(json.error || 'Gagal menghapus remark.');
-
-                        // Reload daftar supaya konsisten
-                        await loadList();
-                    } catch (e) {
-                        alert(e.message || 'Gagal menghapus remark.');
-                        btn.disabled = false;
-                    }
                 });
 
                 loadList();

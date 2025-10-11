@@ -29,7 +29,7 @@ class SODashboardController extends Controller
 
         // Filter SO dashboard
         $location = $request->query('location'); // '2000'|'3000'|null
-        $type   = $request->query('type'); // 'lokal'|'export'|null
+        $type = $request->query('type'); // 'lokal'|'export'|null
         $auart = $request->query('auart'); // optional
 
         // Mapping (sidebar)
@@ -64,7 +64,7 @@ class SODashboardController extends Controller
         ]);
 
         $location = $request->query('location'); // 2000|3000|null
-        $type   = $request->query('type'); // lokal|export|null
+        $type = $request->query('type'); // lokal|export|null
         $auart = $request->query('auart');
 
         // Samakan “AUART efektif” dengan dashboard SO lain
@@ -116,14 +116,18 @@ class SODashboardController extends Controller
         $type = $request->query('type');
         $auart = $request->query('auart');
         $vbeln = trim((string)$request->query('vbeln'));
-
         $rows = DB::table('item_remarks as ir')
-            ->leftJoin('so_yppr079_t1 as t1', function ($j) {
+            // Ganti LEFT JOIN menjadi INNER JOIN untuk memastikan item SO terkait masih ada di t1
+            ->join('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
                     ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
-            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
-            ->selectRaw("
+            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'));
+        // =========================================================================
+        // END: LOGIKA BARU
+        // =========================================================================
+
+        $rows = $rows->selectRaw("
             TRIM(ir.VBELN) AS VBELN,
             TRIM(ir.POSNR) AS POSNR,
             COALESCE(t1.MATNR,'') AS MATNR,
@@ -240,37 +244,6 @@ class SODashboardController extends Controller
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);
-    }
-
-
-    public function apiSoRemarkDelete(Request $request)
-    {
-        $request->validate([
-            'vbeln' => 'required|string', // SO
-            'posnr' => 'required|string', // HARUS 6 digit
-            'werks' => 'nullable|string|in:2000,3000',
-            'auart' => 'nullable|string',
-        ]);
-
-        $vbeln = trim($request->vbeln);
-        $posnr6 = str_pad(trim($request->posnr), 6, '0', STR_PAD_LEFT);
-        $werks = $request->filled('werks') ? trim($request->werks) : null;
-        $auart = $request->filled('auart') ? trim($request->auart) : null;
-
-        // Query hanya ke item_remarks
-        $q = DB::table('item_remarks')
-            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$vbeln])
-            ->whereRaw('LPAD(TRIM(CAST(POSNR AS CHAR)), 6, "0") = ?', [$posnr6])
-            ->when($werks, fn($qq) => $qq->where('IV_WERKS_PARAM', $werks))
-            ->when($auart, fn($qq) => $qq->where('IV_AUART_PARAM', $auart));
-
-        // HARD DELETE
-        $deleted = $q->delete();
-
-        if (!$deleted) {
-            return response()->json(['ok' => false, 'error' => 'Data tidak ditemukan.'], 404);
-        }
-        return response()->json(['ok' => true, 'deleted' => (int)$deleted]);
     }
 
     /* ================== Helper SO dashboard (Termasuk KPI Baru) ================== */
