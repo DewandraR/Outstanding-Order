@@ -133,9 +133,15 @@
                             <i class="fas fa-chevron-up ms-2"></i>
                         </button>
                         <ul class="dropdown-menu" aria-labelledby="userMenuButton">
-                            {{-- contoh jika kelak ada halaman profile --}}
-                            {{-- <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="fas fa-user-edit"></i> Profile</a></li>
-                            <li><hr class="dropdown-divider"></li> --}}
+                            {{-- **LINK PROFILE BARU** --}}
+                            <li>
+                                <a class="dropdown-item" href="{{ route('profile.edit') }}">
+                                    <i class="fas fa-user-edit"></i> Profile
+                                </a>
+                            </li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
                             <li>
                                 <form method="POST" action="{{ route('logout') }}">
                                     @csrf
@@ -148,7 +154,9 @@
                     </div>
                 @endauth
             </div>
+
         </div> {{-- /flex-grow wrapper --}}
+
     </aside>
 
     {{-- ========================= MAIN AREA ========================== --}}
@@ -192,9 +200,11 @@
     </div>
 
     {{-- Script vendor --}}
+
     <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 
     {{-- Toggle sidebar (mobile) --}}
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const sidebarToggler = document.getElementById('sidebar-toggler');
@@ -215,6 +225,7 @@
     </script>
 
     {{-- Bantuan ikon (popover) untuk chart, jika kamu pakai file ini --}}
+
     <script src="{{ asset('js/chart-help.js') }}" data-json="{{ asset('chart-help.json') }}" defer></script>
 
     {{-- Optional: inject js via flash session (misal pembersihan storage saat logout) --}}

@@ -8,25 +8,30 @@ use App\Http\Controllers\AuthController;
 
 // === Aplikasi ===
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\DashboardController;        // PO Dashboard (visual)
-use App\Http\Controllers\SODashboardController;     // SO Dashboard (visual)
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\SODashboardController;
 use App\Http\Controllers\MappingController;
-use App\Http\Controllers\SalesOrderController;      // Outstanding SO (report lama)
+use App\Http\Controllers\SalesOrderController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockDashboardController;
 use App\Http\Controllers\PoReportController;
 
-// === Breeze controllers yang dipakai hanya untuk REGISTER & RESET PASSWORD ===
+// === Breeze controllers yang dipakai ===
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\NewPasswordController;
 
+// === Controller untuk Verifikasi Email (dari perbaikan sebelumnya) ===
+use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\VerifyEmailController;
+use App\Http\Controllers\Auth\EmailVerificationNotificationController;
+
+// === BARU: Controller untuk Update Password (memperbaiki error ini) ===
+use App\Http\Controllers\Auth\PasswordController;
+
 /*
 |--------------------------------------------------------------------------
 | GUEST AREA (hanya untuk tamu)
-| - Login pakai AuthController (custom)
-| - Register & Forgot/Reset Password pakai controller Breeze
-| - Diberi middleware: guest + nocache.after
 |--------------------------------------------------------------------------
 */
 
@@ -39,15 +44,11 @@ Route::middleware(['guest', 'nocache.after'])->group(function () {
 	Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
 	Route::post('/register', [RegisteredUserController::class, 'store']);
 
-	// Forgot / Reset Password (Breeze) — opsional, aman dibiarkan aktif
-	Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])
-		->name('password.request');
-	Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
-		->name('password.email');
-	Route::get('/reset-password/{token}', [NewPasswordController::class, 'create'])
-		->name('password.reset');
-	Route::post('/reset-password', [NewPasswordController::class, 'store'])
-		->name('password.store');
+	// Forgot / Reset Password (Breeze)
+	Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])->name('password.request');
+	Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])->name('password.email');
+	Route::get('/reset-password/{token}', [NewPasswordController::class, 'create'])->name('password.reset');
+	Route::post('/reset-password', [NewPasswordController::class, 'store'])->name('password.store');
 });
 
 /*
@@ -62,8 +63,6 @@ Route::post('/logout', [AuthController::class, 'logout'])
 /*
 |--------------------------------------------------------------------------
 | PROTECTED AREA (Wajib login)
-| - Semua rute aplikasi dipindahkan ke dalam group ini!
-| - Diberi middleware: auth + nocache
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'nocache'])->group(function () {
@@ -71,38 +70,48 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	// Root -> Dashboard
 	Route::get('/', fn() => redirect()->route('dashboard'));
 
+	// ---------------------- VERIFIKASI EMAIL ---------------------
+	Route::get('/email/verify', EmailVerificationPromptController::class)
+		->name('verification.notice');
+	Route::get('/verify-email/{id}/{hash}', VerifyEmailController::class)
+		->middleware(['signed', 'throttle:6,1'])
+		->name('verification.verify');
+	Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
+		->middleware('throttle:6,1')
+		->name('verification.send');
+	// -------------------------------------------------------------
+
+	// ------------------- UPDATE PASSWORD (PERBAIKAN ERROR INI) -----------------
+	Route::put('/password', [PasswordController::class, 'update'])->name('password.update');
+	// ---------------------------------------------------------------------------
+
+
 	// --------- PO Dashboard (visual) ---------
 	Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
 	// Util PO Dashboard
 	Route::post('/dashboard/search', [DashboardController::class, 'search'])->name('dashboard.search');
 	Route::post('/dashboard/redirect', [DashboardController::class, 'redirector'])->name('dashboard.redirector');
-	Route::post('/dashboard/api/decrypt-payload', [DashboardController::class, 'apiDecryptPayload'])
-		->name('dashboard.api.decrypt_payload');
+	Route::post('/dashboard/api/decrypt-payload', [DashboardController::class, 'apiDecryptPayload'])->name('dashboard.api.decrypt_payload');
 
 	// API nested (T2/T3) & detail untuk PO (DASHBOARD)
 	Route::get('/dashboard/api/t2', [DashboardController::class, 'apiT2'])->name('dashboard.api.t2');
 	Route::get('/dashboard/api/t3', [DashboardController::class, 'apiT3'])->name('dashboard.api.t3');
 
 	// API Khusus Dashboard PO
-	Route::get('/api/po/outs-by-customer', [DashboardController::class, 'apiPoOutsByCustomer'])
-		->name('api.po.outs_by_customer');
+	Route::get('/api/po/outs-by-customer', [DashboardController::class, 'apiPoOutsByCustomer'])->name('api.po.outs_by_customer');
 
 	// Detail Item Qty Kecil
-	Route::get('/dashboard/api/small-qty-details', [DashboardController::class, 'apiSmallQtyDetails'])
-		->name('dashboard.api.smallQtyDetails');
+	Route::get('/dashboard/api/small-qty-details', [DashboardController::class, 'apiSmallQtyDetails'])->name('dashboard.api.smallQtyDetails');
 
 	// PO Status Details (Doughnut Chart Click)
-	Route::get('/dashboard/api/po-status-details', [DashboardController::class, 'apiPoStatusDetails'])
-		->name('dashboard.api.poStatusDetails');
+	Route::get('/dashboard/api/po-status-details', [DashboardController::class, 'apiPoStatusDetails'])->name('dashboard.api.poStatusDetails');
 
 	// Overdue Details di tabel Performance
-	Route::get('/api/po/overdue-details', [DashboardController::class, 'apiPoOverdueDetails'])
-		->name('dashboard.api.poOverdueDetails');
+	Route::get('/api/po/overdue-details', [DashboardController::class, 'apiPoOverdueDetails'])->name('dashboard.api.poOverdueDetails');
 
 	// Export PDF Small Qty (jika dipakai)
-	Route::post('/dashboard/export/small-qty-pdf', [DashboardController::class, 'exportSmallQtyPdf'])
-		->name('dashboard.export.smallQtyPdf');
+	Route::post('/dashboard/export/small-qty-pdf', [DashboardController::class, 'exportSmallQtyPdf'])->name('dashboard.export.smallQtyPdf');
 
 	Route::get('/po/api/remark-items',  [DashboardController::class, 'apiPoRemarkItems'])->name('po.api.remark_items');
 	Route::delete('/po/api/remark-delete', [DashboardController::class, 'apiPoRemarkDelete'])->name('po.api.remark_delete');
@@ -111,28 +120,19 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::get('/so-dashboard', [SODashboardController::class, 'index'])->name('so.dashboard');
 
 	// API untuk SO Dashboard
-	Route::get('/api/so/outs-by-customer', [SODashboardController::class, 'apiSoOutsByCustomer'])
-		->name('so.api.outs_by_customer');
-	Route::get('/api/so/remark-summary', [SODashboardController::class, 'apiSoRemarkSummary'])
-		->name('so.api.remark_summary');
-	Route::get('/api/so/remark-items', [SODashboardController::class, 'apiSoRemarkItems'])
-		->name('so.api.remark_items');
-	Route::get('/api/so/bottlenecks-details', [SODashboardController::class, 'apiSoBottlenecksDetails'])
-		->name('so.api.bottlenecks_details');
-	Route::get('/api/so/urgency-details', [SODashboardController::class, 'apiSoUrgencyDetails'])
-		->name('so.api.urgency_details');
-	Route::get('/api/so/status-details', [SODashboardController::class, 'apiSoStatusDetails'])
-		->name('so.api.status_details');
-	Route::delete('/so/api/remark/delete', [SODashboardController::class, 'apiSoRemarkDelete'])
-		->name('so.api.remark_delete');
+	Route::get('/api/so/outs-by-customer', [SODashboardController::class, 'apiSoOutsByCustomer'])->name('so.api.outs_by_customer');
+	Route::get('/api/so/remark-summary', [SODashboardController::class, 'apiSoRemarkSummary'])->name('so.api.remark_summary');
+	Route::get('/api/so/remark-items', [SODashboardController::class, 'apiSoRemarkItems'])->name('so.api.remark_items');
+	Route::get('/api/so/bottlenecks-details', [SODashboardController::class, 'apiSoBottlenecksDetails'])->name('so.api.bottlenecks_details');
+	Route::get('/api/so/urgency-details', [SODashboardController::class, 'apiSoUrgencyDetails'])->name('so.api.urgency_details');
+	Route::get('/api/so/status-details', [SODashboardController::class, 'apiSoStatusDetails'])->name('so.api.status_details');
+	Route::delete('/so/api/remark/delete', [SODashboardController::class, 'apiSoRemarkDelete'])->name('so.api.remark_delete');
 
 	// --------- PO Report (mode tabel) ---------
 	Route::get('/po-report', [PoReportController::class, 'index'])->name('po.report');
 	Route::post('/po/export-data', [PoReportController::class, 'exportData'])->name('po.export');
-	Route::get('api/po/performance-by-customer', [PoReportController::class, 'apiPerformanceByCustomer'])
-		->name('po.api.performanceByCustomer');
-	Route::post('/api/po/remark/save', [PoReportController::class, 'apiSavePoRemark'])
-		->name('api.po.remark.save');
+	Route::get('api/po/performance-by-customer', [PoReportController::class, 'apiPerformanceByCustomer'])->name('po.api.performanceByCustomer');
+	Route::post('/api/po/remark/save', [PoReportController::class, 'apiSavePoRemark'])->name('api.po.remark.save');
 
 	// --------- Outstanding SO (report lama) ---------
 	Route::get('/outstanding-so', [SalesOrderController::class, 'index'])->name('so.index');
@@ -144,14 +144,11 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::get('/outstanding-so/export/summary', [SalesOrderController::class, 'exportCustomerSummary'])->name('so.export.summary');
 
 	// --- Small Qty (≤5) Outstanding SO ---
-	Route::get('/api/so/small-qty-by-customer', [SalesOrderController::class, 'apiSmallQtyByCustomer'])
-		->name('so.api.small_qty_by_customer');
+	Route::get('/api/so/small-qty-by-customer', [SalesOrderController::class, 'apiSmallQtyByCustomer'])->name('so.api.small_qty_by_customer');
 
-	Route::get('/api/so/small-qty-details', [SalesOrderController::class, 'apiSmallQtyDetails'])
-		->name('so.api.small_qty_details');
+	Route::get('/api/so/small-qty-details', [SalesOrderController::class, 'apiSmallQtyDetails'])->name('so.api.small_qty_details');
 
-	Route::post('/outstanding-so/export/small-qty-pdf', [SalesOrderController::class, 'exportSmallQtyPdf'])
-		->name('so.export.small_qty_pdf');
+	Route::post('/outstanding-so/export/small-qty-pdf', [SalesOrderController::class, 'exportSmallQtyPdf'])->name('so.export.small_qty_pdf');
 
 	// --------- Stock report & dashboard ---------
 	Route::get('/stock-report', [StockController::class, 'index'])->name('stock.index');
