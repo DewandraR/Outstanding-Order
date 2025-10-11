@@ -193,7 +193,7 @@
                                         <div class="metric-box mx-4" style="min-width: 100px;">
                                             <div class="metric-value fs-4 fw-bold text-primary text-end">
                                                 {{ number_format($totalSO, 0, ',', '.') }}</div>
-                                            <div class="metric-label text-muted small text-end">Total SO</div>
+                                            <div class="text-end">Total SO</div>
                                         </div>
 
                                         {{-- Overdue SO with Visual Indicator --}}
@@ -201,7 +201,7 @@
                                             <div
                                                 class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
                                                 {{ number_format($totalOverdueSO, 0, ',', '.') }}</div>
-                                            <div class="metric-label text-muted small text-end">Overdue SO</div>
+                                            <div class="metric-label text-end">Overdue SO</div>
 
                                             {{-- Progress Bar --}}
                                             @if ($totalSO > 0)
@@ -220,16 +220,16 @@
 
                                         {{-- Outstanding Value --}}
                                         <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fw-bold text-dark">{{ $displayOutsValue }}</div>
-                                            <div class="metric-label text-muted small">Outstanding Value</div>
+                                            <div class="metric-value fs-4 fw-bold text-dark">{{ $displayOutsValue }}</div>
+                                            <div class="metric-label">Outstanding Value</div>
                                         </div>
 
                                         {{-- Overdue Value --}}
                                         <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fw-bold {{ $overdueValueStyle }}">
+                                            <div class="metric-value fs-4 fw-bold {{ $overdueValueStyle }}">
                                                 {{ $displayOverdueValue }}
                                             </div>
-                                            <div class="metric-label text-muted small">Overdue Value</div>
+                                            <div class="metric-label">Overdue Value</div>
                                         </div>
 
                                     </div>
@@ -267,17 +267,17 @@
                                 {{-- Total SO Count --}}
                                 <div class="metric-box mx-4"
                                     style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
-                                    <div class="fw-bold text-primary text-end">
+                                    <div class="metric-value fs-4 fw-bold text-primary text-end">
                                         {{ number_format($totalSOTotal, 0, ',', '.') }}</div>
-                                    <div class="small text-muted text-end">Total SO Count</div>
+                                    <div class="text-end">Total SO Count</div>
                                 </div>
 
                                 {{-- Total Overdue SO --}}
                                 <div class="metric-box mx-4" style="min-width: 100px;">
-                                    <div class="fw-bold text-danger text-end">
+                                    <div class="fw-bold fs-4 text-danger text-end">
                                         {{ number_format($totalOverdueSOTotal, 0, ',', '.') }}
                                     </div>
-                                    <div class="small text-muted text-end">Total Overdue SO</div>
+                                    <div class="text-end">Total Overdue SO</div>
 
                                     {{-- Progress Bar --}}
                                     @if ($totalSOTotal > 0)
@@ -295,14 +295,14 @@
 
                                 {{-- Total Outs. Value --}}
                                 <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
-                                    <div class="small text-muted">Total Outs. Value</div>
+                                    <div class="fw-bold fs-4 text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
+                                    <div class="metric-label"> Total Outs. Value</div>
                                 </div>
 
                                 {{-- Total Overdue Value --}}
                                 <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
-                                    <div class="small text-muted">Total Overdue Value</div>
+                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
+                                    <div class="metric-label">Total Overdue Value</div>
                                 </div>
 
                             </div>

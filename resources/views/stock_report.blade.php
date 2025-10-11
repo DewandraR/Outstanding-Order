@@ -180,13 +180,13 @@
                                             <div class="metric-value fs-4 fw-bold text-primary text-end">
                                                 {{ $fmtNumber($totalQty) }}
                                             </div>
-                                            <div class="metric-label text-muted small text-end">Total Qty</div>
+                                            <div class="metric-label">Total Qty</div>
                                         </div>
 
                                         {{-- Total Stock Value --}}
                                         <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fw-bold text-dark">{{ $displayTotalValue }}</div>
-                                            <div class="metric-label text-muted small">Total Value</div>
+                                            <div class="metric-value fs-4 fw-bold text-dark">{{ $displayTotalValue }}</div>
+                                            <div class="metric-label">Total Value</div>
                                         </div>
                                     </div>
                                 </div>
@@ -233,7 +233,7 @@
 
                                     {{-- Total Stock Value --}}
                                     <div class="metric-box fs-5 mx-4 text-end" style="min-width: 180px;">
-                                        <div class="fw-bold text-dark">{{ $formatTotalsStock($grandTotalsCurr) }}</div>
+                                        <div class="fw-bold fs-4 text-dark">{{ $formatTotalsStock($grandTotalsCurr) }}</div>
                                         <div class="small text-muted">Total Value</div>
                                     </div>
                                 </div>

@@ -250,7 +250,7 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                         <div class="metric-box mx-4" style="min-width: 100px;">
                                             <div class="metric-value fs-4 fw-bold text-primary text-end">
                                                 {{ number_format($totalPO, 0, ',', '.') }}</div>
-                                            <div class="metric-label text-muted small text-end">Total PO</div>
+                                            <div class="metric-label text-end">Total PO</div>
                                         </div>
 
                                         {{-- Overdue PO Count with Visual Indicator --}}
@@ -258,7 +258,7 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                             <div
                                                 class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
                                                 {{ number_format($totalOverduePO, 0, ',', '.') }}</div>
-                                            <div class="metric-label text-muted small text-end">Overdue PO</div>
+                                            <div class="metric-label text-end">Overdue PO</div>
 
                                             {{-- Progress Bar --}}
                                             @if ($totalPO > 0)
@@ -277,16 +277,16 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
 
                                         {{-- Outstanding Value --}}
                                         <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fw-bold text-dark">{{ $displayOutsValue }}</div>
-                                            <div class="metric-label text-muted small">Outstanding Value</div>
+                                            <div class="metric-value fs-4 fw-bold text-dark">{{ $displayOutsValue }}</div>
+                                            <div class="metric-label">Outstanding Value</div>
                                         </div>
 
                                         {{-- Overdue Value --}}
                                         <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fw-bold {{ $overdueValueStyle }}">
+                                            <div class="metric-value fs-4 fw-bold {{ $overdueValueStyle }}">
                                                 {{ $displayOverdueValue }}
                                             </div>
-                                            <div class="metric-label text-muted small">Overdue Value</div>
+                                            <div class="metric-label">Overdue Value</div>
                                         </div>
 
                                     </div>
@@ -324,17 +324,17 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                 {{-- Total PO Count --}}
                                 <div class="metric-box mx-4"
                                     style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
-                                    <div class="fw-bold text-primary text-end">
+                                    <div class="fw-bold fs-4 text-primary text-end">
                                         {{ number_format($totalSO, 0, ',', '.') }}</div>
-                                    <div class="small text-muted text-end">Total PO Count</div>
+                                    <div class="text-end">Total PO Count</div>
                                 </div>
 
                                 {{-- Total Overdue PO --}}
                                 <div class="metric-box mx-4" style="min-width: 100px;">
-                                    <div class="fw-bold text-danger text-end">
+                                    <div class="fw-bold fs-4 text-danger text-end">
                                         {{ number_format($totalOverdueSO, 0, ',', '.') }}
                                     </div>
-                                    <div class="small text-muted text-end">Total Overdue PO</div>
+                                    <div class="text-end">Total Overdue PO</div>
 
                                     {{-- Progress Bar --}}
                                     @php
@@ -355,14 +355,14 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
 
                                 {{-- Total Outs. Value --}}
                                 <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
-                                    <div class="small text-muted">Total Outs. Value</div>
+                                    <div class="fw-bold fs-4 text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
+                                    <div class="metric-label">Total Outs. Value</div>
                                 </div>
 
                                 {{-- Total Overdue Value --}}
                                 <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
-                                    <div class="small text-muted">Total Overdue Value</div>
+                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
+                                    <div class="metric-label">Total Overdue Value</div>
                                 </div>
 
                             </div>
