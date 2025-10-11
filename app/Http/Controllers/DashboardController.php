@@ -481,7 +481,8 @@ class DashboardController extends Controller
 
         // Klausa WHERE IN untuk subqueries T1
         $auartWhereInClause = empty($auartListString) ? "" : " AND t1.IV_AUART_PARAM IN ({$auartListString})";
-        // =========================================================================
+        $auartWhereInClauseIr = empty($auartListString) ? "" : " AND ir.IV_AUART_PARAM IN ({$auartListString})";
+        $werksClauseIr = strlen((string)$werks) ? " AND ir.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "";
 
 
         $q = DB::table('so_yppr079_t2 as t2')
@@ -491,21 +492,32 @@ class DashboardController extends Controller
                 't2.BSTNK',
                 't2.WAERK',
                 't2.EDATU',
-                // total value all (semua outstanding items)
+
+                // total value all
                 DB::raw("(SELECT COALESCE(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))),0)
-                    FROM so_yppr079_t1 AS t1
-                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                    {$auartWhereInClause} 
-                    ) AS total_value"),
-                // outs qty (Σ QTY_BALANCE2 > 0) per SO
+                  FROM so_yppr079_t1 AS t1
+                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                  " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
+                  {$auartWhereInClause}
+                 ) AS total_value"),
+
+                // outs qty
                 DB::raw("(SELECT COALESCE(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))),0)
-                    FROM so_yppr079_t1 AS t1
-                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                    {$auartWhereInClause}
-                    AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
-                    ) AS outs_qty"),
+                  FROM so_yppr079_t1 AS t1
+                  WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                  " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
+                  {$auartWhereInClause}
+                  AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
+                 ) AS outs_qty"),
+
+                // >>> NEW: jumlah remark pada item untuk VBELN ini
+                DB::raw("(SELECT COUNT(*)
+                  FROM item_remarks_po AS ir
+                  WHERE TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
+                  {$werksClauseIr}
+                  {$auartWhereInClauseIr}
+                  AND TRIM(COALESCE(ir.remark,'')) <> ''
+                 ) AS po_remark_count"),
             ])
             // Filter utama berdasarkan KUNNR
             ->where(function ($q) use ($kunnr) {
@@ -592,6 +604,14 @@ class DashboardController extends Controller
                 '=',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))')
             )
+            // <<< PENAMBAHAN: LEFT JOIN ke tabel REMARK PO >>>
+            ->leftJoin('item_remarks_po as ir', function ($j) {
+                $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
+                    ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
+                    ->on('ir.VBELN', '=', 't1.VBELN')
+                    ->on('ir.POSNR', '=', 't1.POSNR');
+            })
+            // <<< AKHIR PENAMBAHAN JOINT REMARK >>>
             ->select(
                 't1.id',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR)) as VBELN'),
@@ -604,7 +624,13 @@ class DashboardController extends Controller
                 't1.KALAB',
                 't1.KALAB2',
                 't1.NETPR',
-                't1.WAERK'
+                't1.WAERK',
+                // <<< KOLOM TAMBAHAN UNTUK REMARK LOGIC >>>
+                't1.IV_WERKS_PARAM as WERKS_KEY',
+                't1.IV_AUART_PARAM as AUART_KEY',
+                DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_DB"), // POSNR versi DB ('000010')
+                'ir.remark' // Ambil remark
+                // <<< AKHIR KOLOM TAMBAHAN >>>
             )
             ->whereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
             ->when($werks, fn($q) => $q->where('t1.IV_WERKS_PARAM', $werks))
@@ -654,13 +680,19 @@ class DashboardController extends Controller
         ];
 
         $encrypted = Crypt::encrypt($params);
-        // langsung ke PO Report (tidak lewat redirector supaya tidak nyasar ke SO)
-        return redirect()->route('po.report', ['q' => $encrypted]);
+
+        return redirect()->route('po.report', [
+            'q'               => $encrypted,
+            'auto_expand'     => 1,
+            'highlight_kunnr' => $so_info->KUNNR,
+            'highlight_vbeln' => $so_info->VBELN,
+            'highlight_bstnk' => $so_info->BSTNK,
+        ]);
     }
     public function redirector(Request $request)
     {
         try {
-            $raw      = (string) $request->input('payload', '');
+            $raw = (string) $request->input('payload', '');
             $data = json_decode($raw, true);
             if (!is_array($data) || empty($data)) {
                 throw new \RuntimeException('Invalid payload data.');
@@ -669,7 +701,7 @@ class DashboardController extends Controller
             $route = $data['redirect_to'] ?? 'dashboard';
             unset($data['redirect_to']);
 
-            // Daftar parameter yang diizinkan (pastikan 'highlight_posnr' dan 'auto_expand' ada)
+            // Tambahkan whitelist 'highlight_bstnk' juga (kalau nanti diperlukan)
             $whitelist = [
                 'view',
                 'werks',
@@ -677,6 +709,7 @@ class DashboardController extends Controller
                 'compact',
                 'highlight_kunnr',
                 'highlight_vbeln',
+                'highlight_bstnk',
                 'highlight_posnr',
                 'auto_expand',
                 'location',
@@ -690,32 +723,35 @@ class DashboardController extends Controller
                 }
             }
 
-            // samakan nama param: auto_expand -> auto (dipakai di SO Report)
-            if (isset($clean['auto_expand']) && !isset($clean['auto'])) {
+            $allowed = ['dashboard', 'po.report', 'so.index'];
+            if (!in_array($route, $allowed, true)) $route = 'dashboard';
+
+            // >>> hanya remap untuk SO
+            if (isset($clean['auto_expand']) && $route === 'so.index') {
                 $clean['auto'] = (string) (int) !!$clean['auto_expand'];
                 unset($clean['auto_expand']);
             }
 
-            // pastikan POSNR dikirim sebagai string (agar leading zero tidak hilang)
-            if (isset($clean['highlight_posnr'])) {
-                $clean['highlight_posnr'] = (string) $clean['highlight_posnr'];
-            }
-
-            // FIX UTAMA: Tambahkan 'so.index' ke daftar yang diizinkan DAN tambahkan logika redirect ke so.index
-            $allowed = ['dashboard', 'po.report', 'so.index'];
-            if (!in_array($route, $allowed, true)) $route = 'dashboard';
-
             $q = Crypt::encrypt($clean);
 
-            // Arahkan ke route yang benar: so.index, po.report, atau dashboard
-            return $route === 'so.index'
-                ? redirect()->route('so.index',      ['q' => $q])
-                : ($route === 'po.report'
-                    ? redirect()->route('po.report', ['q' => $q])
-                    : redirect()->route('dashboard', ['q' => $q]));
+            if ($route === 'po.report') {
+                $plain = array_filter([
+                    'auto_expand'      => $clean['auto_expand'] ?? null,
+                    'highlight_kunnr'  => $clean['highlight_kunnr'] ?? null,
+                    'highlight_vbeln'  => $clean['highlight_vbeln'] ?? null,
+                    'highlight_posnr'  => $clean['highlight_posnr'] ?? null,
+                    'highlight_bstnk'  => $clean['highlight_bstnk'] ?? null,
+                ], fn($v) => $v !== null && $v !== '');
+                return redirect()->route('po.report', array_merge(['q' => $q], $plain));
+            }
+
+            if ($route === 'so.index') {
+                return redirect()->route('so.index', ['q' => $q]);
+            }
+
+            return redirect()->route('dashboard', ['q' => $q]);
         } catch (\Throwable $e) {
-            return redirect()->route('dashboard')
-                ->withErrors('Gagal memproses link. Data tidak valid.');
+            return redirect()->route('dashboard')->withErrors('Gagal memproses link. Data tidak valid.');
         }
     }
 
@@ -1075,5 +1111,97 @@ class DashboardController extends Controller
             'meta' => $meta,
             'totals' => $totals,
         ]);
+    }
+    public function apiPoRemarkItems(Request $request)
+    {
+        $request->validate([
+            'location' => 'nullable|string|in:2000,3000',
+            'type'     => 'nullable|string|in:lokal,export',
+            'auart'    => 'nullable|string',
+            'vbeln'    => 'nullable|string',
+        ]);
+
+        $location = $request->query('location');
+        $type     = $request->query('type');
+        $auart    = $request->query('auart');
+        $vbeln    = trim((string) $request->query('vbeln'));
+
+        // Ambil mapping utk logika Export+Replace (konsisten dgn controller ini)
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($item) {
+            $d = strtolower($item->Deskription);
+            return Str::contains($d, 'export') && !Str::contains($d, 'local') && !Str::contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower($item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $rows = DB::table('item_remarks_po as ir')
+            ->leftJoin('so_yppr079_t1 as t1', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+            })
+            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+            ->selectRaw("
+            TRIM(ir.VBELN) AS VBELN,
+            TRIM(ir.POSNR) AS POSNR,
+            COALESCE(t2.BSTNK,'') AS BSTNK,          -- PO
+            COALESCE(t1.MATNR,'') AS MATNR,
+            COALESCE(t1.MAKTX,'') AS MAKTX,
+            COALESCE(t1.WAERK,'') AS WAERK,
+            COALESCE(t1.TOTPR,0) AS TOTPR,
+            ir.IV_WERKS_PARAM,
+            ir.IV_AUART_PARAM,
+            ir.remark,
+            ir.created_at,
+            COALESCE(t2.KUNNR,'') AS KUNNR
+        ")
+            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
+            ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
+            ->when($auart,    fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
+            ->when($vbeln !== '', fn($q) => $q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln]))
+            ->when($type, function ($q) use ($type, $exportAuartCodes, $replaceAuartCodes) {
+                if ($type === 'lokal') {
+                    $q->join('maping as m', function ($j) {
+                        $j->on('ir.IV_AUART_PARAM', '=', 'm.IV_AUART')
+                            ->on('ir.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+                    })->where('m.Deskription', 'like', '%Local%');
+                } elseif ($type === 'export') {
+                    $q->whereIn('ir.IV_AUART_PARAM', array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)));
+                }
+            })
+            ->orderBy('ir.VBELN')
+            ->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
+
+    public function apiPoRemarkDelete(Request $request)
+    {
+        $request->validate([
+            'vbeln' => 'required|string',
+            'posnr' => 'required|string', // kirim 6 digit (atau bebas, nanti dipad)
+            'werks' => 'nullable|string|in:2000,3000',
+            'auart' => 'nullable|string',
+        ]);
+
+        $vbeln  = trim($request->vbeln);
+        $posnr6 = str_pad(trim($request->posnr), 6, '0', STR_PAD_LEFT);
+        $werks  = $request->filled('werks') ? trim($request->werks) : null;
+        $auart  = $request->filled('auart') ? trim($request->auart) : null;
+
+        $q = DB::table('item_remarks_po')
+            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$vbeln])
+            ->whereRaw('LPAD(TRIM(CAST(POSNR AS CHAR)), 6, "0") = ?', [$posnr6])
+            ->when($werks, fn($qq) => $qq->where('IV_WERKS_PARAM', $werks))
+            ->when($auart, fn($qq) => $qq->where('IV_AUART_PARAM', $auart));
+
+        $deleted = $q->delete();
+
+        if (!$deleted) {
+            return response()->json(['ok' => false, 'error' => 'Data tidak ditemukan.'], 404);
+        }
+        return response()->json(['ok' => true, 'deleted' => (int)$deleted]);
     }
 }

@@ -388,9 +388,26 @@
         </div>
     </div>
 
-    <div id="po-overdue-details" style="display:none;"></div>
-    <div id="smallQtyDetailsContainer" style="display:none;"></div>
-
+    {{-- ==================== PO: ITEMS WITH REMARK (INLINE) ==================== --}}
+    <div class="row g-4 mb-4">
+        <div class="col-lg-12">
+            <div class="card yz-card shadow-sm h-100" id="po-remark-inline-container">
+                <div class="card-body d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title" data-help-key="po.items_with_remark">
+                            <i class="fas fa-sticky-note me-2"></i>PO Item with Remark
+                        </h5>
+                    </div>
+                    <hr class="mt-2">
+                    <div id="po-remark-list-box-inline" class="flex-grow-1">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('styles')
@@ -614,7 +631,7 @@
 
             raw = raw.replace(/\s*\((USD|IDR)\)\s*$/, '');
 
-            if (/\(USD|IDR\)/.test(raw)) {
+            if (/\((USD|IDR)\)/.test(raw)) {
                 tn.textContent = raw.replace(/\((USD|IDR)\)/, `(${currency})`);
             } else {
                 tn.textContent = `${raw.trim()} (${currency})`;
@@ -1102,6 +1119,225 @@
                 setTimeout(() => clearInterval(intervalId), 5000);
             });
 
+        })();
+    </script>
+    <script>
+        /* ======================== PO: ITEM WITH REMARK (INLINE) ======================== */
+        (function poItemWithRemarkTableOnly() {
+            const apiRemarkItems = "{{ route('po.api.remark_items') }}";
+            const apiRemarkDelete = "{{ route('po.api.remark_delete') }}";
+            const listBox = document.getElementById('po-remark-list-box-inline');
+            if (!listBox) return;
+
+            const dataHolder = document.getElementById('dashboard-data-holder');
+            const currentLocation = dataHolder?.dataset.currentLocation || null; // '2000' | '3000' | ''
+            const currentType = dataHolder?.dataset.selectedType || null; // 'lokal'|'export'|''
+
+            const mappingData = JSON.parse(dataHolder.dataset.mappingData || '{}');
+            const auartMap = {};
+            if (mappingData) {
+                for (const werks in mappingData) {
+                    (mappingData[werks] || []).forEach(item => {
+                        auartMap[item.IV_AUART] = item.Deskription;
+                    });
+                }
+            }
+
+            const stripZeros = v => {
+                const s = String(v ?? '').trim();
+                if (!s) return '';
+                const z = s.replace(/^0+/, '');
+                return z.length ? z : '0';
+            };
+            const escapeHtml = (str = '') => String(str).replace(/[&<>"']/g, s => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            } [s]));
+
+            const plantName = w => ({
+                '2000': 'Surabaya',
+                '3000': 'Semarang'
+            } [String(w || '').trim()] || (w ?? ''));
+            const auartDesc = auartMap;
+
+            function buildTable(rows) {
+                if (!rows?.length) {
+                    return `<div class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.</div>`;
+                }
+
+                const body = rows.map((r, i) => {
+                    const posnrDisp = stripZeros(r.POSNR);
+                    const posnr6 = String(r.POSNR ?? '').trim().padStart(6, '0');
+                    const so = (r.VBELN || '').trim();
+                    const po = (r.BSTNK || '').trim();
+                    const werks = (r.IV_WERKS_PARAM || '').trim();
+                    const auart = String(r.IV_AUART_PARAM || '').trim();
+                    const plant = plantName(werks);
+                    const otName = auartDesc[auart] || auart || '-';
+                    const kunnr = (r.KUNNR || '').trim();
+
+                    // Payload untuk redirect ke PO Report
+                    const postData = {
+                        redirect_to: 'po.report',
+                        werks: werks,
+                        auart: auart,
+                        compact: 1,
+                        highlight_kunnr: kunnr,
+                        highlight_vbeln: so,
+                        highlight_posnr: posnr6,
+                        auto_expand: '1'
+                    };
+
+                    return `
+            <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
+                <td class="text-center">${i + 1}</td>
+                <td class="text-center">${po || '-'}</td>
+                <td class="text-center">${so || '-'}</td>
+                <td class="text-center">${posnrDisp || '-'}</td>
+                <td class="text-center">${plant || '-'}</td>
+                <td class="text-center">${otName}</td>
+                <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+                <td class="text-center">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-danger js-del-remark"
+                            title="Hapus remark"
+                            data-vbeln="${so}"
+                            data-posnr="${posnr6}"
+                            data-werks="${werks}"
+                            data-auart="${auart}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+                }).join('');
+
+                return `
+        <div class="yz-scrollable-table-container" style="max-height:420px;">
+            <table class="table table-striped table-hover table-sm align-middle mb-0">
+                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                    <tr>
+                        <th class="text-center" style="width:60px;">No.</th>
+                        <th class="text-center" style="min-width:120px;">PO</th>
+                        <th class="text-center" style="min-width:110px;">SO</th>
+                        <th class="text-center" style="min-width:80px;">Item</th>
+                        <th class="text-center" style="min-width:110px;">Plant</th>
+                        <th class="text-center" style="min-width:160px;">Order Type</th>
+                        <th style="min-width:240px;">Remark</th>
+                        <th class="text-center" style="width:70px;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>
+        <div class="small text-muted mt-2">Klik baris untuk membuka laporan PO terkait.</div>`;
+            }
+
+            async function loadList() {
+                const card = document.getElementById('po-remark-inline-container');
+                if (card) card.style.display = '';
+                listBox.innerHTML = `
+            <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+                <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+            </div>`;
+
+                try {
+                    const url = new URL(apiRemarkItems, window.location.origin);
+                    if (currentLocation) url.searchParams.set('location', currentLocation);
+                    if (currentType) url.searchParams.set('type', currentType);
+
+                    const res = await fetch(url, {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                    const json = await res.json();
+                    if (!json.ok) throw new Error(json.error || 'Gagal memuat daftar item.');
+                    listBox.innerHTML = buildTable(json.data || []);
+                } catch (e) {
+                    listBox.innerHTML =
+                        `<div class="alert alert-danger m-0"><i class="fas fa-exclamation-triangle me-2"></i>${e.message}</div>`;
+                }
+            }
+
+            // Klik baris => buka PO Report (via redirector)
+            listBox.addEventListener('click', (ev) => {
+                if (ev.target.closest('.js-del-remark')) return;
+                const tr = ev.target.closest('.js-remark-row');
+                if (!tr?.dataset.payload) return;
+
+                const rowData = JSON.parse(tr.dataset.payload);
+                const postData = {
+                    ...rowData,
+                    redirect_to: 'po.report',
+                    compact: 1,
+                    auto_expand: '1'
+                };
+
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = "{{ route('dashboard.redirector') }}";
+
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden';
+                csrf.name = '_token';
+                csrf.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                form.appendChild(csrf);
+
+                const payload = document.createElement('input');
+                payload.type = 'hidden';
+                payload.name = 'payload';
+                payload.value = JSON.stringify(postData);
+                form.appendChild(payload);
+
+                document.body.appendChild(form);
+                form.submit();
+            });
+
+            // Hapus remark
+            listBox.addEventListener('click', async (ev) => {
+                const btn = ev.target.closest('.js-del-remark');
+                if (!btn) return;
+                ev.stopPropagation();
+
+                const vbeln = btn.dataset.vbeln || '';
+                const posnr = btn.dataset.posnr || ''; // sudah 6 digit
+                const werks = btn.dataset.werks || '';
+                const auart = btn.dataset.auart || '';
+
+                const ok = confirm(`Hapus remark untuk SO ${vbeln} / Item ${stripZeros(posnr)}?`);
+                if (!ok) return;
+
+                btn.disabled = true;
+                try {
+                    const res = await fetch(apiRemarkDelete, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')
+                                .getAttribute('content'),
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify({
+                            vbeln,
+                            posnr,
+                            werks,
+                            auart
+                        })
+                    });
+                    const json = await res.json();
+                    if (!json.ok) throw new Error(json.error || 'Gagal menghapus remark.');
+                    await loadList();
+                } catch (e) {
+                    alert(e.message || 'Gagal menghapus remark.');
+                    btn.disabled = false;
+                }
+            });
+
+            // mulai muat
+            loadList();
         })();
     </script>
 @endpush

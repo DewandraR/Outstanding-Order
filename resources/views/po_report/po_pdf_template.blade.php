@@ -101,6 +101,11 @@
         .text-right {
             text-align: right;
         }
+
+        .remark-cell {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
     </style>
 </head>
 
@@ -149,7 +154,7 @@
             {{-- THEAD berulang di setiap page --}}
             <thead class="customer-header-group">
                 <tr class="customer-header-row">
-                    <td colspan="12">Customer: {{ $customer }}</td>
+                    <td colspan="13">Customer: {{ $customer }}</td>
                 </tr>
                 <tr class="item-thead-row">
                     <th style="width:3%;">No.</th>
@@ -164,6 +169,7 @@
                     <th style="width:6%;">WHFG</th>
                     <th style="width:6%;">FG</th>
                     <th style="width:10%;">Net Price</th>
+                    <th style="width:16%;">Remark</th>
                 </tr>
             </thead>
 
@@ -189,6 +195,7 @@
                         <td class="text-right">{{ $formatNumber($r->KALAB) }}</td>
                         <td class="text-right">{{ $formatNumber($r->KALAB2) }}</td>
                         <td class="text-right">{{ $formatMoney($r->NETPR, $r->WAERK ?? $currency) }}</td>
+                        <td class="remark-cell">{{ $r->REMARK }}</td>
                     </tr>
                 @endforeach
             </tbody>

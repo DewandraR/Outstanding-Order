@@ -76,7 +76,8 @@
         data-is-export="{{ $isExportContext ? 1 : 0 }}"
         data-auto-expand="{{ (int) request()->boolean('auto_expand', $selected['auto_expand'] ?? false) }}"
         data-h-kunnr="{{ request('highlight_kunnr', '') }}" data-h-vbeln="{{ request('highlight_vbeln', '') }}"
-        data-h-bstnk="{{ request('highlight_bstnk', '') }}" style="display:none"></div>
+        data-h-bstnk="{{ request('highlight_bstnk', '') }}" data-h-posnr="{{ request('highlight_posnr', '') }}"
+        style="display:none"></div>
 
     {{-- =========================================================
 HEADER: PILIH TYPE + EXPORT
@@ -618,9 +619,31 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             </div>
         </div>
     </div>
-    {{-- =========================================================
-END MODAL
-========================================================= --}}
+    {{-- Remark Modal (DISALIN DARI SO REPORT) --}}
+    <div class="modal fade" id="remarkModal" tabindex="-1" aria-labelledby="remarkModalLabel" aria-hidden="true"
+        data-bs-backdrop="false" data-bs-keyboard="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="remarkModalLabel">Tambah/Edit Catatan PO</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">
+                    <form>
+                        <div class="mb-3">
+                            <label for="remark-text" class="col-form-label">Catatan untuk Item:</label>
+                            <textarea class="form-control" id="remark-text" rows="4"></textarea>
+                        </div>
+                    </form>
+                    <div id="remark-feedback" class="small mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                    <button type="button" class="btn btn-primary" id="save-remark-btn">Simpan Catatan</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 @endsection
 
@@ -684,6 +707,41 @@ END MODAL
             display: inline-block;
             transition: transform .18s ease
         }
+
+        .po-remark-icon {
+            /* <<< GANTI: remark-icon menjadi po-remark-icon */
+            cursor: pointer;
+            color: #6c757d;
+            transition: color .2s
+        }
+
+        .po-remark-icon:hover {
+            /* <<< GANTI: remark-icon:hover menjadi po-remark-icon:hover */
+            color: #0d6efd
+        }
+
+        .remark-dot {
+            height: 8px;
+            width: 8px;
+            background: #0d6efd;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 5px;
+            vertical-align: middle
+        }
+
+        .po-remark-flag {
+            /* <<< GANTI: so-remark-flag menjadi po-remark-flag */
+            color: #6c757d;
+            margin-right: 6px;
+            display: none
+        }
+
+        .po-remark-flag.active {
+            /* <<< GANTI: so-remark-flag.active menjadi po-remark-flag.active */
+            color: #0d6efd;
+            display: inline-block
+        }
     </style>
 @endpush
 
@@ -720,18 +778,29 @@ END MODAL
 
         // Helper kecil
         const wait = (ms) => new Promise(res => setTimeout(res, ms));
-        const softHighlightRow = (row) => {
-            if (!row) return;
-            const old = row.style.boxShadow;
-            const oldBg = row.style.backgroundColor;
-            row.style.transition = 'box-shadow .6s ease, background-color .6s ease';
-            row.style.boxShadow = 'inset 0 0 0 9999px rgba(255,235,59,.35)';
-            row.style.backgroundColor = 'rgba(255,235,59,.15)';
-            setTimeout(() => {
-                row.style.boxShadow = old ?? '';
-                row.style.backgroundColor = oldBg ?? '';
-            }, 1600);
+        const scrollAndFlash = (el) => {
+            if (!el) return;
+            try {
+                // Scroll el ke tengah viewport
+                el.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                // Terapkan class untuk animasi flash
+                el.classList.add('row-highlighted');
+                // Hapus class setelah animasi selesai (3000ms = 3 detik)
+                setTimeout(() => el.classList.remove('row-highlighted'), 3000);
+
+                // Pastikan transisi tidak mengganggu flash
+                el.style.transition = 'none';
+                setTimeout(() => el.style.transition = '', 90);
+
+            } catch (e) {
+                /* fail silently */
+            }
         };
+
+        window.handleSoRowClick = handleSoRowClick;
 
         /* ====================== JS STATE GLOBAL ====================== */
         const selectedItems = new Set(); // item ids (from T3)
@@ -773,19 +842,23 @@ END MODAL
         }
 
         function syncSelectAllSoState(tbody) {
-            // Kita hanya perlu menyinkronkan header checkbox berdasarkan status checkbox SO
-            // yang terlihat/ada.
+            // Ambil semua checkbox SO di tbody ini
             const allSoCheckboxes = Array.from(tbody.querySelectorAll('.check-so'));
 
-            // Di mode COLLAPSE_MODE, kita hanya hitung yang visible (yang dicentang)
+            // >>> BARU: status kolaps harus berdasar DOM juga, bukan hanya variabel global
+            const isCollapsedNow = COLLAPSE_MODE || tbody.classList.contains('collapse-mode');
+
+            // Saat kolaps, yang dihitung hanya baris SO yang masih visible
             const visibleSoCheckboxes = allSoCheckboxes.filter(ch => ch.closest('.js-t2row').style.display !== 'none');
-            const soCheckboxesToConsider = COLLAPSE_MODE ? visibleSoCheckboxes : allSoCheckboxes;
+            const soCheckboxesToConsider = isCollapsedNow ? visibleSoCheckboxes : allSoCheckboxes;
 
             const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
 
             if (!selectAllSo || soCheckboxesToConsider.length === 0) {
-                selectAllSo.checked = false;
-                selectAllSo.indeterminate = false;
+                if (selectAllSo) {
+                    selectAllSo.checked = false;
+                    selectAllSo.indeterminate = false;
+                }
                 return;
             }
 
@@ -799,7 +872,7 @@ END MODAL
                 selectAllSo.checked = true;
                 selectAllSo.indeterminate = false;
             } else {
-                // Jika hanya sebagian yang tercentang, jadikan kotak kosong.
+                // di UI kita inginkan kotak kosong (bukan indeterminate) ketika sebagian
                 selectAllSo.checked = false;
                 selectAllSo.indeterminate = false;
             }
@@ -869,27 +942,32 @@ END MODAL
                         `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
                 }
 
+                const hasRemark = Number(r.po_remark_count || 0) > 0; // <<< GANTI: po_remark_count
+
                 html += `
             <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}" title="Klik untuk melihat item detail">
                 <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"
                     onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"></td>
                 <td class="text-center"><span class="yz-caret">▸</span></td>
                 
-                {{-- KOLOM BARU: PO & STATUS (Bubble) --}}
+                {{-- KOLOM PO & STATUS --}}
                 <td class="text-start">
                     <div class="fw-bold text-primary mb-1">${r.BSTNK ?? ''}</div>
                     ${overdueBadge}
                 </td>
                 
-                {{-- KOLOM SO DITAMPILKAN DI SINI (BERWARNA BIRU) --}}
+                {{-- KOLOM SO --}}
                 <td class="yz-t2-vbeln text-start fw-bold text-primary">${r.VBELN}</td>
                 
                 <td class="text-center fw-bold">${edatu}</td>
                 <td class="text-center fw-bold">${fmtNum(outsQty)}</td>
                 <td class="text-center fw-bold">${fmtMoney(totalVal, r.WAERK)}</td>
                 
-                {{-- DOT untuk Seleksi ITEM --}}
-                <td class="text-center"><span class="po-selected-dot"></span></td>
+                {{-- PERUBAHAN: TAMBAHKAN ICON REMARK PO --}}
+                <td class="text-center">
+                    <i class="fas fa-pencil-alt po-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+                    <span class="po-selected-dot"></span>
+                </td>
             </tr>
             <tr id="${rid}" class="yz-nest" style="display:none;">
                 <td colspan="8" class="p-0"> {{-- colspan DIUBAH menjadi 8 --}}
@@ -932,15 +1010,22 @@ END MODAL
                 <th>WHFG</th>
                 <th>FG</th>
                 <th>Net Price</th>
-            </tr>
+                <th style="width: 70px;">Remark</th> </tr>
         </thead>
         <tbody>`;
             rows.forEach(r => {
                 const sid = sanitizeId(r.id);
                 const checked = sid && selectedItems.has(sid) ? 'checked' : '';
+
+                // <<< PENAMBAHAN LOGIKA REMARK >>>
+                const hasRemark = r.remark && r.remark.trim() !== '';
+                const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
+                // <<< AKHIR PENAMBAHAN LOGIKA REMARK >>>
+
                 out += `
-            <tr data-item-id="${sid ?? ''}" data-vbeln="${r.VBELN}">
-                <td><input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}></td>
+            <tr data-item-id="${sid ?? ''}" data-vbeln="${r.VBELN}"
+                data-werks-key="${r.WERKS_KEY}" data-auart-key="${r.AUART_KEY}" 
+                data-posnr-db="${r.POSNR_DB}"> <td><input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}></td>
                 <td>${r.POSNR ?? ''}</td>
                 <td>${r.MATNR ?? ''}</td>
                 <td>${r.MAKTX ?? ''}</td>
@@ -950,6 +1035,12 @@ END MODAL
                 <td>${fmtNum(r.KALAB)}</td>
                 <td>${fmtNum(r.KALAB2)}</td>
                 <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
+                
+                {{-- PERUBAHAN: CELL REMARK BARU --}}
+                <td class="text-center">
+                    <i class="fas fa-pencil-alt po-remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan PO"></i>
+                    <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
+                </td>
             </tr>`;
                 if (sid) itemIdToSO.set(sid, String(r.VBELN));
             });
@@ -1316,45 +1407,78 @@ END MODAL
          ==================================================================== */
 
         async function handleSoRowClick(ev, soRowEl = null) {
-            // Jika yang di-klik adalah checkbox atau mode collapse aktif, hentikan.
-            if (ev.target.closest('.form-check-input') || COLLAPSE_MODE) {
+            // Abaikan klik pada elemen formulir atau jika sedang dalam mode Collapse/Fokus global (▾)
+            // Kecuali jika yang diklik adalah ikon remark, biarkan ikon remark yang menangani event-nya.
+            if (ev.target.closest('.form-check-input') && !ev.target.classList.contains('po-remark-icon')) {
+                return;
+            }
+            // Jika sedang dalam mode COLLAPSE_MODE (mode Fokus T2 yang diaktifkan tombol ▾), nonaktifkan klik baris biasa.
+            if (COLLAPSE_MODE) {
                 return;
             }
             ev.stopPropagation();
 
-            // PENTING: pakai elemen baris yang kita kirim (delegation) ATAU currentTarget (jika bound langsung)
             const soRow = soRowEl || ev.currentTarget;
+
+            // Pastikan klik berasal dari baris PO yang valid
+            if (!soRow || !soRow.classList.contains('js-t2row')) return;
 
             const kunnr = soRow.closest('.yz-nest-card').previousElementSibling.dataset.kunnr;
             const vbeln = (soRow.dataset.vbeln || '').trim();
             const tgtId = soRow.dataset.tgt;
             const caret = soRow.querySelector('.yz-caret');
             const tgt = soRow.closest('table').querySelector('#' + tgtId);
+
+            // Periksa validitas elemen target
+            if (!tgt || !tgt.classList.contains('yz-nest')) return;
+
             const box = tgt.querySelector('.yz-slot-t3');
             const open = tgt.style.display !== 'none';
             const t2tbl = soRow.closest('table');
             const soTbody = soRow.closest('tbody');
 
-            if (!open) {
-                soTbody.classList.add('so-focus-mode');
-                soRow.classList.add('is-focused');
-            } else {
-                soTbody.classList.remove('so-focus-mode');
-                soRow.classList.remove('is-focused');
-            }
-
             if (open) {
+                // KONDISI 1: Menutup Tabel 3 (Detail Item)
                 tgt.style.display = 'none';
                 caret?.classList.remove('rot');
+
+                // KELUAR DARI MODE FOKUS/FILTER PADA BODY
+                soTbody.classList.remove('so-focus-mode');
+                soRow.classList.remove('is-focused');
+
                 updateT2FooterVisibility(t2tbl);
                 return;
             }
 
+            // KONDISI 2: Membuka Tabel 3 (Detail Item)
+
+            // 1. Tutup semua T3 lain di T2 yang sama dan nonaktifkan fokus/is-focused
+            soTbody.querySelectorAll('.yz-nest').forEach(otherNest => {
+                if (otherNest !== tgt && otherNest.style.display !== 'none') {
+                    otherNest.style.display = 'none';
+                    otherNest.previousElementSibling.querySelector('.yz-caret')?.classList.remove('rot');
+                    otherNest.previousElementSibling.classList.remove('is-focused');
+                }
+            });
+
+            // 2. Terapkan MODE FOKUS ke tbody (menyembunyikan baris non-focused via CSS)
+            soTbody.classList.add('so-focus-mode');
+            soRow.classList.add('is-focused');
+
+            // 3. Buka Tabel 3 yang diklik
             tgt.style.display = '';
             caret?.classList.add('rot');
             updateT2FooterVisibility(t2tbl);
 
-            if (tgt.dataset.loaded === '1') return;
+            // 4. Proses pemuatan data (jika belum dimuat)
+            if (tgt.dataset.loaded === '1') {
+                // Hanya sinkronkan checkbox jika sudah dimuat
+                box.querySelectorAll('.check-item').forEach(chk => {
+                    const sid = sanitizeId(chk.dataset.id);
+                    chk.checked = !!(sid && selectedItems.has(sid));
+                });
+                return;
+            }
 
             box.innerHTML = `
         <div class="p-2 text-muted small yz-loader-pulse">
@@ -1378,6 +1502,11 @@ END MODAL
 
                 box.innerHTML = renderT3(j3.data);
                 tgt.dataset.loaded = '1';
+
+                // Panggil fungsi global untuk memperbarui flag Remark di T2
+                if (window.updatePoRemarkFlagFromDom) {
+                    window.updatePoRemarkFlagFromDom(vbeln);
+                }
 
                 // Sinkronkan checkbox item sesuai selectedItems
                 box.querySelectorAll('.check-item').forEach(chk => {
@@ -1424,6 +1553,7 @@ END MODAL
 
                     box.innerHTML = renderT3(j3.data);
                     nest.dataset.loaded = '1';
+                    updatePoRemarkFlagFromDom(vbeln);
 
                     // Setelah render, pastikan checkbox item sync dengan selectedItems
                     box.querySelectorAll('.check-item').forEach(chk => {
@@ -1521,9 +1651,30 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             updateT2FooterVisibility(tbodyEl.closest('table'));
         }
 
-        /* ====================================================================
-         END MODIFIED SECTION
-         ==================================================================== */
+        // taruh DI LUAR DOMContentLoaded, atau tetap di dalam tapi di-attach ke window:
+        window.updatePoRemarkFlagFromDom = function(vbeln) {
+            try {
+                const soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+                if (!soRow) return;
+                const nest = soRow.nextElementSibling;
+
+                let hasRemark = false;
+                if (nest) {
+                    const dots = nest.querySelectorAll('.remark-dot');
+                    hasRemark = Array.from(dots).some(d => d.style.display !== 'none');
+                }
+
+                const flag = soRow.querySelector('.po-remark-flag');
+                if (flag) {
+                    flag.style.display = hasRemark ? 'inline-block' : 'none';
+                    flag.classList.toggle('active', hasRemark);
+                }
+            } catch (e) {
+                /* noop */
+            }
+        };
+
+        window.openItemsIfNeededForSORow = openItemsIfNeededForSORow;
 
         /* ====================== MAIN EVENT LISTENERS ====================== */
         document.addEventListener('DOMContentLoaded', () => {
@@ -1538,6 +1689,38 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             const apiPoOverdueDetails = "{{ route('dashboard.api.poOverdueDetails') }}";
             const apiPerformanceByCustomer = "{{ route('po.api.performanceByCustomer') }}";
 
+            // === FIX: inisialisasi elemen & modal Remark + endpoint (WAJIB ADA) ===
+            const remarkModalEl = document.getElementById('remarkModal');
+            const remarkModal = remarkModalEl ? (bootstrap.Modal.getInstance(remarkModalEl) || new bootstrap.Modal(
+                remarkModalEl)) : null;
+            const remarkTextarea = document.getElementById('remark-text');
+            const saveRemarkBtn = document.getElementById('save-remark-btn');
+            const remarkFeedback = document.getElementById('remark-feedback');
+            const apiSavePoRemark = "{{ route('api.po.remark.save') }}"; // pastikan route ini didefinisikan
+
+            // Helper: nyalakan/matikan bendera remark di baris PO (T2) berdasarkan dot di T3
+            function updatePoRemarkFlagFromDom(vbeln) {
+                try {
+                    const soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+                    if (!soRow) return;
+                    const nest = soRow.nextElementSibling;
+                    // Cari dot remark yang visible di T3 yang sedang terbuka
+                    let hasRemark = false;
+                    if (nest) {
+                        const dots = nest.querySelectorAll('.remark-dot');
+                        hasRemark = Array.from(dots).some(d => d.style.display !== 'none');
+                    }
+                    const flag = soRow.querySelector('.po-remark-flag');
+                    if (flag) {
+                        flag.style.display = hasRemark ? 'inline-block' : 'none';
+                        flag.classList.toggle('active', hasRemark);
+                    }
+                } catch (e) {
+                    // swallow
+                }
+            }
+            // === END FIX ===
+
             const WERKS = (root.dataset.werks || '').trim() || null;
             const AUART = (root.dataset.auart || '').trim() || null;
             const isExportContext = !!parseInt(root.dataset.isExport || 0);
@@ -1547,6 +1730,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             const HL_KUNNR = (root.dataset.hKunnr || '').trim();
             const HL_VBELN = (root.dataset.hVbeln || '').trim();
             const HL_BSTNK = (root.dataset.hBstnk || '').trim();
+            const HL_POSNR = (root.dataset.hPosnr || '').trim(); // <-- AMBIL POSNR (JANGAN DIKOSONGKAN)
 
             // Lokasi untuk Small Qty
             const locationCode = (root.dataset.werks || '').trim();
@@ -1729,18 +1913,31 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     // 3. Load T2/T3
                     if (wasOpen) return;
                     if (wrap.dataset.loaded === '1') {
+                        // sync dot
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             const vbeln = soRow.dataset.vbeln;
                             if (vbeln) soHasSelectionDot(vbeln);
                         });
-                        // Sinkronkan status checkbox header SO saat memuat ulang dari cache
-                        const soTbody = wrap.querySelector('table.yz-mini tbody');
-                        if (soTbody) syncSelectAllSoState(soTbody);
 
-                        // Bind tombol kolaps header
+                        // >>> SATUKAN di sini
                         const soTable = wrap.querySelector('table.yz-mini');
-                        const soTbodyTable = soTable?.querySelector('tbody');
-                        const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
+                        const soTbody = soTable?.querySelector('tbody');
+
+                        if (soTbody) {
+                            // adopsi state kolaps dari DOM
+                            const isCollapsed = soTbody.classList.contains('collapse-mode');
+                            COLLAPSE_MODE = isCollapsed;
+
+                            // caret header
+                            const collapseCaret = soTable?.querySelector(
+                                '.js-collapse-toggle .yz-collapse-caret');
+                            if (collapseCaret) collapseCaret.textContent = isCollapsed ? '▾' :
+                                '▸';
+
+                            // header checkbox berdasarkan yang terlihat
+                            syncSelectAllSoState(soTbody);
+                        }
+
                         return;
                     }
 
@@ -1835,8 +2032,8 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                                 for (const chk of allSO) {
                                     const currentRow = chk.closest('.js-t2row');
                                     // Hanya proses baris yang terlihat di mode normal, atau semua baris di mode collapse
-                                    if (currentRow.style.display === 'none' && !
-                                        COLLAPSE_MODE) continue;
+                                    if (currentRow.style.display === 'none' &&
+                                        !COLLAPSE_MODE) continue;
 
                                     chk.checked = e.target.checked;
                                     const vbeln = chk.dataset.vbeln;
@@ -1940,6 +2137,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                                             });
                                             box.innerHTML = renderT3(j3.data);
                                             nest.dataset.loaded = '1';
+                                            updatePoRemarkFlagFromDom(vbeln);
                                         }
                                     } else {
                                         box.querySelectorAll('.check-item').forEach(
@@ -2139,20 +2337,126 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 new bootstrap.Tooltip(el);
             });
 
+            document.body.addEventListener('click', (e) => {
+                // Memicu modal Remark (ikon pensil di T3)
+                if (!e.target.classList.contains('po-remark-icon')) return;
+
+                const rowEl = e.target.closest('tr');
+                const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
+
+                if (!remarkModalEl || !saveRemarkBtn || !remarkModal) return;
+
+                // Ambil kunci yang diperlukan dari atribut data di baris T3
+                saveRemarkBtn.dataset.werks = rowEl.dataset.werksKey;
+                saveRemarkBtn.dataset.auart = rowEl.dataset.auartKey;
+                saveRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
+                saveRemarkBtn.dataset.posnr = rowEl.dataset.posnrDb; // POSNR versi DB ('000010')
+
+                remarkTextarea.value = currentRemark;
+                remarkFeedback.textContent = '';
+
+                remarkModal.show();
+            });
+
+            saveRemarkBtn?.addEventListener('click', async function() {
+                const payload = {
+                    werks: this.dataset.werks,
+                    auart: this.dataset.auart,
+                    vbeln: this.dataset.vbeln,
+                    posnr: this.dataset.posnr,
+                    remark: remarkTextarea.value
+                };
+                const vbeln = payload.vbeln;
+                this.disabled = true;
+                this.innerHTML =
+                    `<span class="spinner-border spinner-border-sm" role="status"></span> Menyimpan...`;
+
+                const soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+                const itemNest = soRow?.nextElementSibling;
+
+                try {
+                    const response = await fetch(apiSavePoRemark, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': "{{ csrf_token() }}",
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result.ok) throw new Error(result.message ||
+                        'Gagal menyimpan catatan.');
+
+                    // 1. Hapus flag loaded T3
+                    if (itemNest) {
+                        itemNest.removeAttribute('data-loaded');
+                    }
+
+                    // 2. Jika T3 terbuka, tutup dan buka kembali untuk memuat ulang data terbaru
+                    if (itemNest && itemNest.style.display !== 'none') {
+                        soRow.click(); // Tutup
+                        await new Promise(r => setTimeout(r, 200));
+                        soRow.click(); // Buka ulang, memicu load ulang
+                    }
+
+                    // 3. Update status remark di item yang bersangkutan (Jika saat ini terlihat)
+                    const rowSel =
+                        `tr[data-werks-key='${payload.werks}'][data-auart-key='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr-db='${payload.posnr}']`;
+                    const rowEl = document.querySelector(rowSel);
+                    const ic = rowEl?.querySelector('.po-remark-icon');
+                    const dot = rowEl?.querySelector('.remark-dot');
+
+                    if (ic) ic.dataset.remark = encodeURIComponent(payload.remark || '');
+                    if (dot) dot.style.display = (payload.remark.trim() !== '' ? 'inline-block' :
+                        'none');
+
+                    // 4. Recalculate ikon bendera di Level 2
+                    updatePoRemarkFlagFromDom(vbeln);
+
+                    remarkFeedback.textContent = 'Catatan berhasil disimpan!';
+                    remarkFeedback.className = 'small mt-2 text-success';
+                    setTimeout(() => remarkModal.hide(), 800);
+                } catch (err) {
+                    // Update visual item di DOM yang terlihat (fallback)
+                    const rowSel =
+                        `tr[data-werks-key='${payload.werks}'][data-auart-key='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr-db='${payload.posnr}']`;
+                    const rowEl = document.querySelector(rowSel);
+                    const ic = rowEl?.querySelector('.po-remark-icon');
+                    const dot = rowEl?.querySelector('.remark-dot');
+                    if (ic) ic.dataset.remark = encodeURIComponent(payload.remark || '');
+                    if (dot) dot.style.display = (payload.remark.trim() !== '' ? 'inline-block' :
+                        'none');
+                    updatePoRemarkFlagFromDom(vbeln);
+
+                    remarkFeedback.textContent = err.message;
+                    remarkFeedback.className = 'small mt-2 text-danger';
+                } finally {
+                    this.disabled = false;
+                    this.innerHTML = 'Simpan Catatan';
+                }
+            });
+            // ---------- END REMARK HANDLERS ----------
+
             /* ====================== AUTO EXPAND & HIGHLIGHT (HASIL SEARCH) ====================== */
             (function autoOpenFromSearch() {
                 const root = document.getElementById('yz-root');
                 const needAutoExpand = !!parseInt(root?.dataset.autoExpand || 0);
                 if (!needAutoExpand) return;
 
+                // (DIPERBAIKI) — JANGAN MENGOSONGKAN POSNR!
+                // if (root) root.dataset.hPosnr = '';
+
                 const HL_KUNNR = (root.dataset.hKunnr || '').trim();
                 const HL_VBELN = (root.dataset.hVbeln || '').trim();
                 const HL_BSTNK = (root.dataset.hBstnk || '').trim();
+                const HL_POSNR = (root.dataset.hPosnr || '').trim(); // <-- penting
+
                 if (!HL_KUNNR) return;
 
                 const onlyDigits = s => String(s || '').replace(/\D/g, '');
                 const pad10 = s => onlyDigits(s).padStart(10, '0');
-                const wait = ms => new Promise(r => setTimeout(r, ms));
+                const pad6 = s => onlyDigits(s).padStart(6, '0');
 
                 // 1) cari customer card baru
                 const findCustomerCard = () => {
@@ -2167,8 +2471,8 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 // Cari PO Row di dalam container
                 const findPoRow = (wrap, vbeln, bstnk) => {
                     if (bstnk) {
-                        return wrap.querySelector(`.js-t2row .text-start:nth-child(3)`).closest(
-                            '.js-t2row');
+                        return wrap.querySelector(`.js-t2row .text-start:nth-child(3)`)?.closest(
+                            '.js-t2row') || null;
                     }
                     if (vbeln) {
                         return wrap.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
@@ -2208,7 +2512,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
                     if (!targetRow) return;
 
-                    // 4. Scroll & highlight baris PO (Tabel-2)
+                    // 4) Scroll ke baris PO (Tabel-2)
                     document.querySelectorAll('.row-highlighted')
                         .forEach(el => el.classList.remove('row-highlighted'));
 
@@ -2217,24 +2521,50 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         block: 'center'
                     });
 
-                    // pastikan nested T3 tetap tertutup & caret kembali
-                    const nest = targetRow.nextElementSibling;
-                    if (nest?.classList.contains('yz-nest')) {
-                        nest.style.display = 'none';
-                        targetRow.querySelector('.yz-caret')?.classList.remove('rot');
+                    // === Perilaku bercabang ===
+                    if (!HL_POSNR) {
+                        // **TIDAK ADA POSNR** → Pertahankan perilaku lama (jangan buka T3), cuma highlight T2
+                        const nest = targetRow.nextElementSibling;
+                        if (nest?.classList.contains('yz-nest')) {
+                            nest.style.display = 'none';
+                            targetRow.querySelector('.yz-caret')?.classList.remove('rot');
+                        }
+
+                        targetRow.classList.add('row-highlighted');
+                        const removeHL = () => targetRow.classList.remove('row-highlighted');
+                        targetRow.addEventListener('click', removeHL, {
+                            capture: true,
+                            once: true
+                        });
+                        return;
                     }
 
-                    // pakai kelas highlight bawaan CSS, dan BIARKAN sampai user klik barisnya
-                    targetRow.classList.add('row-highlighted');
+                    // **ADA POSNR** → Buka T3 & highlight item
+                    await openItemsIfNeededForSORow(targetRow);
 
-                    // Begitu baris PO diklik (untuk buka Tabel-3 manual), matikan highlight sekali saja.
-                    const removeHL = () => targetRow.classList.remove('row-highlighted');
-                    targetRow.addEventListener('click', removeHL, {
-                        capture: true,
-                        once: true
-                    });
+                    const wantedPosnr = pad6(HL_POSNR);
+                    let t3row = null;
+                    let tries2 = 0;
+                    while (tries2++ < 100) {
+                        const nest = targetRow.nextElementSibling;
+                        t3row = nest?.querySelector(`tr[data-posnr-db='${CSS.escape(wantedPosnr)}']`);
+                        if (t3row) break;
+                        await wait(80);
+                    }
+
+                    if (t3row) {
+                        t3row.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center'
+                        });
+                        scrollAndFlash(t3row);
+                    } else {
+                        // fallback: kalau tidak ketemu, tetap highlight baris PO agar user tahu lokasinya
+                        scrollAndFlash(targetRow);
+                    }
                 })();
             })();
         });
     </script>
+    <script src="{{ asset('js/po-report-remark-highlight.js') }}"></script>
 @endpush

@@ -104,6 +104,9 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::post('/dashboard/export/small-qty-pdf', [DashboardController::class, 'exportSmallQtyPdf'])
 		->name('dashboard.export.smallQtyPdf');
 
+	Route::get('/po/api/remark-items',  [DashboardController::class, 'apiPoRemarkItems'])->name('po.api.remark_items');
+	Route::delete('/po/api/remark-delete', [DashboardController::class, 'apiPoRemarkDelete'])->name('po.api.remark_delete');
+
 	// --------- SO Dashboard (visual) ---------
 	Route::get('/so-dashboard', [SODashboardController::class, 'index'])->name('so.dashboard');
 
@@ -128,6 +131,8 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::post('/po/export-data', [PoReportController::class, 'exportData'])->name('po.export');
 	Route::get('api/po/performance-by-customer', [PoReportController::class, 'apiPerformanceByCustomer'])
 		->name('po.api.performanceByCustomer');
+	Route::post('/api/po/remark/save', [PoReportController::class, 'apiSavePoRemark'])
+		->name('api.po.remark.save');
 
 	// --------- Outstanding SO (report lama) ---------
 	Route::get('/outstanding-so', [SalesOrderController::class, 'index'])->name('so.index');

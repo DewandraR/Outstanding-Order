@@ -322,6 +322,13 @@ COALESCE(
         // Ambil item by id + info header (PO, SO, Customer)
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
+            // >>> JOIN REMARK
+            ->leftJoin('item_remarks_po as ir', function ($j) use ($werks, $auart) {
+                $j->on('ir.VBELN', '=', 't1.VBELN')
+                    ->on('ir.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"))
+                    ->where('ir.IV_WERKS_PARAM', '=', $werks)
+                    ->where('ir.IV_AUART_PARAM', '=', $auart);
+            })
             ->select(
                 't1.id',
                 't1.VBELN as SO',
@@ -333,10 +340,12 @@ COALESCE(
                 't1.KWMENG',
                 't1.QTY_GI',
                 't1.QTY_BALANCE2',
-                't1.KALAB',     // WHFG
-                't1.KALAB2',     // FG
+                't1.KALAB',
+                't1.KALAB2',
                 't1.NETPR',
-                't1.WAERK'
+                't1.WAERK',
+                // >>> TAMBAH INI
+                DB::raw("COALESCE(ir.remark, '') as REMARK")
             )
             ->whereIn('t1.id', $ids)
             ->orderBy('t1.VBELN')->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
@@ -477,5 +486,47 @@ COALESCE(
             'customer_name' => $customerName,
             'is_export_context' => $inExport,
         ]);
+    }
+
+    public function apiSavePoRemark(Request $request)
+    {
+        $validated = $request->validate([
+            'werks'  => 'required|string',
+            'auart'  => 'required|string',
+            'vbeln'  => 'required|string',
+            'posnr'  => 'required|string', // boleh "10", nanti dipad ke 6 digit
+            'remark' => 'nullable|string|max:1000',
+        ]);
+
+        $posnrDb   = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
+        $remarkText = trim($validated['remark'] ?? '');
+
+        try {
+            if ($remarkText === '') {
+                DB::table('item_remarks_po')->where([
+                    'IV_WERKS_PARAM' => $validated['werks'],
+                    'IV_AUART_PARAM' => $validated['auart'],
+                    'VBELN'          => $validated['vbeln'],
+                    'POSNR'          => $posnrDb, // <<< gunakan yang 6 digit
+                ])->delete();
+            } else {
+                DB::table('item_remarks_po')->updateOrInsert(
+                    [
+                        'IV_WERKS_PARAM' => $validated['werks'],
+                        'IV_AUART_PARAM' => $validated['auart'],
+                        'VBELN'          => $validated['vbeln'],
+                        'POSNR'          => $posnrDb,
+                    ],
+                    [
+                        'remark'     => $remarkText,
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            }
+            return response()->json(['ok' => true, 'message' => 'Catatan PO berhasil diproses.']);
+        } catch (\Exception $e) {
+            return response()->json(['ok' => false, 'message' => 'Gagal memproses catatan PO ke database.'], 500);
+        }
     }
 }

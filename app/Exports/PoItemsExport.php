@@ -10,10 +10,13 @@ use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
 
 class PoItemsExport implements
     FromCollection,
@@ -22,7 +25,8 @@ class PoItemsExport implements
     ShouldAutoSize,
     WithStyles,
     WithStrictNullComparison,
-    WithColumnFormatting
+    WithColumnFormatting,
+    WithEvents
 {
     /** @var \Illuminate\Support\Collection */
     protected $items;
@@ -40,14 +44,12 @@ class PoItemsExport implements
         $final = new Collection();
         $rowNum = 2; // baris 1 = heading
 
-        // group per customer (nama dibersihkan supaya konsisten)
         $groups = $this->items->groupBy(function ($it) {
             $name = preg_replace('/\s+/', ' ', trim($it->CUSTOMER ?? ''));
             return $name === '' ? '(Unknown Customer)' : $name;
         });
 
         foreach ($groups as $customerName => $rows) {
-            // sisipkan baris header customer (akan di-merge A..K)
             $final->push((object)[
                 'is_customer_header' => true,
                 'customer_name'      => 'Customer: ' . $customerName,
@@ -67,7 +69,7 @@ class PoItemsExport implements
 
     public function headings(): array
     {
-        // Tidak ada kolom “Customer” karena sudah dibuat header terpisah per group
+        // tidak ada kolom “Customer”; pakai header group
         return [
             'PO',
             'SO',
@@ -80,29 +82,31 @@ class PoItemsExport implements
             'WHFG',
             'FG',
             'Net Price',
+            'Remark', // <<< NEW (kolom L)
         ];
     }
 
     public function map($it): array
     {
-        // baris header customer → isi kolom A saja, sisanya kosong (total 11 kolom A..K)
+        // header customer: isi kolom A saja, total 12 kolom (A..L)
         if (!empty($it->is_customer_header)) {
-            return [$it->customer_name, '', '', '', '', '', '', '', '', '', ''];
+            return [$it->customer_name, '', '', '', '', '', '', '', '', '', '', ''];
         }
 
-        // data item (semua angka integer kecuali Net Price)
+        // data item; REMARK diambil dari controller (alias REMARK)
         return [
             (string)($it->PO ?? ''),                 // A
             (string)($it->SO ?? ''),                 // B
             (int)   ($it->POSNR ?? 0),               // C
             (string)($it->MATNR ?? ''),              // D
             (string)($it->MAKTX ?? ''),              // E
-            (int)   ($it->KWMENG ?? 0),              // F  Qty PO
-            (int)   ($it->QTY_GI ?? 0),              // G  Shipped
-            (int)   ($it->QTY_BALANCE2 ?? 0),        // H  Outs. Ship
-            (int)   ($it->KALAB ?? 0),               // I  WHFG
-            (int)   ($it->KALAB2 ?? 0),              // J  FG
-            (float) ($it->NETPR ?? 0),               // K  Net Price (numeric)
+            (int)   ($it->KWMENG ?? 0),              // F
+            (int)   ($it->QTY_GI ?? 0),              // G
+            (int)   ($it->QTY_BALANCE2 ?? 0),        // H
+            (int)   ($it->KALAB ?? 0),               // I
+            (int)   ($it->KALAB2 ?? 0),              // J
+            (float) ($it->NETPR ?? 0),               // K
+            (string)($it->REMARK ?? ''),             // L
         ];
     }
 
@@ -112,9 +116,9 @@ class PoItemsExport implements
             1 => ['font' => ['bold' => true]], // header kolom
         ];
 
-        // merge baris “Customer: …” dari A sampai K (11 kolom)
+        // merge baris “Customer: …” dari A sampai L (12 kolom)
         foreach ($this->customerRows as $r) {
-            $sheet->mergeCells("A{$r}:K{$r}");
+            $sheet->mergeCells("A{$r}:L{$r}");
             $styles[$r] = [
                 'font' => ['bold' => true, 'size' => 12],
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => 'E9ECEF']],
@@ -125,7 +129,7 @@ class PoItemsExport implements
                     ],
                 ],
                 'alignment' => [
-                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                    'horizontal' => Alignment::HORIZONTAL_LEFT,
                 ],
             ];
         }
@@ -135,7 +139,7 @@ class PoItemsExport implements
 
     public function columnFormats(): array
     {
-        // integer tanpa desimal untuk qty; 2 desimal untuk Net Price
+        // integer untuk qty; 2 desimal untuk Net Price
         return [
             'F' => NumberFormat::FORMAT_NUMBER,        // Qty PO
             'G' => NumberFormat::FORMAT_NUMBER,        // Shipped
@@ -143,6 +147,25 @@ class PoItemsExport implements
             'I' => NumberFormat::FORMAT_NUMBER,        // WHFG
             'J' => NumberFormat::FORMAT_NUMBER,        // FG
             'K' => NumberFormat::FORMAT_NUMBER_00,     // Net Price
+        ];
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet = $event->sheet->getDelegate();
+                $highestRow = $sheet->getHighestRow();
+
+                // wrap & top align untuk kolom Remark
+                $sheet->getStyle("L2:L{$highestRow}")
+                    ->getAlignment()
+                    ->setWrapText(true)
+                    ->setVertical(Alignment::VERTICAL_TOP);
+
+                // lebar kolom Remark yang nyaman (override autosize)
+                $sheet->getColumnDimension('L')->setWidth(60);
+            },
         ];
     }
 }
