@@ -10,6 +10,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use App\Exports\PoItemsExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 
 class PoReportController extends Controller
 {
@@ -498,32 +499,38 @@ COALESCE(
             'remark' => 'nullable|string|max:60',
         ]);
 
-        $posnrDb   = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
+        $posnrDb    = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
         $remarkText = trim($validated['remark'] ?? '');
+        $userId     = Auth::id(); // bisa NULL kalau belum login
+
+        $keys = [
+            'IV_WERKS_PARAM' => $validated['werks'],
+            'IV_AUART_PARAM' => $validated['auart'],
+            'VBELN'          => $validated['vbeln'],
+            'POSNR'          => $posnrDb,
+        ];
 
         try {
             if ($remarkText === '') {
-                DB::table('item_remarks_po')->where([
-                    'IV_WERKS_PARAM' => $validated['werks'],
-                    'IV_AUART_PARAM' => $validated['auart'],
-                    'VBELN'          => $validated['vbeln'],
-                    'POSNR'          => $posnrDb, // <<< gunakan yang 6 digit
-                ])->delete();
+                DB::table('item_remarks_po')->where($keys)->delete();
             } else {
-                DB::table('item_remarks_po')->updateOrInsert(
-                    [
-                        'IV_WERKS_PARAM' => $validated['werks'],
-                        'IV_AUART_PARAM' => $validated['auart'],
-                        'VBELN'          => $validated['vbeln'],
-                        'POSNR'          => $posnrDb,
-                    ],
-                    [
+                // update dulu (supaya created_at tidak berubah); jika belum ada → insert
+                $affected = DB::table('item_remarks_po')->where($keys)->update([
+                    'remark'     => $remarkText,
+                    'user_id'    => $userId,
+                    'updated_at' => now(),
+                ]);
+
+                if ($affected === 0) {
+                    DB::table('item_remarks_po')->insert($keys + [
                         'remark'     => $remarkText,
-                        'updated_at' => now(),
+                        'user_id'    => $userId,
                         'created_at' => now(),
-                    ]
-                );
+                        'updated_at' => now(),
+                    ]);
+                }
             }
+
             return response()->json(['ok' => true, 'message' => 'Catatan PO berhasil diproses.']);
         } catch (\Exception $e) {
             return response()->json(['ok' => false, 'message' => 'Gagal memproses catatan PO ke database.'], 500);

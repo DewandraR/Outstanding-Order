@@ -11,6 +11,7 @@ use App\Exports\SoItemsExport;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 
 class SalesOrderController extends Controller
 {
@@ -543,30 +544,39 @@ class SalesOrderController extends Controller
         ]);
 
         $remarkText = trim($validated['remark'] ?? '');
+        // Normalisasi POSNR jadi 6 digit (aman)
+        $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
+        $userId = Auth::id(); // bisa NULL jika guest
+
+        $keys = [
+            'IV_WERKS_PARAM' => $validated['werks'],
+            'IV_AUART_PARAM' => $validated['auart'],
+            'VBELN'          => $validated['vbeln'],
+            'POSNR'          => $posnrKey,
+        ];
 
         try {
             if ($remarkText === '') {
-                DB::table('item_remarks')->where([
-                    'IV_WERKS_PARAM' => $validated['werks'],
-                    'IV_AUART_PARAM' => $validated['auart'],
-                    'VBELN'          => $validated['vbeln'],
-                    'POSNR'          => $validated['posnr'],
-                ])->delete();
+                // hapus remark
+                DB::table('item_remarks')->where($keys)->delete();
             } else {
-                DB::table('item_remarks')->updateOrInsert(
-                    [
-                        'IV_WERKS_PARAM' => $validated['werks'],
-                        'IV_AUART_PARAM' => $validated['auart'],
-                        'VBELN'          => $validated['vbeln'],
-                        'POSNR'          => $validated['posnr'],
-                    ],
-                    [
+                // **tanpa updateOrInsert** supaya created_at tidak ikut berubah
+                $affected = DB::table('item_remarks')->where($keys)->update([
+                    'remark'     => $remarkText,
+                    'user_id'    => $userId,
+                    'updated_at' => now(),
+                ]);
+
+                if ($affected === 0) {
+                    DB::table('item_remarks')->insert($keys + [
                         'remark'     => $remarkText,
-                        'updated_at' => now(),
+                        'user_id'    => $userId,
                         'created_at' => now(),
-                    ]
-                );
+                        'updated_at' => now(),
+                    ]);
+                }
             }
+
             return response()->json(['ok' => true, 'message' => 'Catatan berhasil diproses.']);
         } catch (\Exception $e) {
             return response()->json(['ok' => false, 'message' => 'Gagal memproses catatan ke database.'], 500);
