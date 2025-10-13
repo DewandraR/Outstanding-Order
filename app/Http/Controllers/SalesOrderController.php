@@ -77,7 +77,7 @@ class SalesOrderController extends Controller
         if ($request->filled('werks') && !$request->filled('auart') && !$request->has('q')) {
             $types = $rawMapping->where('IV_WERKS', $werks);
 
-            // Prioritas 1: Export (yang sekarang juga mewakili Replace)
+            // Prioritas 1: Export (sekaligus mewakili Replace)
             $exportDefault = $types->first(function ($row) {
                 $d = strtolower((string)$row->Deskription);
                 return Str::contains($d, 'export') && !Str::contains($d, 'local');
@@ -100,7 +100,7 @@ class SalesOrderController extends Controller
 
         // 5) Siapkan mapping untuk NAV PILLS (Gabungan Export dan Replace)
         $mappingForPills = $rawMapping
-            ->map(function ($row) use ($exportAuartCodes, $replaceAuartCodes) {
+            ->map(function ($row) {
                 $descLower = strtolower((string)$row->Deskription);
                 $isExport = Str::contains($descLower, 'export') && !Str::contains($descLower, 'local');
                 $isLocal = Str::contains($descLower, 'local');
@@ -108,7 +108,6 @@ class SalesOrderController extends Controller
 
                 $abbr = $row->IV_WERKS === '3000' ? 'SMG' : ($row->IV_WERKS === '2000' ? 'SBY' : $row->IV_WERKS);
 
-                // Gabungkan Export dan Replace ke dalam satu tombol "Export"
                 if ($isExport) {
                     $row->pill_label = "KMI Export {$abbr}";
                 } elseif ($isLocal) {
@@ -117,26 +116,23 @@ class SalesOrderController extends Controller
                     $row->pill_label = $row->Deskription ?: $row->IV_AUART;
                 }
 
-                // Tandai mana yang harus dibuang dari list akhir, yaitu Replace
                 $row->is_replace = $isReplace;
-
                 return $row;
             })
-            ->reject(fn($row) => $row->is_replace) // Buang Replace dari list navigasi
+            ->reject(fn($row) => $row->is_replace) // buang Replace dari nav
             ->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
-
 
         $rows = collect();
         $selectedDescription = '';
         $pageTotalsAll = [];
         $pageTotalsOverdue = [];
         $grandTotals = collect();
-        $smallQtyByCustomer = collect(); // Inisialisasi
+        $smallQtyByCustomer = collect();
 
         $locationAbbr = $werks === '3000' ? 'SMG' : ($werks === '2000' ? 'SBY' : $werks);
 
-        // Tentukan Selected Description (untuk header)
+        // Selected Description (untuk header)
         if (in_array($auart, $exportAuartCodes)) {
             $selectedDescription = "KMI Export {$locationAbbr}";
         } elseif ($request->filled('auart')) {
@@ -147,7 +143,6 @@ class SalesOrderController extends Controller
                 $selectedDescription = $descFromMap;
             }
         }
-
 
         if ($werks && $auart) {
             // parser tanggal aman
@@ -166,7 +161,6 @@ class SalesOrderController extends Controller
                 ->select(
                     't2a.KUNNR',
                     DB::raw('CAST(SUM(CAST(t1a.PACKG AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
-                    // Split value ke IDR dan USD
                     DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
                     DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
                 )
@@ -182,7 +176,6 @@ class SalesOrderController extends Controller
                 })
                 ->select(
                     't2_inner.KUNNR',
-                    // Split value overdue ke IDR dan USD
                     DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
                     DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
                 )
@@ -199,11 +192,8 @@ class SalesOrderController extends Controller
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
-                    // Total SO: Menghitung semua SO outstanding
                     DB::raw('COUNT(DISTINCT t2.VBELN) AS SO_TOTAL_COUNT'),
-                    // Overdue SO: jumlah SO yang telat
                     DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT"),
-                    // Value dan Qty
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0) AS TOTAL_OUTS_QTY'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0) AS TOTAL_ALL_VALUE_IDR'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0) AS TOTAL_ALL_VALUE_USD'),
@@ -235,7 +225,7 @@ class SalesOrderController extends Controller
                 'USD' => $rows->sum('TOTAL_OVERDUE_VALUE_USD'),
                 'IDR' => $rows->sum('TOTAL_OVERDUE_VALUE_IDR'),
             ];
-            $grandTotals = $pageTotalsOverdue; // Kompatibilitas lama
+            $grandTotals = $pageTotalsOverdue;
 
             // Mengambil Data Small Qty untuk tampilan awal Blade
             $smallQtyByCustomer = DB::table('so_yppr079_t1 as t1')
@@ -244,10 +234,8 @@ class SalesOrderController extends Controller
                 ->whereIn('t1.IV_AUART_PARAM', $auartList)
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
-                // FILTER BARU: HANYA YANG Qty SO != Outs. SO
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
                 ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-                // MODIFIKASI: Mengubah COUNT item menjadi COUNT SO unik
                 ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count, COUNT(t1.POSNR) as item_count')
                 ->orderBy('t2.NAME1')
                 ->get();
@@ -263,7 +251,7 @@ class SalesOrderController extends Controller
 
         // 7) kirim ke view
         return view('sales_order.so_report', [
-            'mapping'             => $mappingForPills, // Kirim mapping yang sudah difilter
+            'mapping'             => $mappingForPills,
             'rows'                => $rows,
             'selected'            => ['werks' => $werks, 'auart' => $auart],
             'selectedDescription' => $selectedDescription,
@@ -272,7 +260,7 @@ class SalesOrderController extends Controller
             'grandTotals'         => $grandTotals,
             'highlight'           => $highlight,
             'autoExpand'          => $autoExpand,
-            'smallQtyByCustomer'  => $smallQtyByCustomer, // Kirim data Small Qty
+            'smallQtyByCustomer'  => $smallQtyByCustomer,
         ]);
     }
 
@@ -289,7 +277,7 @@ class SalesOrderController extends Controller
         $werks = $request->werks;
         $auart = $request->auart;
 
-        // LOGIKA PENGGABUNGAN Export + Replace (diulang untuk API)
+        // LOGIKA PENGGABUNGAN Export + Replace
         $rawMapping = DB::table('maping')->get();
         $exportAuartCodes = $rawMapping
             ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
@@ -305,9 +293,8 @@ class SalesOrderController extends Controller
         if ($isExportOrReplaceActive) {
             $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
         }
-        // END LOGIKA PENGGABUNGAN
 
-        // Subquery untuk menghitung item yang memiliki remark pada SO ini
+        // Subquery remark count per SO
         $remarksSub = DB::table('item_remarks as ir')
             ->join('so_yppr079_t1 as t1r', function ($j) {
                 $j->on('t1r.IV_WERKS_PARAM', '=', 'ir.IV_WERKS_PARAM')
@@ -329,9 +316,7 @@ class SalesOrderController extends Controller
                 't1.VBELN',
                 't2.EDATU',
                 't1.WAERK',
-                // total value: semua outstanding (tidak hanya overdue)
                 DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as total_value'),
-                // outs qty: jumlah OUTS SO (PACKG) per SO
                 DB::raw('SUM(CAST(t1.PACKG  AS DECIMAL(18,3))) as outs_qty'),
                 DB::raw('COUNT(DISTINCT t1.id) as item_count'),
                 DB::raw('COALESCE(MAX(rk.remark_count),0) AS remark_count')
@@ -350,7 +335,7 @@ class SalesOrderController extends Controller
             $formattedEdatu = '';
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
-                    $edatuDate = \Carbon\Carbon::parse($row->EDATU)->startOfDay();
+                    $edatuDate = Carbon::parse($row->EDATU)->startOfDay();
                     $formattedEdatu = $edatuDate->format('d-m-Y');
 
                     $delta = $today->diffInDays($edatuDate, false);
@@ -380,20 +365,21 @@ class SalesOrderController extends Controller
     }
 
     /**
-     * API: Ambil item untuk 1 SO (Level 3), termasuk remark.
+     * API: Ambil item untuk 1 SO (Level 3), termasuk info jumlah remark.
+     * (Detail daftar remark diambil via apiListItemRemarks)
      */
     public function apiGetItemsBySo(Request $request)
     {
         $request->validate([
             'vbeln' => 'required|string',
             'werks' => 'required|string',
-            'auart' => 'required|string', // AUART yang aktif di nav pill (bisa Export atau Local)
+            'auart' => 'required|string',
         ]);
 
         $werks = $request->werks;
         $auart = $request->auart;
 
-        // LOGIKA PENENTUAN AUART LIST UNTUK API LEVEL 3
+        // AUART list (gabungan Export+Replace bila perlu)
         $rawMapping = DB::table('maping')->get();
         $exportAuartCodes = $rawMapping
             ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
@@ -410,12 +396,22 @@ class SalesOrderController extends Controller
             $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
         }
 
+        // Subquery: jumlah remark per item
+        $remarksAgg = DB::table('item_remarks as ir')
+            ->select(
+                'ir.VBELN',
+                'ir.POSNR',
+                DB::raw('COUNT(*) as remark_count'),
+                DB::raw('MAX(ir.created_at) as last_remark_at')
+            )
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereIn('ir.IV_AUART_PARAM', $auartList)
+            ->groupBy('ir.VBELN', 'ir.POSNR');
+
         $items = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('item_remarks as ir', function ($j) {
-                $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
-                    ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
-                    ->on('ir.VBELN', '=', 't1.VBELN')
-                    ->on('ir.POSNR', '=', 't1.POSNR');
+            ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
+                $j->on('ragg.VBELN', '=', 't1.VBELN')
+                    ->on('ragg.POSNR', '=', 't1.POSNR');
             })
             ->select(
                 't1.id',
@@ -438,12 +434,12 @@ class SalesOrderController extends Controller
                 't1.IV_WERKS_PARAM as WERKS_KEY',
                 't1.IV_AUART_PARAM as AUART_KEY',
                 't1.VBELN as VBELN_KEY',
-                't1.POSNR as POSNR_KEY',
-                'ir.remark'
+                DB::raw('COALESCE(ragg.remark_count, 0) as remark_count'),
+                DB::raw('ragg.last_remark_at as last_remark_at')
             )
             ->where('t1.VBELN', $request->vbeln)
             ->where('t1.IV_WERKS_PARAM', $request->werks)
-            ->whereIn('t1.IV_AUART_PARAM', $auartList) // **MENGGUNAKAN $auartList**
+            ->whereIn('t1.IV_AUART_PARAM', $auartList)
             ->where('t1.PACKG', '!=', 0)
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
@@ -453,15 +449,16 @@ class SalesOrderController extends Controller
 
     /**
      * Export PDF / Excel untuk item terpilih.
+     * Kolom remark digabungkan (nama user: isi) dengan GROUP_CONCAT.
      */
     public function exportData(Request $request)
     {
         $validated = $request->validate([
             'item_ids'      => 'required|array',
             'item_ids.*'    => 'integer',
-            'export_type' => 'required|string|in:pdf,excel',
-            'werks'       => 'required|string',
-            'auart'       => 'required|string',
+            'export_type'   => 'required|string|in:pdf,excel',
+            'werks'         => 'required|string',
+            'auart'         => 'required|string',
         ]);
 
         $itemIds    = $validated['item_ids'];
@@ -469,12 +466,28 @@ class SalesOrderController extends Controller
         $werks      = $validated['werks'];
         $auart      = $validated['auart'];
 
+        // Subquery agregasi remark (nama user + teks)
+        $remarksConcat = DB::table('item_remarks as ir')
+            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->where('ir.IV_AUART_PARAM', $auart)
+            ->select(
+                'ir.VBELN',
+                'ir.POSNR',
+                DB::raw("
+            GROUP_CONCAT(
+                CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
+                ORDER BY ir.created_at
+                SEPARATOR '\n'
+            ) AS REMARKS
+        ")
+            )
+            ->groupBy('ir.VBELN', 'ir.POSNR');
+
         $items = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('item_remarks as ir', function ($j) {
-                $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
-                    ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
-                    ->on('ir.VBELN', '=', 't1.VBELN')
-                    ->on('ir.POSNR', '=', 't1.POSNR');
+            ->leftJoinSub($remarksConcat, 'rc', function ($j) {
+                $j->on('rc.VBELN', '=', 't1.VBELN')
+                    ->on('rc.POSNR', '=', 't1.POSNR');
             })
             ->whereIn('t1.id', $itemIds)
             ->select(
@@ -489,7 +502,7 @@ class SalesOrderController extends Controller
                 't1.ASSYM',
                 't1.PAINT',
                 't1.MENGE',
-                'ir.remark'
+                DB::raw("COALESCE(rc.REMARKS, '') AS remark") // <- gabungan remark
             )
             ->orderBy('t1.VBELN', 'asc')
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
@@ -531,7 +544,9 @@ class SalesOrderController extends Controller
     }
 
     /**
-     * Simpan / hapus remark item.
+     * (LEGACY) Simpan / hapus remark item — dipertahankan untuk kompatibilitas.
+     * Sekarang: kalau remark != '', simpan sebagai remark BARU milik user saat ini.
+     * Jika remark == '', hapus SEMUA remark milik user saat ini untuk item tsb.
      */
     public function apiSaveRemark(Request $request)
     {
@@ -543,10 +558,8 @@ class SalesOrderController extends Controller
             'remark' => 'nullable|string|max:60',
         ]);
 
-        $remarkText = trim($validated['remark'] ?? '');
-        // Normalisasi POSNR jadi 6 digit (aman)
         $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
-        $userId = Auth::id(); // bisa NULL jika guest
+        $userId = Auth::id();
 
         $keys = [
             'IV_WERKS_PARAM' => $validated['werks'],
@@ -556,25 +569,17 @@ class SalesOrderController extends Controller
         ];
 
         try {
-            if ($remarkText === '') {
-                // hapus remark
-                DB::table('item_remarks')->where($keys)->delete();
+            $text = trim((string)($validated['remark'] ?? ''));
+            if ($text === '') {
+                // Hapus semua remark milik user ini pada item tsb (legacy behaviour)
+                DB::table('item_remarks')->where($keys)->where('user_id', $userId)->delete();
             } else {
-                // **tanpa updateOrInsert** supaya created_at tidak ikut berubah
-                $affected = DB::table('item_remarks')->where($keys)->update([
-                    'remark'     => $remarkText,
+                DB::table('item_remarks')->insert($keys + [
+                    'remark'     => $text,
                     'user_id'    => $userId,
+                    'created_at' => now(),
                     'updated_at' => now(),
                 ]);
-
-                if ($affected === 0) {
-                    DB::table('item_remarks')->insert($keys + [
-                        'remark'     => $remarkText,
-                        'user_id'    => $userId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
             }
 
             return response()->json(['ok' => true, 'message' => 'Catatan berhasil diproses.']);
@@ -583,6 +588,9 @@ class SalesOrderController extends Controller
         }
     }
 
+    /**
+     * Export ringkasan customer (PDF).
+     */
     public function exportCustomerSummary(Request $request)
     {
         if ($request->filled('q')) {
@@ -617,7 +625,6 @@ class SalesOrderController extends Controller
         if ($isExportOrReplaceActive) {
             $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
         }
-        // End Logika Penggabungan
 
         // Deskripsi SO Type & lokasi
         $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
@@ -686,29 +693,23 @@ class SalesOrderController extends Controller
 
     /**
      * API: Small Quantity (≤5) Outstanding SO Items by Customer — untuk chart ringkas.
-     * Definisi: PACKG (Outs. SO) > 0 dan ≤ 5 DAN PACKG != KWMENG
      */
     public function apiSmallQtyByCustomer(Request $request)
     {
-        // Param mengikuti halaman SO Report: werks & auart
         $request->validate(['werks' => 'required|string', 'auart' => 'required|string']);
         $werks = $request->query('werks');
         $auart = $request->query('auart');
 
-        // Gabung Export + Replace bila auart aktif termasuk salah satunya
         $auartList = $this->resolveAuartListForContext($auart);
 
-        // Kriteria small qty untuk SO: PACKG (Outstanding SO) 1..5
         $rows = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
-            // FILTER BARU: Outs. SO != Qty SO (Item sudah pernah dikirim)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
             ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-            // MODIFIKASI: Mengubah COUNT item menjadi COUNT SO unik
             ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count')
             ->orderBy('t2.NAME1')
             ->get();
@@ -721,7 +722,7 @@ class SalesOrderController extends Controller
     }
 
     /**
-     * API: Detail item Small Quantity (≤5) Outstanding per Customer untuk tabel.
+     * API: Detail item Small Quantity (≤5) Outstanding per Customer.
      */
     public function apiSmallQtyDetails(Request $request)
     {
@@ -735,10 +736,8 @@ class SalesOrderController extends Controller
         $werks = $request->query('werks');
         $auart = $request->query('auart');
 
-        // Gabung Export + Replace bila perlu
         $auartList = $this->resolveAuartListForContext($auart);
 
-        // Ambil daftar item small qty (PACKG 1..5) untuk customer + werks + konteks auart
         $items = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
             ->where('t2.NAME1', $customerName)
@@ -746,7 +745,6 @@ class SalesOrderController extends Controller
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
-            // FILTER BARU: Outs. SO != Qty SO (Item sudah pernah dikirim)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
             ->select(
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR)) as SO'),
@@ -755,14 +753,14 @@ class SalesOrderController extends Controller
                 't1.MAKTX',
                 't1.KWMENG',
                 't1.PACKG',
-                't1.KALAB', // <<< TAMBAH WHFG
-                't1.KALAB2' // <<< TAMBAH Stock Packing
+                't1.KALAB',
+                't1.KALAB2',
+                't1.QTY_GI'
             )
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 
         return response()->json(['ok' => true, 'data' => $items]);
     }
-
     /**
      * Export PDF Small Quantity (≤5) Outstanding per Customer.
      */
@@ -778,7 +776,6 @@ class SalesOrderController extends Controller
         $werks = $validated['werks'];
         $auart = $validated['auart'];
 
-        // Gabung Export + Replace bila perlu
         $auartList = $this->resolveAuartListForContext($auart);
 
         $items = DB::table('so_yppr079_t1 as t1')
@@ -788,7 +785,6 @@ class SalesOrderController extends Controller
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
-            // FILTER BARU: Outs. SO != Qty SO (Item sudah pernah dikirim)
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
             ->select(
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR)) AS SO'),
@@ -797,8 +793,9 @@ class SalesOrderController extends Controller
                 't1.MAKTX',
                 't1.KWMENG',
                 't1.PACKG',
-                't1.KALAB', // <<< TAMBAH WHFG
-                't1.KALAB2' // <<< TAMBAH Stock Packing
+                't1.KALAB',
+                't1.KALAB2',
+                't1.QTY_GI'
             )
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 
@@ -814,6 +811,138 @@ class SalesOrderController extends Controller
 
         $filename = 'SO_SmallQty_' . $locationName . '_' . Str::slug($customerName) . '.pdf';
         return $pdf->stream($filename);
+    }
+
+    /**
+     * ====== BARU: API REMARK MULTI-USER ======
+     * List remark per item.
+     */
+    public function apiListItemRemarks(Request $request)
+    {
+        $validated = $request->validate([
+            'werks' => 'required|string',
+            'auart' => 'required|string',
+            'vbeln' => 'required|string',
+            'posnr' => 'required|string',
+        ]);
+
+        $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
+        $currentUserId = Auth::id(); // Ambil ID pengguna saat ini
+
+        $rows = DB::table('item_remarks as ir')
+            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->where('ir.IV_WERKS_PARAM', $validated['werks'])
+            ->where('ir.IV_AUART_PARAM', $validated['auart'])
+            ->where('ir.VBELN', $validated['vbeln'])
+            ->where('ir.POSNR', $posnrKey)
+            ->orderBy('ir.created_at', 'desc')
+            ->select(
+                'ir.id',
+                'ir.user_id',
+                DB::raw('COALESCE(u.name, "Guest") as user_name'), // Ubah "User" menjadi "Guest" jika user_id NULL
+                'ir.remark',
+                'ir.created_at',
+                'ir.updated_at'
+            )
+            ->get()
+            ->map(function ($r) use ($currentUserId) {
+                $r->is_owner = $currentUserId !== null && (int)$r->user_id === (int)$currentUserId;
+                return $r;
+            });
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
+
+    /**
+     * Tambah remark baru untuk item (selalu INSERT, tidak menimpa).
+     */
+    public function apiAddItemRemark(Request $request)
+    {
+        $validated = $request->validate([
+            'werks'  => 'required|string',
+            'auart'  => 'required|string',
+            'vbeln'  => 'required|string',
+            'posnr'  => 'required|string',
+            'remark' => 'required|string|max:200',
+        ]);
+
+        $userId = Auth::id();
+        abort_unless($userId, 403, 'Anda harus login.');
+
+        $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
+        $text = trim($validated['remark']);
+
+        $id = DB::table('item_remarks')->insertGetId([
+            'IV_WERKS_PARAM' => $validated['werks'],
+            'IV_AUART_PARAM' => $validated['auart'],
+            'VBELN'          => $validated['vbeln'],
+            'POSNR'          => $posnrKey,
+            'remark'         => $text,
+            'user_id'        => $userId,
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ]);
+
+        $row = DB::table('item_remarks as ir')
+            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->where('ir.id', $id)
+            ->select(
+                'ir.id',
+                'ir.user_id',
+                DB::raw('COALESCE(u.name,"User") as user_name'),
+                'ir.remark',
+                'ir.created_at',
+                'ir.updated_at'
+            )->first();
+
+        return response()->json(['ok' => true, 'message' => 'Remark ditambahkan.', 'data' => $row]);
+    }
+
+    /**
+     * Hapus 1 remark (hanya pemiliknya).
+     */
+    public function apiDeleteItemRemark(Request $request, $id)
+    {
+        $userId = Auth::id();
+        abort_unless($userId, 403, 'Anda harus login.');
+
+        $row = DB::table('item_remarks')->where('id', $id)->first();
+        if (!$row) {
+            return response()->json(['ok' => false, 'message' => 'Remark tidak ditemukan.'], 404);
+        }
+        if ((int)$row->user_id !== (int)$userId) {
+            return response()->json(['ok' => false, 'message' => 'Anda tidak berhak menghapus remark ini.'], 403);
+        }
+
+        DB::table('item_remarks')->where('id', $id)->delete();
+        return response()->json(['ok' => true, 'message' => 'Remark dihapus.']);
+    }
+
+    public function apiUpdateItemRemark(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'remark' => 'required|string|max:200', // max 200, but UI limit is 60. Max 200 to be safe.
+        ]);
+
+        $userId = Auth::id();
+        abort_unless($userId, 403, 'Anda harus login.');
+
+        $row = DB::table('item_remarks')->where('id', $id)->first();
+        if (!$row) {
+            return response()->json(['ok' => false, 'message' => 'Remark tidak ditemukan.'], 404);
+        }
+        if ((int)$row->user_id !== (int)$userId) {
+            return response()->json(['ok' => false, 'message' => 'Anda tidak berhak mengedit remark ini.'], 403);
+        }
+
+        DB::table('item_remarks')
+            ->where('id', $id)
+            ->update([
+                'remark' => trim($validated['remark']),
+                'updated_at' => now(),
+            ]);
+
+        return response()->json(['ok' => true, 'message' => 'Remark berhasil diubah.']);
     }
 
     /**

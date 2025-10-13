@@ -378,33 +378,41 @@
 
     {{-- Remark Modal --}}
     <div class="modal fade" id="remarkModal" tabindex="-1" aria-labelledby="remarkModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="remarkModalLabel">Tambah/Edit Catatan</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title">
+                        Catatan Item
+                        <small class="text-muted d-block" id="remarkModalSub">SO <span id="rm-so"></span> • Item
+                            <span id="rm-pos"></span></small>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
                 </div>
+
                 <div class="modal-body">
-                    <form>
-                        <div class="mb-3">
-                            <label for="remark-text" class="col-form-label">Catatan untuk Item:</label>
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <small class="text-muted">Maks. 60 karakter</small>
-                                <small id="remark-count" class="text-muted">0/60</small>
-                            </div>
+                    <div id="remarkThreadList" class="remark-thread-list mb-3">
+                        <!-- diisi via JS -->
+                    </div>
 
-                            <textarea class="form-control" id="remark-text" rows="4" maxlength="60"></textarea>
+                    <!-- Form tambah -->
+                    <div class="mb-2">
+                        <label for="remark-input" class="form-label mb-1">Tambah Catatan (maks. 60 karakter)</label>
+                        <div class="d-flex align-items-start gap-2">
+                            <textarea id="remark-input" class="form-control" rows="2" maxlength="60"
+                                placeholder="Tulis catatan singkat..."></textarea>
+                            <button type="button" id="add-remark-btn" class="btn btn-primary">
+                                <i class="fas fa-paper-plane me-1"></i> Tambah
+                            </button>
                         </div>
-                    </form>
-                    <div id="remark-feedback" class="small mt-2"></div>
+                        <div class="d-flex justify-content-between mt-1 small">
+                            <span id="remark-feedback" class="text-muted"></span>
+                            <span id="remark-counter" class="text-muted">0/60</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="modal-footer">
-                    {{-- 💡 TOMBOL BARU: Hapus Catatan --}}
-                    <button type="button" class="btn btn-outline-danger me-auto" id="delete-remark-btn"
-                        style="display: none;">Hapus Catatan</button>
 
+                <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                    <button type="button" class="btn btn-primary" id="save-remark-btn">Simpan Catatan</button>
                 </div>
             </div>
         </div>
@@ -612,6 +620,43 @@
         .yz-header-so .yz-collapse-caret.rot {
             transform: rotate(90deg)
         }
+
+        .remark-thread-list {
+            max-height: 360px;
+            overflow: auto;
+            border: 1px solid #eee;
+            border-radius: .5rem;
+            padding: .75rem;
+            background: #fafafa
+        }
+
+        .remark-item {
+            display: flex;
+            gap: .6rem;
+            padding: .5rem .6rem;
+            border-radius: .5rem;
+            background: #fff;
+            border: 1px solid #f0f0f0;
+            margin-bottom: .5rem
+        }
+
+        .remark-item.own {
+            border-color: #d1e7dd;
+            background: #f8fff9
+        }
+
+        .remark-item .meta {
+            font-size: .8rem;
+            color: #6c757d
+        }
+
+        .remark-item .text {
+            white-space: pre-wrap
+        }
+
+        .remark-item .act {
+            margin-left: auto
+        }
     </style>
 @endpush
 
@@ -619,7 +664,9 @@
     <script src="{{ asset('vendor/chartjs/chart.umd.js') }}"></script>
     <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
     <script>
-        /* ====== Filter helper ====== */
+        /* =========================================================
+                        Helper: apply filter (POST -> so.redirector)
+                    ========================================================= */
         function applySoFilter(params) {
             const f = document.createElement('form');
             f.method = 'POST';
@@ -638,15 +685,30 @@
             f.submit();
         }
 
+        /* =========================================================
+            ROUTE CONSTANTS
+        ========================================================= */
+        const apiSoByCustomer = "{{ route('so.api.by_customer') }}";
+        const apiItemsBySo = "{{ route('so.api.by_items') }}";
+        const exportUrl = "{{ route('so.export') }}";
+        const csrfToken = "{{ csrf_token() }}";
+
+        /* === Small Qty endpoints === */
+        const apiSmallQtyDetails = "{{ route('so.api.small_qty_details') }}";
+        const exportSmallQtyPdf = "{{ route('so.export.small_qty_pdf') }}";
+
+        /* === Multi-remark endpoints === */
+        const apiListItemRemarks = "{{ route('so.api.item_remarks') }}";
+        const apiAddItemRemark = "{{ route('so.api.item_remarks.store') }}";
+        const apiDeleteItemRemarkTpl = @json(route('so.api.item_remarks.delete', ['id' => '___ID___']));
+        // [MODIFIKASI BARU] Tambah rute untuk UPDATE remark
+        const apiUpdateItemRemarkTpl = @json(route('so.api.item_remarks.update', ['id' => '___ID___']));
+
+
+        /* =========================================================
+            ROOT STATE
+        ========================================================= */
         document.addEventListener('DOMContentLoaded', () => {
-            /* ---------- Constants & state ---------- */
-            const apiSoByCustomer = "{{ route('so.api.by_customer') }}";
-            const apiItemsBySo = "{{ route('so.api.by_items') }}";
-            const exportUrl = "{{ route('so.export') }}";
-            const csrfToken = "{{ csrf_token() }}";
-            const initialSmallQtyDataRaw = {!! json_encode($smallQtyByCustomer ?? collect()) !!};
-
-
             const __root = document.getElementById('so-root');
             const WERKS = (__root?.dataset.werks || '').trim();
             const AUART = (__root?.dataset.auart || '').trim();
@@ -655,125 +717,62 @@
             const POSNR_HL = (__root?.dataset.hposnr || '').trim();
             const AUTO = (__root?.dataset.auto || '0') === '1';
 
+            /* ========== Small Qty bootstrap data ========== */
+            const initialSmallQtyDataRaw = {!! json_encode($smallQtyByCustomer ?? collect()) !!};
+
+            /* =========================================================
+                GLOBAL STATE (Selection & Cache)
+            ========================================================== */
+            const selectedItems = new Set(); // id item terpilih (untuk export)
+            const itemsCache = new Map(); // VBELN -> array items (level-3)
+            const itemIdToSO = new Map(); // itemId -> VBELN (untuk dot indikator)
+
+            /* =========================================================
+                DOM references (Export, Modal Thread)
+            ========================================================== */
             const exportDropdownContainer = document.getElementById('export-dropdown-container');
             const selectedCountSpan = document.getElementById('selected-count');
 
+            // --- Remark Thread Modal (versi multi-remark) ---
+
+            const m = document.getElementById('remarkModal');
+            if (m && m.parentElement !== document.body) {
+                document.body.appendChild(m);
+            }
             const remarkModalEl = document.getElementById('remarkModal');
             let remarkModal = bootstrap.Modal.getInstance(remarkModalEl);
             if (!remarkModal) remarkModal = new bootstrap.Modal(remarkModalEl);
-            const remarkTextarea = document.getElementById('remark-text');
-            const saveRemarkBtn = document.getElementById('save-remark-btn');
-            const deleteRemarkBtn = document.getElementById('delete-remark-btn'); // 💡 BARU
-            const remarkFeedback = document.getElementById('remark-feedback');
-            /* ===== Remark limiter (max 60) - inline ===== */
-            const MAX_REMARK = 60;
 
-            if (remarkTextarea) {
-                // hard limit di elemen
-                remarkTextarea.setAttribute('maxlength', String(MAX_REMARK));
+            const rmSO = document.getElementById('rm-so');
+            const rmPOS = document.getElementById('rm-pos');
+            const rmList = document.getElementById('remarkThreadList');
+            const rmInput = document.getElementById('remark-input');
+            const rmAddBtn = document.getElementById('add-remark-btn');
+            const rmFeedback = document.getElementById('remark-feedback');
+            const rmCounter = document.getElementById('remark-counter');
 
-                // buat counter jika belum ada
-                let remarkCountEl = document.getElementById('remark-count');
-                if (!remarkCountEl) {
-                    const label = document.querySelector('label[for="remark-text"]');
-                    const wrap = document.createElement('div');
-                    wrap.className = 'd-flex justify-content-between align-items-center mb-1';
+            const remarkModalState = {
+                werks: null,
+                auart: null,
+                vbeln: null,
+                posnr: null,
+                posnrKey: null
+            };
+            const MAX_REMARK = 60; // Max karakter untuk form tambah baru
 
-                    const left = document.createElement('small');
-                    left.className = 'text-muted';
-                    left.textContent = 'Maks. 60 karakter';
-
-                    remarkCountEl = document.createElement('small');
-                    remarkCountEl.id = 'remark-count';
-                    remarkCountEl.className = 'text-muted';
-                    remarkCountEl.textContent = `0/${MAX_REMARK}`;
-
-                    wrap.appendChild(left);
-                    wrap.appendChild(remarkCountEl);
-
-                    if (label && label.parentNode) {
-                        label.insertAdjacentElement('afterend', wrap);
-                    } else {
-                        // fallback: taruh di atas textarea
-                        remarkTextarea.parentNode.insertBefore(wrap, remarkTextarea);
-                    }
-
-                    // gaya kecil saat limit tercapai
-                    const styleTag = document.createElement('style');
-                    styleTag.textContent = '#remark-count.limit{color:#dc3545;font-weight:600;}';
-                    document.head.appendChild(styleTag);
-                }
-
-                function updateRemarkCounter() {
-                    const len = (remarkTextarea.value || '').length;
-                    remarkCountEl.textContent = `${len}/${MAX_REMARK}`;
-                    remarkCountEl.classList.toggle('limit', len >= MAX_REMARK);
-                }
-
-                function enforceMax() {
-                    if (remarkTextarea.value.length > MAX_REMARK) {
-                        remarkTextarea.value = remarkTextarea.value.slice(0, MAX_REMARK);
-                    }
-                    updateRemarkCounter();
-                }
-
-                // ketik & paste
-                remarkTextarea.addEventListener('input', enforceMax);
-                remarkTextarea.addEventListener('paste', () => requestAnimationFrame(enforceMax));
-
-                // saat modal tampil, sinkronkan counter
-                if (remarkModalEl) {
-                    remarkModalEl.addEventListener('shown.bs.modal', () => {
-                        enforceMax();
-                        // fokuskan textarea
-                        try {
-                            remarkTextarea.focus({
-                                preventScroll: false
-                            });
-                        } catch {}
-                    });
-                }
-
-                // init
-                updateRemarkCounter();
-
-                // expose kecil agar bisa dipakai di handler lain
-                window.__updateRemarkCounter = updateRemarkCounter;
-                window.__enforceRemarkMax = enforceMax;
+            function updateExportButton() {
+                const n = selectedItems.size;
+                if (selectedCountSpan) selectedCountSpan.textContent = n;
+                if (exportDropdownContainer) exportDropdownContainer.style.display = n > 0 ? 'block' : 'none';
             }
 
-
-            const smallQtyChartContainer = document.getElementById('chartSmallQtyByCustomer')?.closest(
-                '.chart-container');
-            const smallQtyDetailsContainer = document.getElementById('smallQtyDetailsContainer');
-            const chartCanvas = document.getElementById('chartSmallQtyByCustomer');
-            const smallQtySection = document.getElementById(
-                'small-qty-section');
-
-
-            const selectedItems = new Set();
-            const itemsCache = new Map(); // ITEM CACHE
-            const itemIdToSO = new Map();
-
-            // ===== Collpase state per T2 (per tbody) =====
-            const getCollapse = (tbody) => !!(tbody && tbody.dataset && tbody.dataset.collapse === '1');
-            const setCollapse = (tbody, on) => {
-                if (tbody && tbody.dataset) tbody.dataset.collapse = on ? '1' : '0';
-            };
-
-
-            /* ---------- Utils ---------- */
+            /* =========================================================
+                UTILITIES
+            ========================================================== */
             if (!window.CSS) window.CSS = {};
             if (typeof window.CSS.escape !== 'function') window.CSS.escape = s => String(s).replace(/([^\w-])/g,
                 '\\$1');
 
-            function updateExportButton() {
-                const n = selectedItems.size;
-                selectedCountSpan.textContent = n;
-                exportDropdownContainer.style.display = n > 0 ? 'block' : 'none';
-            }
-
-            // Helper untuk memformat angka (digunakan di renderers)
             const formatCurrencyGlobal = (v, c, d = 0) => {
                 const n = parseFloat(v);
                 if (!Number.isFinite(n)) return '';
@@ -793,35 +792,83 @@
                     maximumFractionDigits: d
                 });
             };
+            const escapeHtml = (s) => String(s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-
+            /* =========================================================
+                DATA LOADER (Level 3)
+            ========================================================== */
             async function ensureItemsLoadedForSO(vbeln) {
                 if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
                 const u = new URL(apiItemsBySo, window.location.origin);
                 u.searchParams.set('vbeln', vbeln);
                 u.searchParams.set('werks', WERKS);
                 u.searchParams.set('auart', AUART);
+
                 const r = await fetch(u);
                 const jd = await r.json();
                 if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
+
                 jd.data.forEach(x => itemIdToSO.set(String(x.id), vbeln));
                 itemsCache.set(vbeln, jd.data);
                 return jd.data;
             }
 
+            /* =========================================================
+                UI HELPERS (dot, badge, footer visibility)
+            ========================================================== */
             function updateSODot(vbeln) {
                 const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
                 document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
                     .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
             }
 
+            function updateSoRemarkFlagFromCache(vbeln) {
+                const items = itemsCache.get(vbeln) || [];
+                const hasAny = items.some(it => Number(it.remark_count ?? 0) > 0 || ((it.remark || '').trim() !==
+                    ''));
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
+                    .forEach(el => {
+                        el.style.display = hasAny ? 'inline-block' : 'none';
+                        el.classList.toggle('active', hasAny);
+                    });
+            }
+
+            function recalcSoRemarkFlagFromDom(vbeln) {
+                const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
+                    ?.nextElementSibling;
+                let hasAny = false;
+                if (nest) {
+                    nest.querySelectorAll('.remark-count-badge').forEach(b => {
+                        if (Number(b.dataset.count || 0) > 0) hasAny = true;
+                    });
+                }
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
+                    .forEach(el => {
+                        el.style.display = hasAny ? 'inline-block' : 'none';
+                        el.classList.toggle('active', hasAny);
+                    });
+            }
+
+            function updateT2FooterVisibility(t2Table) {
+                if (!t2Table) return;
+                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
+                    'none' && tr.offsetParent !== null);
+                const tfoot = t2Table.querySelector('tfoot.t2-footer');
+                const tbody = t2Table.querySelector('tbody');
+                if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
+            }
+
+            /* =========================================================
+                CHECKBOX SYNC (Header items & SO)
+            ========================================================== */
             function applySelectionsToRenderedItems(container) {
                 container.querySelectorAll('.check-item').forEach(chk => {
                     chk.checked = selectedItems.has(chk.dataset.id);
                 });
             }
 
-            // Sinkronisasi checkbox header Item (T3)
             function syncCheckAllHeader(itemBox) {
                 const table = itemBox?.querySelector('table');
                 if (!table) return;
@@ -830,35 +877,28 @@
                 const all = Array.from(table.querySelectorAll('.check-item'));
                 const allChecked = (all.length > 0 && all.every(ch => ch.checked));
                 const anyChecked = all.some(ch => ch.checked);
-
                 hdr.checked = allChecked;
                 hdr.indeterminate = !allChecked && anyChecked;
             }
 
-            // 🟢 Sinkronisasi checkbox header SO (T2) - Mengimplementasikan kotak kosong
             function syncCheckAllSoHeader(tbody) {
-                // Hanya lihat SO yang TAMPIL (tidak disembunyikan oleh collapse mode)
                 const allSOCheckboxes = Array.from(tbody.querySelectorAll('.check-so')).filter(ch => ch.closest(
                     'tr').style.display !== 'none');
                 const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
-
                 if (!selectAllSo || allSOCheckboxes.length === 0) return;
-
                 const allChecked = allSOCheckboxes.every(ch => ch.checked);
-                const checkedCount = allSOCheckboxes.filter(ch => ch.checked).length;
-                const totalCount = allSOCheckboxes.length;
-
-                if (allChecked) {
-                    selectAllSo.checked = true;
-                    selectAllSo.indeterminate = false;
-                } else {
-                    // [PERBAIKAN]: Jika sebagian atau tidak ada yang dicentang, jadikan kotak kosong.
-                    selectAllSo.checked = false;
-                    selectAllSo.indeterminate = false;
-                }
+                selectAllSo.checked = allChecked;
+                selectAllSo.indeterminate = false;
             }
 
-            // 🟢 Fungsi untuk mengelola Collapse Mode di Tabel 2 (SO List) DENGAN BUKA OTOMATIS T3
+            /* =========================================================
+                COLLAPSE MODE (Level 2)
+            ========================================================== */
+            const getCollapse = (tbody) => !!(tbody && tbody.dataset && tbody.dataset.collapse === '1');
+            const setCollapse = (tbody, on) => {
+                if (tbody && tbody.dataset) tbody.dataset.collapse = on ? '1' : '0';
+            };
+
             async function applyCollapseViewSo(tbodyEl, on) {
                 if (!tbodyEl) return;
                 setCollapse(tbodyEl, on);
@@ -880,41 +920,28 @@
                         const chk = r.querySelector('.check-so');
                         r.classList.remove('is-focused');
 
-                        // Cek apakah item T3 sedang terbuka secara manual
                         const isT3Open = r.nextElementSibling.style.display !== 'none';
-
                         if (chk?.checked) {
-                            r.style.display = ''; // Tampilkan SO yang dipilih
+                            r.style.display = '';
                             visibleCount++;
-
-                            // PERBAIKAN: Klik baris SO untuk MEMBUKA/MEMUAT Tabel 3 jika belum terbuka
-                            if (!isT3Open) {
-                                r.click();
-                            }
-
+                            if (!isT3Open) r.click();
                         } else {
-                            r.style.display = 'none'; // Sembunyikan SO yang tidak dipilih
-                            // Tutup paksa T3 jika terbuka
-                            if (isT3Open) {
-                                r.click(); // Memanggil click untuk menutup
-                            } else {
+                            r.style.display = 'none';
+                            if (isT3Open) r.click();
+                            else {
                                 r.nextElementSibling.style.display = 'none';
                                 r.querySelector('.yz-caret')?.classList.remove('rot');
                             }
                         }
                     }
-
-                    // [PERBAIKAN UTAMA] Jika tidak ada PO yang tersisa, matikan mode kolaps secara otomatis
                     if (visibleCount === 0 && getCollapse(tbodyEl)) {
-                        await applyCollapseViewSo(tbodyEl, false); // Rekursif ke mode normal
-                        return; // Keluar dari fungsi ini setelah menonaktifkan
+                        await applyCollapseViewSo(tbodyEl, false);
+                        return;
                     }
                 } else {
-                    // Mode normal: Tampilkan semua SO & tutup semua item (T3)
                     soRows.forEach(r => {
                         r.style.display = '';
                         r.classList.remove('is-focused');
-                        // Tutup paksa T3 jika terbuka
                         if (r.nextElementSibling.style.display !== 'none') {
                             r.nextElementSibling.style.display = 'none';
                             r.querySelector('.yz-caret')?.classList.remove('rot');
@@ -926,49 +953,14 @@
                 updateT2FooterVisibility(tbodyEl.closest('table'));
             }
 
-
-            function updateSoRemarkFlagFromCache(vbeln) {
-                const items = itemsCache.get(vbeln) || [];
-                const hasAny = items.some(it => (it.remark || '').trim() !== '');
-                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
-                    .forEach(el => {
-                        el.style.display = hasAny ? 'inline-block' : 'none';
-                        el.classList.toggle('active', hasAny);
-                    });
-            }
-
-            function recalcSoRemarkFlagFromDom(vbeln) {
-                const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
-                    ?.nextElementSibling;
-                let hasAny = false;
-                if (nest) {
-                    nest.querySelectorAll('.remark-icon').forEach(ic => {
-                        const t = decodeURIComponent(ic.dataset.remark || '');
-                        if (t.trim() !== '') hasAny = true;
-                    });
-                }
-                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
-                    .forEach(el => {
-                        el.style.display = hasAny ? 'inline-block' : 'none';
-                        el.classList.toggle('active', hasAny);
-                    });
-            }
-
-            function updateT2FooterVisibility(t2Table) {
-                if (!t2Table) return;
-                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
-                    'none' && tr.offsetParent !== null);
-                const tfoot = t2Table.querySelector('tfoot.t2-footer');
-                const tbody = t2Table.querySelector('tbody');
-                if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
-            }
-
             document.addEventListener('click', (e) => {
                 if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
                     .stopPropagation();
             }, true);
 
-            /* ---------- RENDERERS ---------- */
+            /* =========================================================
+                RENDERERS
+            ========================================================== */
             function renderLevel2_SO(rows, kunnr) {
                 if (!rows?.length)
                     return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
@@ -976,19 +968,17 @@
                 const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ?? 0), 0);
 
                 let html = `
-
 <table class="table table-sm mb-0 yz-mini">
     <thead class="yz-header-so">
     <tr>
         <th style="width:40px;" class="text-center">
-            <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
+        <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua SO">
         </th>
         <th style="width:40px;" class="text-center">
-            <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
-                <span class="yz-collapse-caret">▸</span>
-            </button>
+        <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
+            <span class="yz-collapse-caret">▸</span>
+        </button>
         </th>
-        {{-- MODIFIKASI STRUKTUR KOLOM: Memindahkan Outs. Value dan menghapus Overdue (Days) --}}
         <th class="text-start" style="width: 250px;">SO & Status</th>
         <th class="text-center">SO Item Count</th>
         <th class="text-start">Outs. Value</th>
@@ -998,72 +988,56 @@
     </tr>
     </thead>
     <tbody>`;
+
                 const rowsSorted = [...rows].sort((a, b) => {
-                    // Sortir: Overdue (Terbesar) -> On Track (Terkecil) -> Normal
                     const oa = Number(a.Overdue || 0);
                     const ob = Number(b.Overdue || 0);
-
-                    if (oa > 0 && ob <= 0) return -1; // A (Overdue) di atas B
-                    if (oa <= 0 && ob > 0) return 1; // A (On Track/Today) di bawah B (Overdue)
-
-                    // Jika keduanya Overdue atau keduanya On Track
-                    return ob - oa; // Overdue: Menurun (72, 52...); On Track: Menurun (-5, -46...)
+                    if (oa > 0 && ob <= 0) return -1;
+                    if (oa <= 0 && ob > 0) return 1;
+                    return ob - oa;
                 });
 
                 rowsSorted.forEach((r, i) => {
                     const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                    const rowHi = ''; // MODIFIKASI: Menghilangkan highlight baris merah penuh
                     const overdueDays = Number(r.Overdue || 0);
                     const hasRemark = Number(r.remark_count || 0) > 0;
                     const outsQty = (typeof r.outs_qty !== 'undefined') ? r.outs_qty : (r.OUTS_QTY ?? 0);
-                    const displayOutsValue = formatCurrencyGlobal(r.total_value, r.WAERK);
+                    const displayValue = formatCurrencyGlobal(r.total_value, r.WAERK);
 
-                    // LOGIKA BARU UNTUK BADGE/BUBBLE
                     let overdueBadge = '';
-                    if (overdueDays > 0) {
-                        // Overdue: Merah Gelap
+                    if (overdueDays > 0)
                         overdueBadge =
-                            `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
-                    } else if (overdueDays < 0) {
-                        // On Track: Hijau Teal
-                        const daysLeft = Math.abs(overdueDays);
+                        `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
+                    else if (overdueDays < 0) {
+                        const left = Math.abs(overdueDays);
                         overdueBadge =
-                            `<span class="overdue-badge-bubble bubble-track" title="${daysLeft} hari tersisa">-${daysLeft} DAYS LEFT</span>`;
-                    } else {
-                        // Tepat Hari Ini (0)
+                            `<span class="overdue-badge-bubble bubble-track" title="${left} hari tersisa">-${left} DAYS LEFT</span>`;
+                    } else
                         overdueBadge =
-                            `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
-                    }
+                        `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
 
                     html += `
-    <tr class="yz-row js-t2row ${rowHi}" data-vbeln="${r.VBELN}" data-tgt="${rid}">
+    <tr class="yz-row js-t2row" data-vbeln="${r.VBELN}" data-tgt="${rid}">
         <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}" onclick="event.stopPropagation()"></td>
         <td class="text-center"><span class="yz-caret">▸</span></td>
-        
-        {{-- KOLOM BARU: SO & STATUS (Bubble) --}}
         <td class="text-start">
-            <div class="fw-bold text-primary mb-1">${r.VBELN}</div>
-            ${overdueBadge}
+        <div class="fw-bold text-primary mb-1">${r.VBELN}</div>
+        ${overdueBadge}
         </td>
-        
         <td class="text-center fw-bold">${r.item_count ?? '-'}</td>
-        
-        {{-- Outs. Value dipindah ke KIRI --}}
-        <td class="text-start fw-bold fs-6">${displayOutsValue}</td>
-        
+        <td class="text-start fw-bold fs-6">${displayValue}</td>
         <td class="text-center fw-bold">${r.FormattedEdatu || '-'}</td>
-        <td class="text-center fw-bold">${formatNumberGlobal(outsQty, 0)}</td> 
-
+        <td class="text-center fw-bold">${formatNumberGlobal(outsQty, 0)}</td>
         <td class="text-center">
-            <i class="fas fa-pencil-alt so-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
-            <span class="so-selected-dot"></span>
+        <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+        <span class="so-selected-dot"></span>
         </td>
     </tr>
     <tr id="${rid}" class="yz-nest" style="display:none;">
-        <td colspan="8" class="p-0"> {{-- colspan disesuaikan dari 9 ke 8 --}}
-            <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
-                <div class="yz-slot-items p-2"></div>
-            </div>
+        <td colspan="8" class="p-0">
+        <div class="yz-nest-wrap level-2" style="margin-left:0; padding:.5rem;">
+            <div class="yz-slot-items p-2"></div>
+        </div>
         </td>
     </tr>`;
                 });
@@ -1071,8 +1045,9 @@
                 html += `</tbody>
     <tfoot class="t2-footer">
         <tr class="table-light yz-t2-total-outs" style="background-color: #e9ecef;">
-            <th colspan="6" class="text-end">Total Outstanding Qty</th>
-            <th class="text-center fw-bold">${formatNumberGlobal(totalOutsQtyT2, 0)}</th> <th colspan="1"></th> {{-- colspan disesuaikan dari 2 ke 1 --}}
+        <th colspan="6" class="text-end">Total Outstanding Qty</th>
+        <th class="text-center fw-bold">${formatNumberGlobal(totalOutsQtyT2, 0)}</th>
+        <th></th>
         </tr>
     </tfoot>
 </table>`;
@@ -1084,239 +1059,82 @@
                     return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
 
                 let html = `<div class="table-responsive">
-    <table class="table table-sm table-hover mb-0 yz-mini">
+<table class="table table-sm table-hover mb-0 yz-mini">
     <thead class="yz-header-item">
-      <tr>
+    <tr>
         <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
         <th>Item</th><th>Material FG</th><th>Desc FG</th>
         <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
         <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
         <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
-      </tr>
+    </tr>
     </thead>
     <tbody>`;
+
                 rows.forEach(r => {
                     const isChecked = selectedItems.has(String(r.id));
-                    const hasRemark = r.remark && r.remark.trim() !== '';
-                    const escRemark = r.remark ? encodeURIComponent(r.remark) : '';
+                    const countRemarks = Number(r.remark_count ?? ((r.remark && r.remark.trim() !== '') ?
+                        1 : 0)); // fallback
                     html += `
-         <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
-             data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
-             data-vbeln="${r.VBELN_KEY}" 
-             data-posnr="${r.POSNR}"
-             data-posnr-key="${r.POSNR_KEY}">
-                    <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
-                    <td>${r.POSNR ?? ''}</td>
-                    <td>${r.MATNR ?? ''}</td>
-                    <td>${r.MAKTX ?? ''}</td>
-                    <td>${formatNumberGlobal(r.KWMENG, 0)}</td> <td>${formatNumberGlobal(r.PACKG, 0)}</td> <td>${formatNumberGlobal(r.KALAB2, 0)}</td> <td>${formatNumberGlobal(r.ASSYM, 0)}</td> <td>${formatNumberGlobal(r.PAINT, 0)}</td> <td>${formatNumberGlobal(r.MENGE, 0)}</td> <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
-                    <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
-                    <td class="text-center">
-                        <i class="fas fa-pencil-alt remark-icon" data-remark="${escRemark}" title="Tambah/Edit Catatan"></i>
-                        <span class="remark-dot" style="display:${hasRemark?'inline-block':'none'};"></span>
-                    </td>
-                </tr>`;
+<tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+    data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
+    data-vbeln="${r.VBELN_KEY}" 
+    data-posnr="${r.POSNR}"
+    data-posnr-key="${r.POSNR_KEY}">
+    <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked?'checked':''}></td>
+    <td>${r.POSNR ?? ''}</td>
+    <td>${r.MATNR ?? ''}</td>
+    <td>${r.MAKTX ?? ''}</td>
+    <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
+    <td>${formatNumberGlobal(r.PACKG, 0)}</td>
+    <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
+    <td>${formatNumberGlobal(r.ASSYM, 0)}</td>
+    <td>${formatNumberGlobal(r.PAINT, 0)}</td>
+    <td>${formatNumberGlobal(r.MENGE, 0)}</td>
+    <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
+    <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
+    <td class="text-center">
+    <i class="fas fa-comments remark-icon"
+        title="Lihat/tambah catatan"
+        data-werks="${r.WERKS_KEY}"
+        data-auart="${r.AUART_KEY}"
+        data-vbeln="${r.VBELN_KEY}"
+        data-posnr="${r.POSNR}"
+        data-posnr-key="${r.POSNR_KEY}"></i>
+    <span class="remark-count-badge badge rounded-pill bg-primary ms-1"
+            data-count="${countRemarks}"
+            style="display:${countRemarks>0 ? 'inline-block':'none'};">${countRemarks}</span>
+    </td>
+</tr>`;
                 });
+
                 html += `</tbody></table></div>`;
                 return html;
             }
 
-            async function ensureItemsLoadedForSO(vbeln) {
-                if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
-                const u = new URL(apiItemsBySo, window.location.origin);
-                u.searchParams.set('vbeln', vbeln);
-                u.searchParams.set('werks', WERKS);
-                u.searchParams.set('auart', AUART);
-                const r = await fetch(u);
-                const jd = await r.json();
-                if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
-                jd.data.forEach(x => itemIdToSO.set(String(x.id), vbeln));
-                itemsCache.set(vbeln, jd.data);
-                return jd.data;
-            }
-
-            function updateSODot(vbeln) {
-                const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(id)) === vbeln);
-                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
-                    .forEach(dot => dot.style.display = anySel ? 'inline-block' : 'none');
-            }
-
-            function applySelectionsToRenderedItems(container) {
-                container.querySelectorAll('.check-item').forEach(chk => {
-                    chk.checked = selectedItems.has(chk.dataset.id);
-                });
-            }
-
-            // Sinkronisasi checkbox header Item (T3)
-            function syncCheckAllHeader(itemBox) {
-                const table = itemBox?.querySelector('table');
-                if (!table) return;
-                const hdr = table.querySelector('.check-all-items');
-                if (!hdr) return;
-                const all = Array.from(table.querySelectorAll('.check-item'));
-                const allChecked = (all.length > 0 && all.every(ch => ch.checked));
-                const anyChecked = all.some(ch => ch.checked);
-
-                hdr.checked = allChecked;
-                hdr.indeterminate = !allChecked && anyChecked;
-            }
-
-            // 🟢 Sinkronisasi checkbox header SO (T2) - Mengimplementasikan kotak kosong
-            function syncCheckAllSoHeader(tbody) {
-                // Hanya lihat SO yang TAMPIL (tidak disembunyikan oleh collapse mode)
-                const allSOCheckboxes = Array.from(tbody.querySelectorAll('.check-so')).filter(ch => ch.closest(
-                    'tr').style.display !== 'none');
-                const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
-
-                if (!selectAllSo || allSOCheckboxes.length === 0) return;
-
-                const allChecked = allSOCheckboxes.every(ch => ch.checked);
-                const checkedCount = allSOCheckboxes.filter(ch => ch.checked).length;
-                const totalCount = allSOCheckboxes.length;
-
-                if (allChecked) {
-                    selectAllSo.checked = true;
-                    selectAllSo.indeterminate = false;
-                } else {
-                    // [PERBAIKAN]: Jika sebagian atau tidak ada yang dicentang, jadikan kotak kosong.
-                    selectAllSo.checked = false;
-                    selectAllSo.indeterminate = false;
-                }
-            }
-
-            // 🟢 Fungsi untuk mengelola Collapse Mode di Tabel 2 (SO List) DENGAN BUKA OTOMATIS T3
-            async function applyCollapseViewSo(tbodyEl, on) {
-                if (!tbodyEl) return;
-                setCollapse(tbodyEl, on);
-
-                const headerCaret = tbodyEl.closest('table')?.querySelector(
-                    '.js-collapse-toggle .yz-collapse-caret');
-                if (headerCaret) headerCaret.textContent = on ? '▾' : '▸';
-
-                tbodyEl.querySelector('.yz-empty-selected-row')?.remove();
-
-                tbodyEl.classList.remove('so-focus-mode');
-                tbodyEl.classList.toggle('collapse-mode', on);
-
-                const soRows = tbodyEl.querySelectorAll('.js-t2row');
-
-                if (on) {
-                    let visibleCount = 0;
-                    for (const r of soRows) {
-                        const chk = r.querySelector('.check-so');
-                        r.classList.remove('is-focused');
-
-                        // Cek apakah item T3 sedang terbuka secara manual
-                        const isT3Open = r.nextElementSibling.style.display !== 'none';
-
-                        if (chk?.checked) {
-                            r.style.display = ''; // Tampilkan SO yang dipilih
-                            visibleCount++;
-
-                            // PERBAIKAN: Klik baris SO untuk MEMBUKA/MEMUAT Tabel 3 jika belum terbuka
-                            if (!isT3Open) {
-                                r.click();
-                            }
-
-                        } else {
-                            r.style.display = 'none'; // Sembunyikan SO yang tidak dipilih
-                            // Tutup paksa T3 jika terbuka
-                            if (isT3Open) {
-                                r.click(); // Memanggil click untuk menutup
-                            } else {
-                                r.nextElementSibling.style.display = 'none';
-                                r.querySelector('.yz-caret')?.classList.remove('rot');
-                            }
-                        }
-                    }
-
-                    // [PERBAIKAN UTAMA] Jika tidak ada PO yang tersisa, matikan mode kolaps secara otomatis
-                    if (visibleCount === 0 && getCollapse(tbodyEl)) {
-                        await applyCollapseViewSo(tbodyEl, false); // Rekursif ke mode normal
-                        return; // Keluar dari fungsi ini setelah menonaktifkan
-                    }
-                } else {
-                    // Mode normal: Tampilkan semua SO & tutup semua item (T3)
-                    soRows.forEach(r => {
-                        r.style.display = '';
-                        r.classList.remove('is-focused');
-                        // Tutup paksa T3 jika terbuka
-                        if (r.nextElementSibling.style.display !== 'none') {
-                            r.nextElementSibling.style.display = 'none';
-                            r.querySelector('.yz-caret')?.classList.remove('rot');
-                        }
-                    });
-                }
-
-                if (tbodyEl) syncCheckAllSoHeader(tbodyEl);
-                updateT2FooterVisibility(tbodyEl.closest('table'));
-            }
-
-
-            function updateSoRemarkFlagFromCache(vbeln) {
-                const items = itemsCache.get(vbeln) || [];
-                const hasAny = items.some(it => (it.remark || '').trim() !== '');
-                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
-                    .forEach(el => {
-                        el.style.display = hasAny ? 'inline-block' : 'none';
-                        el.classList.toggle('active', hasAny);
-                    });
-            }
-
-            function recalcSoRemarkFlagFromDom(vbeln) {
-                const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
-                    ?.nextElementSibling;
-                let hasAny = false;
-                if (nest) {
-                    nest.querySelectorAll('.remark-icon').forEach(ic => {
-                        const t = decodeURIComponent(ic.dataset.remark || '');
-                        if (t.trim() !== '') hasAny = true;
-                    });
-                }
-                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
-                    .forEach(el => {
-                        el.style.display = hasAny ? 'inline-block' : 'none';
-                        el.classList.toggle('active', hasAny);
-                    });
-            }
-
-            function updateT2FooterVisibility(t2Table) {
-                if (!t2Table) return;
-                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
-                    'none' && tr.offsetParent !== null);
-                const tfoot = t2Table.querySelector('tfoot.t2-footer');
-                const tbody = t2Table.querySelector('tbody');
-                if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
-            }
-
-            document.addEventListener('click', (e) => {
-                if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
-                    .stopPropagation();
-            }, true);
-
-
-            /* ---------- Expand Level-1 (load T2) - Menggunakan .yz-customer-card BARU ---------- */
+            /* =========================================================
+                LEVEL-1 (Customer card) -> load Level-2 (SO list)
+            ========================================================== */
             document.querySelectorAll('.yz-customer-card').forEach(row => {
                 row.addEventListener('click', async () => {
                     const kunnr = row.dataset.kunnr;
                     const kid = row.dataset.kid;
                     const cname = row.dataset.cname;
-                    // Target nested container
+
                     const slot = document.getElementById(kid);
                     const wrap = slot.querySelector('.yz-nest-wrap');
 
                     const customerListContainer = row.closest('.d-grid');
                     const wasOpen = row.classList.contains('is-open');
 
-                    // --- 1. Close all other open rows (exclusive toggle) ---
+                    // 1) tutup yang lain
                     document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
                         if (r !== row) {
                             const otherSlot = document.getElementById(r.dataset.kid);
                             r.classList.remove('is-open');
-                            otherSlot.style.display = 'none'; // Tutup slot detail card
+                            otherSlot.style.display = 'none';
                             r.querySelector('.kunnr-caret')?.classList.remove('rot');
 
-                            // Opsional: Tutup semua T3 di dalam T2 card lain
                             const otherWrap = otherSlot?.querySelector('.yz-nest-wrap');
                             otherWrap?.querySelectorAll('.js-t2row').forEach(so => {
                                 if (so.nextElementSibling.style.display !==
@@ -1327,49 +1145,45 @@
                                         .remove('rot');
                                 }
                             });
-                            // reset collapse state hanya untuk tbody milik card yang ditutup
                             const otherTbody = otherWrap?.querySelector('table tbody');
                             if (otherTbody) setCollapse(otherTbody, false);
                         }
                     });
 
-                    // --- 2. Toggle current row ---
+                    // 2) toggle current
                     row.classList.toggle('is-open', !wasOpen);
                     row.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
                     slot.style.display = wasOpen ? 'none' : 'block';
 
-                    // --- 3. Manage customer-focus-mode (manual hiding) ---
-                    if (!wasOpen) {
-                        // Masuk ke focus mode: Sembunyikan semua card customer KECUALI yang sedang dibuka.
-                        customerListContainer.classList.add('customer-focus-mode');
+                    // 3) focus mode & small qty integration
+                    const smallQtySection = document.getElementById('small-qty-section');
+                    const smallQtyDetailsContainer = document.getElementById(
+                        'smallQtyDetailsContainer');
+                    const smallQtyChartContainer = document.getElementById(
+                        'chartSmallQtyByCustomer')?.closest('.chart-container');
+                    const chartCanvas = document.getElementById('chartSmallQtyByCustomer');
 
-                        // Tambahkan class is-focused ke card yang sedang dibuka
+                    if (!wasOpen) {
+                        customerListContainer.classList.add('customer-focus-mode');
                         document.querySelectorAll('.yz-customer-card').forEach(c => c.classList
                             .remove('is-focused'));
                         row.classList.add('is-focused');
 
-                        // Logika small qty (tetap)
-                        const hasSmallQtyData = initialSmallQtyDataRaw.some(item => item
-                            .NAME1 === cname);
-
+                        const hasSmallQtyData = (Array.isArray(initialSmallQtyDataRaw) ?
+                            initialSmallQtyDataRaw : []).some(item => item.NAME1 === cname);
                         if (hasSmallQtyData) {
-                            if (window.showSmallQtyDetails) {
-                                await window.showSmallQtyDetails(cname, WERKS);
-                            }
+                            if (window.showSmallQtyDetails) await window.showSmallQtyDetails(
+                                cname, WERKS);
                         } else {
                             if (smallQtySection) smallQtySection.style.display = 'none';
                             if (smallQtyDetailsContainer) smallQtyDetailsContainer.style
                                 .display = 'none';
                         }
                     } else {
-                        // Keluar dari focus mode
                         customerListContainer.classList.remove('customer-focus-mode');
                         document.querySelectorAll('.yz-customer-card').forEach(c => c.classList
                             .remove('is-focused'));
-
-                        // Logika small qty (tetap)
-                        if (smallQtySection) smallQtySection.style.display =
-                            '';
+                        if (smallQtySection) smallQtySection.style.display = '';
                         if (smallQtyDetailsContainer) smallQtyDetailsContainer.style.display =
                             'none';
                         if (smallQtyChartContainer) smallQtyChartContainer.style.display =
@@ -1380,8 +1194,7 @@
                         }
                     }
 
-
-                    // Logika loading T2 (Detail SO)
+                    // 4) load Level-2 (SO list)
                     if (wasOpen) return;
                     if (wrap.dataset.loaded === '1') {
                         const soTbody = wrap.querySelector('table tbody');
@@ -1397,6 +1210,7 @@
                         url.searchParams.set('kunnr', kunnr);
                         url.searchParams.set('werks', WERKS);
                         url.searchParams.set('auart', AUART);
+
                         const res = await fetch(url);
                         const js = await res.json();
                         if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
@@ -1406,13 +1220,9 @@
 
                         const soTable = wrap.querySelector('table');
                         const soTbody = soTable?.querySelector('tbody');
-
                         updateT2FooterVisibility(soTable);
-
                         if (soTbody) syncCheckAllSoHeader(soTbody);
 
-
-                        // klik baris SO => focus-mode & load items
                         wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                             const soVbeln = soRow.dataset.vbeln;
                             updateSODot(soVbeln);
@@ -1461,12 +1271,11 @@
                                 }
 
                                 box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                                     <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                                 </div>`;
+                <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+            </div>`;
                                 try {
                                     const items =
                                         await ensureItemsLoadedForSO(vbeln);
-
                                     box.innerHTML = renderLevel3_Items(
                                         items);
                                     applySelectionsToRenderedItems(box);
@@ -1479,6 +1288,7 @@
                                 }
                             });
                         });
+
                     } catch (e) {
                         wrap.innerHTML =
                             `<div class="alert alert-danger m-3">${e.message}</div>`;
@@ -1486,33 +1296,63 @@
                 });
             });
 
-            /* ---------- CHANGE events (checkbox) ---------- */
+            /* =========================================================
+                CHANGE events (checkbox behaviors)
+            ========================================================== */
             document.body.addEventListener('change', async (e) => {
-                // --- single item (T3)
+                // single item (T3)
                 if (e.target.classList.contains('check-item')) {
                     const id = e.target.dataset.id;
                     if (e.target.checked) selectedItems.add(id);
                     else selectedItems.delete(id);
                     const vbeln = itemIdToSO.get(String(id));
                     if (vbeln) updateSODot(vbeln);
-
                     const box = e.target.closest('.yz-slot-items');
                     if (box) syncCheckAllHeader(box);
-
                     const soRow = document.querySelector(
                         `.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
                     const tbody = soRow?.closest('tbody');
                     if (tbody) syncCheckAllSoHeader(tbody);
-
                     updateExportButton();
                     return;
                 }
 
-                // --- check-all items (T3)
+                if (e.target.classList.contains('check-so')) {
+                    const chk = e.target;
+                    const vbeln = chk.dataset.vbeln;
+                    const isChecked = chk.checked;
+                    const soRow = chk.closest('.js-t2row');
+                    const soTbody = soRow?.closest('tbody');
+                    const itemNest = soRow?.nextElementSibling;
+
+                    // 1. Pastikan data item sudah dimuat
+                    const items = await ensureItemsLoadedForSO(vbeln);
+
+                    // 2. Tambah/hapus semua ID item dari Set global
+                    items.forEach(it => {
+                        if (isChecked) selectedItems.add(String(it.id));
+                        else selectedItems.delete(String(it.id));
+                    });
+
+                    // 3. Sinkronkan tampilan jika detail item sedang terbuka (Tabel 3)
+                    if (itemNest && itemNest.dataset.loaded === '1') {
+                        const box = itemNest.querySelector('.yz-slot-items');
+                        box.querySelectorAll('.check-item').forEach(ch => ch.checked = isChecked);
+                        syncCheckAllHeader(box);
+                    }
+
+                    // 4. Update dot indikator, header check-all, dan tombol export
+                    updateSODot(vbeln);
+                    if (soTbody) syncCheckAllSoHeader(soTbody);
+                    if (soTbody && getCollapse(soTbody)) await applyCollapseViewSo(soTbody, true);
+                    updateExportButton();
+                    return;
+                }
+
+                // check-all items (T3)
                 if (e.target.classList.contains('check-all-items')) {
                     const table = e.target.closest('table');
                     if (!table) return;
-
                     const itemCheckboxes = table.querySelectorAll('.check-item');
                     itemCheckboxes.forEach(ch => {
                         ch.checked = e.target.checked;
@@ -1536,7 +1376,7 @@
                     return;
                 }
 
-                // --- check-all SO (T2)
+                // check-all SO (T2)
                 if (e.target.classList.contains('check-all-sos')) {
                     const tbody = e.target.closest('table')?.querySelector('tbody');
                     if (!tbody) return;
@@ -1545,7 +1385,6 @@
                     for (const chk of allSO) {
                         chk.checked = e.target.checked;
                         const vbeln = chk.dataset.vbeln;
-
                         const items = await ensureItemsLoadedForSO(vbeln);
                         if (e.target.checked) items.forEach(it => selectedItems.add(String(it.id)));
                         else {
@@ -1558,7 +1397,6 @@
 
                         const soRow = chk.closest('.js-t2row');
                         const nest = soRow?.nextElementSibling;
-
                         if (nest && nest.dataset.loaded === '1') {
                             const box = nest.querySelector('.yz-slot-items');
                             box.querySelectorAll('.check-item').forEach(ch => ch.checked = e.target
@@ -1570,222 +1408,25 @@
                             }
                         }
                     }
-
                     if (tbody) syncCheckAllSoHeader(tbody);
-
                     if (tbody && getCollapse(tbody)) await applyCollapseViewSo(tbody, true);
-
-                    updateExportButton();
-                    return;
-                }
-
-                // --- single SO (T2)
-                if (e.target.classList.contains('check-so')) {
-                    const vbeln = e.target.dataset.vbeln;
-
-                    if (e.target.checked) {
-                        const items = await ensureItemsLoadedForSO(vbeln);
-                        items.forEach(it => selectedItems.add(String(it.id)));
-                    } else {
-                        Array.from(selectedItems).forEach(id => {
-                            if (itemIdToSO.get(String(id)) === vbeln) selectedItems.delete(id);
-                        });
-                    }
-                    updateSODot(vbeln);
-
-                    const tbody = e.target.closest('tbody');
-                    if (tbody) syncCheckAllSoHeader(tbody);
-
-                    const soRow = document.querySelector(
-                        `.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
-                    const nest = soRow?.nextElementSibling;
-
-                    if (nest && nest.dataset.loaded === '1') {
-                        const box = nest.querySelector('.yz-slot-items');
-                        box.querySelectorAll('.check-item').forEach(ch => ch.checked = e.target
-                            .checked);
-                        const hdr = box.querySelector('table .check-all-items');
-                        if (hdr) hdr.checked = e.target.checked;
-                    }
-
-                    if (tbody && getCollapse(tbody)) await applyCollapseViewSo(tbody, true);
-
                     updateExportButton();
                     return;
                 }
             });
 
-            // Mengikat event listener Collapse/Fokus untuk SO (Level 2)
+            // Toggle Collapse Mode
             document.body.addEventListener('click', async (e) => {
                 const toggleBtn = e.target.closest('.js-collapse-toggle');
                 if (!toggleBtn) return;
-
                 e.stopPropagation();
                 const soTbody = toggleBtn.closest('table')?.querySelector('tbody');
-                if (soTbody) {
-                    await applyCollapseViewSo(soTbody, !getCollapse(soTbody));
-                }
+                if (soTbody) await applyCollapseViewSo(soTbody, !getCollapse(soTbody));
             });
 
-
-            /* ---------- Remark handlers ---------- */
-            document.body.addEventListener('click', (e) => {
-                if (!e.target.classList.contains('remark-icon')) return;
-                const rowEl = e.target.closest('tr');
-                const currentRemark = decodeURIComponent(e.target.dataset.remark || '');
-                const hasRemark = currentRemark.trim() !== ''; // 💡 BARU
-
-                saveRemarkBtn.dataset.werks = rowEl.dataset.werks;
-                saveRemarkBtn.dataset.auart = rowEl.dataset.auart;
-                saveRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
-                saveRemarkBtn.dataset.posnr = rowEl.dataset.posnr; // POSNR dari UI
-                saveRemarkBtn.dataset.posnrKey = rowEl.dataset.posnrKey; // POSNR_KEY (6 digit)
-
-                // 💡 BARU: Atur tombol Hapus Catatan
-                if (deleteRemarkBtn) {
-                    deleteRemarkBtn.style.display = hasRemark ? 'inline-block' : 'none';
-                    // Salin data key ke tombol delete (berguna untuk logic delete)
-                    deleteRemarkBtn.dataset.werks = rowEl.dataset.werks;
-                    deleteRemarkBtn.dataset.auart = rowEl.dataset.auart;
-                    deleteRemarkBtn.dataset.vbeln = rowEl.dataset.vbeln;
-                    deleteRemarkBtn.dataset.posnrKey = rowEl.dataset.posnrKey;
-                }
-
-                // isi + trim bila > 60
-                remarkTextarea.value = currentRemark || '';
-                if (typeof window.__enforceRemarkMax === 'function') window.__enforceRemarkMax();
-                remarkFeedback.textContent = '';
-
-                if (remarkModalEl.parentElement !== document.body) document.body.appendChild(remarkModalEl);
-                const inst = bootstrap.Modal.getInstance(remarkModalEl);
-                if (inst) inst.hide();
-                remarkModal.show();
-            });
-
-            saveRemarkBtn.addEventListener('click', async function() {
-                const txt = (remarkTextarea.value || '').trim();
-
-                // Guard: maksimal 60 karakter
-                if (txt.length > MAX_REMARK) {
-                    if (remarkFeedback) {
-                        remarkFeedback.textContent = `Maksimal ${MAX_REMARK} karakter.`;
-                        remarkFeedback.className = 'small mt-2 text-danger';
-                    }
-                    // sinkronkan counter biar user tahu posisinya
-                    if (typeof window.__updateRemarkCounter === 'function') window
-                        .__updateRemarkCounter();
-                    return; // jangan lanjut kirim
-                }
-
-                const payload = {
-                    werks: this.dataset.werks,
-                    auart: this.dataset.auart,
-                    vbeln: this.dataset.vbeln,
-                    posnr: this.dataset.posnrKey, // kirim POSNR_KEY ke API/DB
-                    remark: txt
-                };
-
-                const vbeln = payload.vbeln;
-                this.disabled = true;
-                this.innerHTML =
-                    `<span class="spinner-border spinner-border-sm" role="status"></span> Menyimpan...`;
-
-                // ====== (lanjutan kode asli kamu di bawah ini — tidak diubah) ======
-                // Cari elemen yang relevan di DOM
-                const soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
-                const itemNest = soRow?.nextElementSibling;
-                const box = itemNest?.querySelector('.yz-slot-items');
-
-                try {
-                    const response = await fetch("{{ route('so.api.save_remark') }}", {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': csrfToken,
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    const result = await response.json();
-                    if (!response.ok || !result.ok) throw new Error(result.message ||
-                        'Gagal menyimpan catatan.');
-
-                    // 1. Hapus data SO dari itemsCache
-                    itemsCache.delete(vbeln);
-
-                    // 2. Tandai T3 agar dimuat ulang dari API
-                    if (itemNest) {
-                        itemNest.removeAttribute('data-loaded');
-                    }
-
-                    // 3. Reload konten jika perlu
-                    if (itemNest && itemNest.style.display === 'none') {
-                        soRow.click();
-                    } else if (itemNest && itemNest.style.display !== 'none' && box) {
-                        box.innerHTML = `<div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                         <div class="spinner-border spinner-border-sm me-2"></div>Memuat item terbaru…
-                       </div>`;
-                        const items = await ensureItemsLoadedForSO(vbeln);
-                        box.innerHTML = renderLevel3_Items(items);
-                        applySelectionsToRenderedItems(box);
-                        syncCheckAllHeader(box);
-                        itemNest.dataset.loaded = '1';
-                        updateSoRemarkFlagFromCache(vbeln);
-                    }
-
-                    // 4. Update status remark di DOM saat ini (jika ada)
-                    const rowSel =
-                        `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr-key='${payload.posnr}']`;
-                    const rowEl = document.querySelector(rowSel);
-                    const ic = rowEl?.querySelector('.remark-icon');
-                    const dot = rowEl?.querySelector('.remark-dot');
-                    if (ic) ic.dataset.remark = encodeURIComponent(payload.remark || '');
-                    if (dot) dot.style.display = (payload.remark.trim() !== '' ? 'inline-block' :
-                        'none');
-
-                    // 5. Recalculate remark flag di Level 2
-                    recalcSoRemarkFlagFromDom(vbeln);
-
-                    remarkFeedback.textContent = 'Catatan berhasil disimpan!';
-                    remarkFeedback.className = 'small mt-2 text-success';
-                    setTimeout(() => remarkModal.hide(), 800);
-                } catch (err) {
-                    // fallback update minimal DOM
-                    const rowSel =
-                        `tr[data-werks='${payload.werks}'][data-auart='${payload.auart}'][data-vbeln='${payload.vbeln}'][data-posnr-key='${payload.posnr}']`;
-                    const rowEl = document.querySelector(rowSel);
-                    const ic = rowEl?.querySelector('.remark-icon');
-                    const dot = rowEl?.querySelector('.remark-dot');
-                    if (ic) ic.dataset.remark = encodeURIComponent(payload.remark || '');
-                    if (dot) dot.style.display = (payload.remark.trim() !== '' ? 'inline-block' :
-                        'none');
-                    recalcSoRemarkFlagFromDom(vbeln);
-
-                    remarkFeedback.textContent = err.message;
-                    remarkFeedback.className = 'small mt-2 text-danger';
-                } finally {
-                    this.disabled = false;
-                    this.innerHTML = 'Simpan Catatan';
-                }
-            });
-
-            deleteRemarkBtn.addEventListener('click', async function() {
-                // Konfirmasi user sebelum menghapus
-                if (!confirm("Anda yakin ingin menghapus catatan ini?")) {
-                    return;
-                }
-
-                // Kosongkan textarea agar logic saveRemarkBtn menghapus dari database
-                remarkTextarea.value = '';
-
-                // Simulasikan klik tombol simpan (dengan logika yang sudah ada untuk menghapus saat value kosong)
-                await saveRemarkBtn.click();
-
-                // Saat penghapusan berhasil, sembunyikan tombol Hapus
-                this.style.display = 'none';
-            });
-
-            /* ---------- Export ---------- */
+            /* =========================================================
+                EXPORT (selected items)
+            ========================================================== */
             if (exportDropdownContainer) {
                 exportDropdownContainer.addEventListener('click', (e) => {
                     const opt = e.target.closest('.export-option');
@@ -1819,11 +1460,551 @@
                 });
             }
 
-            /* ---------- Auto expand/scroll (PERBAIKAN FINAL HIGHLIGHT) ---------- */
+            /* =========================================================
+                REMARK THREAD (Multi-remark)
+            ========================================================== */
+            function updateRmCounter() {
+                if (!rmInput || !rmCounter) return;
+                const n = (rmInput.value || '').length;
+                rmCounter.textContent = `${n}/${MAX_REMARK}`;
+            }
+            rmInput?.addEventListener('input', updateRmCounter);
+
+            // open remark modal via icon
+            document.body.addEventListener('click', async (e) => {
+                const icon = e.target.closest('.remark-icon');
+                if (!icon) return;
+                const row = icon.closest('tr');
+
+                remarkModalState.werks = row.dataset.werks;
+                remarkModalState.auart = row.dataset.auart;
+                remarkModalState.vbeln = row.dataset.vbeln;
+                remarkModalState.posnr = row.dataset.posnr;
+                remarkModalState.posnrKey = row.dataset.posnrKey;
+
+                if (rmSO) rmSO.textContent = remarkModalState.vbeln;
+                if (rmPOS) rmPOS.textContent = remarkModalState.posnr;
+
+                if (rmInput) rmInput.value = '';
+                updateRmCounter();
+                if (rmFeedback) rmFeedback.textContent = '';
+                // Pastikan form tambah terlihat saat modal dibuka
+                const addForm = rmAddBtn?.closest('.mb-2');
+                if (addForm) addForm.style.display = '';
+
+                remarkModal.show();
+                await loadRemarkThread();
+            });
+
+            async function loadRemarkThread() {
+                if (!rmList) return;
+                rmList.innerHTML = `<div class="text-muted small d-flex align-items-center">
+    <div class="spinner-border spinner-border-sm me-2"></div>Memuat catatan...
+    </div>`;
+
+                const u = new URL(apiListItemRemarks, window.location.origin);
+                u.searchParams.set('werks', remarkModalState.werks);
+                u.searchParams.set('auart', remarkModalState.auart);
+                u.searchParams.set('vbeln', remarkModalState.vbeln);
+                u.searchParams.set('posnr', remarkModalState.posnrKey);
+
+                try {
+                    const r = await fetch(u);
+                    const js = await r.json();
+                    if (!js.ok) throw new Error(js.message || 'Gagal memuat catatan.');
+
+                    rmList.innerHTML = js.data.length ? '' : `<div class="text-muted">Belum ada catatan.</div>`;
+                    js.data.forEach(it => {
+                        const item = document.createElement('div');
+                        // [MODIFIKASI] Tambah flex-grow-1 pada body dan d-flex gap-1 pada act untuk layout
+                        item.className = 'remark-item' + (it.is_owner ? ' own' : '');
+                        item.innerHTML = `
+            <div class="body flex-grow-1">
+                <div class="meta"><strong>${escapeHtml(it.user_name || 'User')}</strong> • <span>${escapeHtml(it.created_at_human || it.created_at || '')}</span></div>
+                <div class="text">${escapeHtml(it.remark || '')}</div>
+            </div>
+            <div class="act d-flex gap-1 align-items-center">
+                ${it.is_owner ? 
+                    // [MODIFIKASI BARU] Tombol Edit
+                    `<button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark" data-id="${it.id}" data-remark="${escapeHtml(it.remark || '')}" title="Edit Catatan">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>` : ''}
+                ${it.is_owner ? 
+                    // Tombol Delete
+                    `<button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark" data-id="${it.id}" title="Hapus Catatan">
+                                    <i class="fas fa-trash"></i>
+                                </button>` : ''}
+            </div>`;
+                        rmList.appendChild(item);
+                    });
+
+                    // update badge count in L3 row
+                    const rowSel =
+                        `tr[data-werks='${remarkModalState.werks}'][data-auart='${remarkModalState.auart}'][data-vbeln='${remarkModalState.vbeln}'][data-posnr-key='${remarkModalState.posnrKey}']`;
+                    const rowEl = document.querySelector(rowSel);
+                    const badge = rowEl?.querySelector('.remark-count-badge');
+                    if (badge) {
+                        const c = js.data.length;
+                        badge.dataset.count = String(c);
+                        badge.textContent = String(c);
+                        badge.style.display = c > 0 ? 'inline-block' : 'none';
+                    }
+                    // update SO flag
+                    recalcSoRemarkFlagFromDom(remarkModalState.vbeln);
+
+                } catch (err) {
+                    rmList.innerHTML = `<div class="text-danger">${escapeHtml(err.message)}</div>`;
+                }
+            }
+
+            rmAddBtn?.addEventListener('click', async () => {
+                const text = (rmInput?.value || '').trim();
+                if (!text) {
+                    if (rmFeedback) {
+                        rmFeedback.textContent = 'Teks catatan tidak boleh kosong.';
+                        rmFeedback.className = 'text-danger small';
+                    }
+                    return;
+                }
+                // Batasan 60 karakter di UI
+                if (text.length > MAX_REMARK) {
+                    if (rmFeedback) {
+                        rmFeedback.textContent = `Maksimal ${MAX_REMARK} karakter.`;
+                        rmFeedback.className = 'text-danger small';
+                    }
+                    return;
+                }
+
+                rmAddBtn.disabled = true;
+                rmAddBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span>`;
+                try {
+                    const res = await fetch(apiAddItemRemark, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            werks: remarkModalState.werks,
+                            auart: remarkModalState.auart,
+                            vbeln: remarkModalState.vbeln,
+                            posnr: remarkModalState.posnrKey, // 6 digit
+                            remark: text
+                        })
+                    });
+                    const js = await res.json();
+                    if (!res.ok || !js.ok) throw new Error(js.message || 'Gagal menambah catatan.');
+
+                    if (rmInput) rmInput.value = '';
+                    updateRmCounter();
+                    if (rmFeedback) {
+                        rmFeedback.textContent = 'Catatan ditambahkan.';
+                        rmFeedback.className = 'text-success small';
+                    }
+
+                    // invalidate cache item SO agar remark_count segar saat reload item
+                    itemsCache.delete(remarkModalState.vbeln);
+
+                    await loadRemarkThread();
+                } catch (err) {
+                    if (rmFeedback) {
+                        rmFeedback.textContent = err.message;
+                        rmFeedback.className = 'text-danger small';
+                    }
+                } finally {
+                    rmAddBtn.disabled = false;
+                    rmAddBtn.innerHTML = `<i class="fas fa-paper-plane me-1"></i> Tambah`;
+                }
+            });
+
+            rmList?.addEventListener('click', async (e) => {
+                // --- LOGIC HAPUS (Sudah ada) ---
+                const btn = e.target.closest('.btn-delete-remark');
+                if (btn) {
+                    e.preventDefault();
+                    const id = btn.dataset.id;
+                    if (!confirm('Hapus catatan ini?')) return;
+
+                    btn.disabled = true;
+                    try {
+                        const delUrl = apiDeleteItemRemarkTpl.replace('___ID___', id);
+                        const r = await fetch(delUrl, {
+                            method: 'DELETE',
+                            headers: {
+                                'X-CSRF-TOKEN': csrfToken,
+                                'Accept': 'application/json'
+                            }
+                        });
+                        const js = await r.json();
+                        if (!r.ok || !js.ok) throw new Error(js.message || 'Gagal menghapus catatan.');
+
+                        // invalidate cache
+                        itemsCache.delete(remarkModalState.vbeln);
+
+                        await loadRemarkThread();
+                    } catch (err) {
+                        alert(err.message);
+                    } finally {
+                        btn.disabled = false;
+                    }
+                    return;
+                }
+
+                // --- [MODIFIKASI BARU] LOGIC EDIT & SAVE ---
+                const editBtn = e.target.closest('.btn-edit-remark');
+                const saveBtn = e.target.closest('.btn-save-edit');
+                const cancelBtn = e.target.closest('.btn-cancel-edit');
+                const addForm = rmAddBtn?.closest('.mb-2');
+
+                // 1. Tombol Edit Ditekan
+                if (editBtn) {
+                    e.preventDefault();
+                    const id = editBtn.dataset.id;
+                    const currentRemark = editBtn.dataset.remark;
+
+                    // Sembunyikan form tambah baru
+                    if (addForm) addForm.style.display = 'none';
+
+                    // Ambil div remark-item yang bersangkutan
+                    const remarkItemEl = editBtn.closest('.remark-item');
+                    const remarkTextEl = remarkItemEl.querySelector('.text');
+                    const actionEl = remarkItemEl.querySelector('.act');
+
+                    // Ganti teks dengan textarea dan tombol aksi
+                    remarkTextEl.innerHTML =
+                        `<textarea class="form-control" rows="2" maxlength="60" id="edit-remark-${id}">${currentRemark}</textarea>`;
+                    actionEl.innerHTML = `
+                        <button type="button" class="btn btn-success btn-sm btn-save-edit" data-id="${id}">Save</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-edit">Cancel</button>
+                    `;
+
+                    // Pindahkan fokus ke textarea
+                    document.getElementById(`edit-remark-${id}`)?.focus();
+
+                    return;
+                }
+
+                // 2. Tombol Cancel Edit Ditekan
+                if (cancelBtn) {
+                    e.preventDefault();
+                    if (addForm) addForm.style.display = '';
+                    await loadRemarkThread(); // Muat ulang thread untuk mengembalikan tampilan
+                    return;
+                }
+
+                // 3. Tombol Save Edit Ditekan
+                if (saveBtn) {
+                    e.preventDefault();
+                    const id = saveBtn.dataset.id;
+                    const newRemarkInput = document.getElementById(`edit-remark-${id}`);
+                    const newRemark = (newRemarkInput?.value || '').trim();
+
+                    if (!newRemark || newRemark.length > 60) {
+                        alert('Catatan tidak boleh kosong dan maksimal 60 karakter.');
+                        return;
+                    }
+
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span>`;
+                    const url = apiUpdateItemRemarkTpl.replace('___ID___', id);
+
+                    try {
+                        const res = await fetch(url, {
+                            method: 'POST', // Menggunakan POST karena PUT/PATCH mungkin diblokir di beberapa hosting/konfigurasi, tapi di Laravel bisa di-emulate. Jika rute di Controller menggunakan `PUT`, pastikan ini benar. (Kita asumsikan `PUT` di Controller dengan POST method spoofing di Laravel, atau ubah route ke POST)
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': csrfToken,
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                _method: 'PUT', // Laravel method spoofing
+                                remark: newRemark
+                            })
+                        });
+                        const js = await res.json();
+
+                        if (!res.ok || !js.ok) throw new Error(js.message ||
+                            'Gagal menyimpan perubahan.');
+
+                        // invalidate cache item SO agar remark_count segar saat reload item
+                        itemsCache.delete(remarkModalState.vbeln);
+
+                        if (addForm) addForm.style.display = ''; // Tampilkan kembali form tambah remark
+                        await loadRemarkThread();
+                    } catch (err) {
+                        alert(err.message);
+                    } finally {
+                        saveBtn.disabled = false;
+                        saveBtn.innerHTML = `Save`;
+                    }
+                    return;
+                }
+                // --- END LOGIC EDIT & SAVE ---
+            });
+
+            /* =========================================================
+                SMALL QTY (Chart + Details)
+            ========================================================== */
+            const smallQtyDetailsContainer = document.getElementById('smallQtyDetailsContainer');
+            const smallQtyDetailsTable = document.getElementById('smallQtyDetailsTable');
+            const smallQtyDetailsTitle = document.getElementById('smallQtyDetailsTitle');
+            const smallQtyMeta = document.getElementById('smallQtyMeta');
+            const exportSmallQtyPdfBtn = document.getElementById('exportSmallQtyPdf');
+            const exportForm = document.getElementById('smallQtyExportForm');
+            const smallQtySection = document.getElementById('small-qty-section');
+            const smallQtyChartTitle = document.getElementById('small-qty-chart-title');
+            const smallQtyTotalItem = document.getElementById('small-qty-total-item');
+            const chartCanvas = document.getElementById('chartSmallQtyByCustomer');
+            const smallQtyChartContainer = chartCanvas?.closest('.chart-container');
+
+            let smallQtyChartInstance = null;
+
+            const formatNumberChart = (v) => {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return '';
+                return n.toLocaleString('id-ID', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                });
+            };
+
+            // Dibuat global agar bisa dipanggil dari event listener Level-1 di script block sebelumnya
+            async function showSmallQtyDetails(customerName, werks) {
+                const locationMap = {
+                    '2000': 'Surabaya',
+                    '3000': 'Semarang'
+                };
+                const locationName = locationMap[werks] ?? werks;
+                const root = document.getElementById('so-root');
+                const currentAuart = (root.dataset.auart || '').trim();
+
+                if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
+
+                smallQtyDetailsTitle.textContent =
+                    `Detail Item Outstanding (≤5) untuk ${customerName}`;
+                smallQtyMeta.textContent = '';
+                exportSmallQtyPdfBtn.disabled = true;
+                smallQtyDetailsTable.innerHTML =
+                    `<div class="d-flex justify-content-center align-items-center p-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <span class="ms-3 text-muted">Memuat data...</span>
+        </div>`;
+                smallQtyDetailsContainer.style.display = 'block';
+
+                if (smallQtySection) smallQtySection.style.display = '';
+
+                try {
+                    const apiUrl = new URL("{{ route('so.api.small_qty_details') }}", window.location.origin);
+                    apiUrl.searchParams.append('customerName', customerName);
+                    apiUrl.searchParams.append('werks', werks);
+                    apiUrl.searchParams.append('auart', currentAuart);
+
+                    const response = await fetch(apiUrl);
+                    const result = await response.json();
+
+                    if (result.ok && result.data.length > 0) {
+                        const uniqSO = new Set(result.data.map(r => (r.SO || '').toString().trim()).filter(
+                            Boolean));
+                        const totalSO = uniqSO.size;
+                        const totalItem = result.data.length;
+                        exportSmallQtyPdfBtn.disabled = false;
+
+                        if (exportForm) {
+                            exportForm.querySelector('#exp_customerName').value = customerName;
+                        }
+
+                        result.data.sort((a, b) => parseFloat(a.PACKG) - parseFloat(b.PACKG));
+
+                        // PERBAIKAN: Menambahkan Qty GI di Header, sebelum Qty SO
+                        const tableHeaders = `<tr>
+                <th style="width:5%;" class="text-center">No.</th>
+                <th class="text-center">SO</th>
+                <th class="text-center">Item</th>
+                <th>Description</th>
+                <th class="text-end">Shipped</th> <th class="text-end">Qty SO</th>
+                <th class="text-end">Outs. SO (≤5)</th>
+                <th class="text-end">WHFG</th>
+                <th class="text-end">Stock Packing</th>
+                </tr>`;
+
+                        let tableBodyHtml = result.data.map((item, idx) => {
+                            // PERBAIKAN: Langsung mengambil QTY_GI dari object item
+                            const qtyGi = formatNumberChart(item.QTY_GI);
+                            const qtySo = formatNumberChart(item.KWMENG);
+                            const qtyOuts = formatNumberChart(item.PACKG);
+                            const kalab = formatNumberChart(item.KALAB);
+                            const kalab2 = formatNumberChart(item.KALAB2);
+                            return `<tr>
+                <td class="text-center">${idx+1}</td>
+                <td class="text-center">${item.SO}</td>
+                <td class="text-center">${item.POSNR}</td>
+                <td>${item.MAKTX}</td>
+                <td class="text-end">${qtyGi}</td> <td class="text-end">${qtySo}</td>
+                <td class="text-end fw-bold text-danger">${qtyOuts}</td>
+                <td class="text-end">${kalab}</td>
+                <td class="text-end">${kalab2}</td>
+                </tr>`;
+                        }).join('');
+
+                        const tableHtml = `
+                <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
+                    <table class="table table-striped table-hover table-sm align-middle">
+                        <thead class="table-light">${tableHeaders}</thead>
+                        <tbody>${tableBodyHtml}</tbody>
+                    </table>
+                </div>`;
+                        smallQtyDetailsTable.innerHTML = tableHtml;
+                    } else {
+                        smallQtyMeta.textContent = '';
+                        exportSmallQtyPdfBtn.disabled = true;
+                        smallQtyDetailsTable.innerHTML =
+                            `<div class="text-center p-5 text-muted">Data item Small Quantity (Outs. SO <=5) tidak ditemukan untuk customer ini.</div>`;
+                    }
+                } catch (error) {
+                    console.error('Gagal mengambil data detail Small Qty:', error);
+                    smallQtyMeta.textContent = '';
+                    exportSmallQtyPdfBtn.disabled = true;
+                    smallQtyDetailsTable.innerHTML =
+                        `<div class="text-center p-5 text-danger">Terjadi kesalahan saat memuat data.</div>`;
+                }
+            }
+
+            function renderSmallQtyChart(dataToRender, werks) {
+                const ctxSmallQty = document.getElementById('chartSmallQtyByCustomer');
+                const plantCode = (werks === '3000') ? 'Semarang' : 'Surabaya';
+                const barColor = (werks === '3000') ? '#198754' : '#ffc107';
+
+                const customerMap = new Map();
+                const totalItemCountMap = new Map();
+                (Array.isArray(dataToRender) ? dataToRender : []).forEach(item => {
+                    const name = (item.NAME1 || '').trim();
+                    if (!name) return;
+                    const currentCount = customerMap.get(name) || 0;
+                    customerMap.set(name, currentCount + parseInt(item.so_count, 10));
+                    const currentItemCount = totalItemCountMap.get(name) || 0;
+                    totalItemCountMap.set(name, currentItemCount + parseInt(item.item_count || 0, 10));
+                });
+
+                const sortedCustomers = [...customerMap.entries()].sort((a, b) => b[1] - a[1]);
+                const labels = sortedCustomers.map(i => i[0]);
+                const soCounts = sortedCustomers.map(i => i[1]);
+                const totalSoCount = soCounts.reduce((s, c) => s + c, 0);
+                const totalItemCount = (Array.isArray(dataToRender) ? dataToRender : []).reduce((sum, item) => sum +
+                    parseInt(item.item_count || 0, 10), 0);
+
+                const noDataEl = ctxSmallQty?.closest('.chart-container').querySelector('.yz-nodata');
+                if (!ctxSmallQty || (dataToRender.length === 0) || totalSoCount === 0) {
+                    if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
+                    if (chartCanvas) chartCanvas.style.display = 'none';
+                    if (noDataEl) noDataEl.style.display = 'block';
+                    if (smallQtyChartInstance) smallQtyChartInstance.destroy();
+                    return;
+                } else {
+                    if (chartCanvas) chartCanvas.style.display = 'block';
+                    if (noDataEl) noDataEl.style.display = 'none';
+                }
+
+                const dynamicHeight = Math.max(200, Math.min(50 * labels.length, 600));
+                if (chartCanvas) chartCanvas.closest('.chart-container').style.height = dynamicHeight + 'px';
+                if (smallQtyChartInstance) smallQtyChartInstance.destroy();
+
+                smallQtyChartInstance = new Chart(ctxSmallQty, {
+                    type: 'bar',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: plantCode,
+                            data: soCounts,
+                            backgroundColor: barColor
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                stacked: false,
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Sales Order (With Outs. Item Qty ≤ 5)'
+                                },
+                                ticks: {
+                                    callback: (value) => {
+                                        if (Math.floor(value) === value) return value;
+                                    }
+                                }
+                            },
+                            y: {
+                                stacked: false
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x} SO`
+                                }
+                            }
+                        },
+                        onClick: async (event, elements) => {
+                            if (elements.length === 0) return;
+                            const barElement = elements[0];
+                            const customerName = labels[barElement.index];
+                            await showSmallQtyDetails(customerName, WERKS);
+                        }
+                    }
+                });
+                window.smallQtyChartInstance = smallQtyChartInstance;
+            }
+
+            // Expose globally (dipanggil dari Level-1 handler)
+            window.showSmallQtyDetails = showSmallQtyDetails;
+            window.renderSmallQtyChart = renderSmallQtyChart;
+
+            // Init chart (awal halaman)
+            if (chartCanvas) {
+                if (initialSmallQtyDataRaw && initialSmallQtyDataRaw.length > 0) {
+                    renderSmallQtyChart(initialSmallQtyDataRaw, WERKS);
+                } else {
+                    const sec = document.getElementById('small-qty-section');
+                    if (sec) sec.style.display = 'none';
+                    if (smallQtyDetailsContainer) smallQtyDetailsContainer.style.display = 'none';
+                }
+            }
+
+            // Close details table
+            const closeButton = document.getElementById('closeDetailsTable');
+            closeButton?.addEventListener('click', () => {
+                const cont = document.getElementById('smallQtyDetailsContainer');
+                if (cont) cont.style.display = 'none';
+                if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
+                if (initialSmallQtyDataRaw && initialSmallQtyDataRaw.length > 0) {
+                    renderSmallQtyChart(initialSmallQtyDataRaw, WERKS);
+                }
+            });
+
+            // Export Small Qty PDF
+            const expForm = document.getElementById('smallQtyExportForm');
+            const expBtn = document.getElementById('exportSmallQtyPdf');
+            if (expBtn && expForm) {
+                expBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    expForm.submit();
+                });
+            }
+
+            /* =========================================================
+                AUTO-EXPAND from root highlight (kunnr/vbeln/posnr)
+            ========================================================== */
             (async function autoExpandFromRoot() {
-                const VBELN = (__root?.dataset.hvbeln || '').trim();
-                const KUNNR = (__root?.dataset.hkunnr || '').trim();
-                const POSNR = (__root?.dataset.hposnr || '').trim();
+                const VBELN = VBELN_HL;
+                const KUNNR = KUNNR_HL;
+                const POSNR = POSNR_HL;
                 const shouldAuto = AUTO;
 
                 const POSNR6 = POSNR ? String(POSNR).replace(/\D/g, '').padStart(6, '0') : '';
@@ -1837,7 +2018,7 @@
                             let ok = false;
                             try {
                                 ok = !!fn();
-                            } catch {};
+                            } catch {}
                             if (ok) {
                                 clearInterval(t);
                                 return r(true);
@@ -1857,9 +2038,8 @@
                         });
                         el.classList.add('row-highlighted');
                         setTimeout(() => el.classList.remove('row-highlighted'), 3000);
-                    } catch {};
+                    } catch {}
                 };
-
                 const findItemRow = (box, vbeln, pos6) => {
                     const rows = box?.querySelectorAll(`tr[data-vbeln='${CSS.escape(vbeln)}']`) || [];
                     for (const tr of rows) {
@@ -1868,14 +2048,12 @@
                     }
                     return null;
                 };
-
                 const openToSO = async (customerRow) => {
                     if (!customerRow) return {
                         wrap: null,
                         soRow: null,
                         itemsBox: null
                     };
-
                     if (!customerRow.classList.contains('is-open')) customerRow.click();
                     const wrap = customerRow.nextElementSibling?.querySelector('.yz-nest-wrap');
                     const okT2 = await waitFor(() => wrap && wrap.dataset.loaded === '1', {
@@ -1915,10 +2093,8 @@
                 if (!(shouldAuto && (VBELN || KUNNR))) return;
 
                 let crow = null;
-                if (KUNNR) {
-                    // Cari customer card baru
-                    crow = document.querySelector(`.yz-customer-card[data-kunnr='${CSS.escape(KUNNR)}']`);
-                }
+                if (KUNNR) crow = document.querySelector(
+                    `.yz-customer-card[data-kunnr='${CSS.escape(KUNNR)}']`);
 
                 if (VBELN && crow) {
                     const {
@@ -1926,13 +2102,11 @@
                         itemsBox
                     } = await openToSO(crow);
                     if (!soRow) return;
-
                     const target = (POSNR6 && findItemRow(itemsBox, VBELN, POSNR6)) ||
                         Array.from(itemsBox?.querySelectorAll('tr[data-item-id]') || []).find(tr => {
-                            const ic = tr.querySelector('.remark-icon');
-                            return ic && decodeURIComponent(ic.dataset.remark || '').trim() !== '';
+                            const badge = tr.querySelector('.remark-count-badge');
+                            return badge && Number(badge.dataset.count || 0) > 0;
                         });
-
                     scrollAndFlash(target || soRow);
                     return;
                 }
@@ -1940,7 +2114,6 @@
                 if (VBELN && !KUNNR) {
                     let foundSoRow = null,
                         foundItemsBox = null;
-
                     const customerRows = Array.from(document.querySelectorAll('.yz-customer-card'));
                     for (const row of customerRows) {
                         const {
@@ -1953,19 +2126,15 @@
                             break;
                         }
                     }
-
                     if (!foundSoRow) return;
-
                     const target = (POSNR6 && findItemRow(foundItemsBox, VBELN, POSNR6)) ||
                         Array.from(foundItemsBox?.querySelectorAll('tr[data-item-id]') || []).find(tr => {
-                            const ic = tr.querySelector('.remark-icon');
-                            return ic && decodeURIComponent(ic.dataset.remark || '').trim() !== '';
+                            const badge = tr.querySelector('.remark-count-badge');
+                            return badge && Number(badge.dataset.count || 0) > 0;
                         });
-
                     scrollAndFlash(target || foundSoRow);
                 }
             })();
-
         });
     </script>
 @endpush

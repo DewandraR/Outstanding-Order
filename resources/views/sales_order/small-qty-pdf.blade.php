@@ -98,13 +98,12 @@
         $fmtInt = fn($n) => number_format((float) $n, 0, ',', '.');
         $rows = $items->sortBy([['SO', 'asc'], ['POSNR', 'asc']])->values();
 
-        // Total kolom baru: 6 kolom lama + 2 kolom baru = 8 kolom
-        $colspan = 8;
+        // Total kolom: 9 kolom (No, SO, Item, Description, Qty GI BARU, Qty SO, Outs. SO, WHFG, Stock Packing)
+        $colspan = 9; // <<< PERUBAHAN: Disesuaikan menjadi 9 kolom
     @endphp
 
     <div class="header">
         <h1>SMALL QUANTITY (≤5) OUTSTANDING ITEMS - SO</h1>
-        {{-- Menggunakan format yang sama dengan PO PDF --}}
         <div class="date">Generated: {{ $generatedAt ?? now()->format('d-m-Y') }}</div>
     </div>
 
@@ -112,20 +111,19 @@
         <thead class="customer-header-group">
             {{-- TAMPILKAN Customer & Location --}}
             <tr class="customer-header-row">
-                {{-- PERUBAHAN: Colspan dari 6 menjadi 8 --}}
                 <td colspan="{{ $colspan }}">Customer: {{ $customerName }} — Location: {{ $locationName }}</td>
             </tr>
             <tr class="item-thead-row">
                 <th style="width:3%;">No.</th>
-                <th style="width:12%;">SO</th>
+                <th style="width:10%;">SO</th>
                 <th style="width:6%;">Item</th>
-                <th class="text-left" style="width:35%;">Description</th>
+                <th class="text-left" style="width:29%;">Description</th>
+                <th style="width:10%;">Shipped</th>
+
                 <th style="width:10%;">Qty SO</th>
                 <th style="width:10%;">Outs. SO</th>
-                {{-- <<< PERUBAHAN: Kolom WHFG dan Stock Packing >>> --}}
-                <th style="width:12%;">WHFG</th>
-                <th style="width:12%;">Stock Packing</th>
-                {{-- <<< AKHIR PERUBAHAN >>> --}}
+                <th style="width:11%;">WHFG</th>
+                <th style="width:11%;">Stock Packing</th>
             </tr>
         </thead>
         <tbody>
@@ -135,20 +133,21 @@
                     <td class="text-center">{{ $r->SO }}</td>
                     <td class="text-center">{{ (int) $r->POSNR }}</td>
                     <td class="text-left">{{ $r->MAKTX }}</td>
+
+                    {{-- <<< PERUBAHAN UTAMA: Data QTY GI DITAMBAHKAN di sini --}}
+                    <td class="text-right">{{ $fmtInt($r->QTY_GI ?? 0) }}</td>
+
                     {{-- Menggunakan $fmtInt untuk menghilangkan 3 desimal --}}
                     <td class="text-right">{{ $fmtInt($r->KWMENG ?? 0) }}</td>
                     <td class="text-right">
                         <strong>{{ $fmtInt($r->PACKG ?? 0) }}</strong>
                     </td>
 
-                    {{-- <<< PERUBAHAN: Data KALAB dan KALAB2 >>> --}}
                     <td class="text-right">{{ $fmtInt($r->KALAB ?? 0) }}</td>
                     <td class="text-right">{{ $fmtInt($r->KALAB2 ?? 0) }}</td>
-                    {{-- <<< AKHIR PERUBAHAN >>> --}}
                 </tr>
             @empty
                 <tr>
-                    {{-- PERUBAHAN: Sesuaikan colspan --}}
                     <td colspan="{{ $colspan }}" class="item-row text-center">Tidak ada data.</td>
                 </tr>
             @endforelse

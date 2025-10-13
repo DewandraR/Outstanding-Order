@@ -214,7 +214,7 @@
                         <td class="text-right">{{ $formatNumber($assym) }}</td>
                         <td class="text-right">{{ $formatNumber($paint) }}</td>
                         <td class="text-right">{{ $formatNumber($menge) }}</td>
-                        <td class="text-left">{{ $item->remark }}</td>
+                        <td class="remark-cell">{!! nl2br(e($item->remark ?? '')) !!}</td>
                     </tr>
                 @endforeach
             </tbody>

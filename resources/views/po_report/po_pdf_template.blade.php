@@ -210,9 +210,6 @@
         </table>
     @endforelse
 
-    {{-- Optional footer (nomor halaman dsb) --}}
-    {{-- <div class="footer">Printed on {{ now()->format('d M Y H:i') }}</div> --}}
-
 </body>
 
 </html>
