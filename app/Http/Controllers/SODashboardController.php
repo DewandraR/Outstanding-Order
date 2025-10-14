@@ -172,7 +172,6 @@ class SODashboardController extends Controller
         ")
             ->orderBy('ir.VBELN')
             ->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
-            ->limit(2000)
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);

@@ -209,7 +209,8 @@ thead th {
     cursor: pointer;
     transition: all 0.3s ease-in-out;
     position: relative;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05),
+        0 2px 4px -2px rgba(0, 0, 0, 0.05);
     overflow: hidden;
 }
 
@@ -217,7 +218,8 @@ thead th {
     background-color: #f7f9ff;
     border-color: #c7d2fe;
     transform: translateY(-2px);
-    box-shadow: 0 8px 10px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 10px -3px rgba(0, 0, 0, 0.1),
+        0 4px 6px -4px rgba(0, 0, 0, 0.1);
 }
 
 .yz-customer-card-overdue {
@@ -268,7 +270,6 @@ thead th {
 .yz-global-total-card h6 {
     color: #059669;
 }
-
 
 /* --- END CUSTOMER CARD-ROW STYLES --- */
 
@@ -733,5 +734,247 @@ thead th {
 
     100% {
         background-color: #dbeafe;
+    }
+}
+
+/* =========================================================
+   MOBILE / LAYAR KECIL (Max-Width: 767px) - PERBAIKAN RESPONSIVITAS
+   ========================================================= */
+@media (max-width: 767px) {
+    /* --- Level 1: Customer Card --- */
+
+    /* Menghilangkan padding horizontal berlebih pada container utama */
+    .yz-customer-list .d-grid {
+        padding: 0;
+    }
+
+    /* Mengubah tata letak kartu pelanggan menjadi tumpukan vertikal */
+    .yz-customer-card .d-flex.align-items-center.justify-content-between.p-3 {
+        flex-direction: column; /* Tumpuk item secara vertikal */
+        align-items: flex-start !important; /* Rata kiri untuk info pelanggan */
+        padding: 1rem 0.75rem !important; /* Sesuaikan padding */
+    }
+
+    /* 1. PERBAIKAN NAMA PELANGGAN (Memungkinkan Wrap Text) */
+    .yz-customer-card .d-flex.align-items-center.flex-grow-1.me-3 {
+        margin-bottom: 0.5rem; /* Tambahkan ruang bawah */
+        width: 100%; /* Ambil lebar penuh */
+        margin-right: 0 !important; /* Hapus margin kanan */
+    }
+
+    /* Mengizinkan teks nama pelanggan untuk wrap */
+    .yz-customer-card .customer-info .text-truncate {
+        white-space: normal !important; /* Memungkinkan teks untuk wrap */
+        overflow: visible !important; /* Memastikan overflow terlihat jika wrap */
+        text-overflow: clip !important; /* Memastikan tidak terpotong */
+    }
+
+    /* Mengurangi ukuran font untuk nama pelanggan agar lebih ringkas */
+    .yz-customer-card .customer-info .fw-bold.fs-5 {
+        font-size: 1.1rem !important;
+        line-height: 1.3;
+    }
+
+    /* Memastikan caret (chevron) tidak terlalu jauh dari nama */
+    .yz-customer-card .kunnr-caret.me-3 {
+        margin-right: 0.5rem !important;
+    }
+
+    /* Bagian kanan (Metrics Column) */
+    #metric-columns {
+        width: 100%; /* Ambil lebar penuh */
+        justify-content: space-between; /* Pisahkan Total Qty dan Total Value */
+        flex-wrap: nowrap !important; /* Jaga agar tidak terbungkus jika ada 2 metrik */
+        border-top: 1px dashed #e5e7eb; /* Garis pemisah */
+        padding-top: 0.5rem;
+        margin-top: 0.25rem;
+    }
+
+    /* Kotak Metrik (Qty dan Value) */
+    #metric-columns .metric-box {
+        min-width: unset !important;
+        padding-left: 0.5rem; /* Sesuaikan padding */
+        text-align: left !important; /* Rata kiri untuk metrik */
+        border-left: none !important; /* Hapus garis vertikal */
+        flex: 1; /* Distribusi ruang secara merata */
+    }
+
+    #metric-columns .metric-box:first-child {
+        padding-right: 0.5rem;
+        border-right: 1px solid #e5e7eb; /* Tambahkan garis pemisah vertikal baru */
+    }
+    #metric-columns .metric-box:nth-child(2) {
+        padding-left: 0.5rem;
+    }
+
+    .yz-customer-card .metric-value.fs-4 {
+        font-size: 1.1rem !important; /* Kecilkan ukuran font untuk Qty */
+        color: #1e40af !important; /* Ganti warna Qty menjadi biru agar serasi dengan card */
+    }
+    .yz-customer-card .metric-value.fs-4.fw-bold.text-dark {
+        font-size: 1.1rem !important; /* Kecilkan ukuran font untuk Value */
+    }
+    .yz-customer-card .metric-label {
+        font-size: 0.75rem; /* Kecilkan label metrik */
+        color: #6b7280;
+    }
+
+    /* --- Global Totals Card (Footer) --- */
+    .yz-global-total-card .card-body {
+        flex-direction: column; /* Tumpuk secara vertikal */
+        align-items: flex-start !important; /* Rata kiri */
+    }
+    #footer-metric-columns {
+        width: 100%; /* Ambil lebar penuh */
+        justify-content: space-between;
+        margin-top: 0.5rem;
+    }
+    #footer-metric-columns .metric-box {
+        text-align: left !important;
+        border-left: none !important;
+        padding-left: 0.5rem !important;
+        flex: 1;
+    }
+    #footer-metric-columns .metric-box:first-child {
+        border-right: 1px solid #a7f3d0;
+        padding-right: 0.5rem;
+    }
+    .yz-global-total-card .fw-bold.fs-4 {
+        font-size: 1.1rem !important; /* Kecilkan ukuran font */
+    }
+    .yz-global-total-card .text-end {
+        text-align: left !important;
+    }
+    .yz-global-total-card h6 {
+        margin-bottom: 0.5rem;
+    }
+
+    /* --- Level 2 & 3: Nested Tables (SO & Items) --- */
+
+    /* Mengurangi ukuran font dan padding di tabel mini */
+    .yz-mini th,
+    .yz-mini td {
+        padding: 0.4rem 0.6rem !important; /* Padding lebih kecil */
+        font-size: 0.75rem !important; /* Ukuran font lebih kecil */
+    }
+
+    /* Memperbaiki tampilan checkbox dan tombol kolaps Level 2 */
+    .yz-header-so th:nth-child(1),
+    .yz-header-so th:nth-child(2) {
+        width: 30px !important;
+    }
+    .yz-mini .js-collapse-toggle {
+        padding: 0 4px !important;
+    }
+    .yz-mini .form-check-input {
+        width: 1.1em;
+        height: 1.1em;
+    }
+
+    /* Memastikan kolom Total Stock Qty dan Total Value di Level 2 rata kanan */
+    .yz-header-so + tbody td,
+    .yz-header-so th {
+        text-align: right;
+    }
+
+    .yz-header-so + tbody td:nth-child(-n + 3),
+    .yz-header-so th:nth-child(-n + 3) {
+        text-align: left;
+    }
+
+    /* 2. PENYESUAIAN LEBAR KOLOM LEVEL 2 (SO) UNTUK PRIORITAS */
+    .yz-header-so th:nth-child(3) {
+        /* Kolom SO */
+        min-width: 100px;
+    }
+    .yz-header-so th:nth-child(4) {
+        /* Kolom Total Stock Qty */
+        min-width: 80px;
+    }
+    .yz-header-so th:nth-child(5) {
+        /* Kolom Total Value */
+        min-width: 90px;
+    }
+
+    /* Memastikan tabel Level 2 (SO) juga scrollable jika isinya melebihi layar */
+    .yz-nest-card .yz-nest-wrap > .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* 3. MENGAKTIFKAN SCROLL HORIZONTAL DI LEVEL 3 (Item Detail) */
+    .yz-slot-items .table-responsive {
+        overflow-x: auto !important; /* Pastikan scroll horizontal aktif */
+        -webkit-overflow-scrolling: touch;
+        margin-bottom: 0;
+    }
+
+    /* MENGATUR LEBAR MINIMUM KOLOM LEVEL 3 */
+    .yz-header-item th {
+        min-width: 60px; /* Default minimum */
+    }
+    .yz-header-item th:nth-child(3) {
+        /* Material FG */
+        min-width: 100px;
+    }
+    .yz-header-item th:nth-child(4) {
+        /* Desc FG */
+        min-width: 150px; /* Deskripsi butuh ruang lebih */
+    }
+    .yz-header-item th:nth-child(5) {
+        /* Stock/WHFG/Packing */
+        min-width: 80px;
+    }
+    .yz-header-item th:nth-child(6), /* Net Price */
+    .yz-header-item th:nth-child(7) {
+        /* Total Value */
+        min-width: 90px;
+    }
+
+    /* Mengizinkan Deskripsi Material wrap, tidak hanya 1 baris */
+    .yz-slot-items table tbody tr td:nth-child(4) {
+        white-space: normal;
+        text-align: left;
+    }
+    .so-report-scroll-x {
+        width: 100%;
+        overflow-x: auto; /* aktifkan geser kanan-kiri */
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+    }
+
+    .so-report-canvas {
+        /* Kanvas lebih lebar dari layar agar bisa di-scroll */
+        min-width: 1280px; /* silakan sesuaikan: 1200–1440px */
+        padding-bottom: 0.5rem;
+    }
+
+    /* Pastikan kartu & konten di dalam tidak memotong area */
+    .so-report-scroll-x .yz-card {
+        overflow-x: visible; /* override dari .yz-card { overflow: hidden; } */
+    }
+
+    /* Tabel/nested container selalu boleh scroll horizontal (bukan hanya mobile) */
+    .yz-nest-card .yz-nest-wrap > .table-responsive,
+    .yz-slot-items .table-responsive,
+    .yz-chart-card .card-body,
+    .yz-customer-list {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Header tabel tidak memaksa wrap aneh; deskripsi tetap boleh wrap */
+    .yz-header-so th,
+    .yz-header-item th {
+        white-space: nowrap;
+    }
+    .yz-header-item + tbody td:nth-child(4) {
+        white-space: normal; /* biarkan kolom deskripsi tetap membungkus */
+    }
+
+    /* Jika masih ada pemotongan global, izinkan body untuk x-scroll juga */
+    html,
+    body {
+        overflow-x: auto;
     }
 }
