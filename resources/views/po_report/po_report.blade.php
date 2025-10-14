@@ -912,7 +912,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         }, true);
 
         /* ====================== REMARK (Multi-user) – TERINTEGRASI ====================== */
-        
+
         // Endpoint baru (multi-user)
         const API_REMARK_LIST = "{{ route('api.po.remark.list') }}";
         const API_REMARK_CREATE = "{{ route('api.po.remark.create') }}";
@@ -1048,15 +1048,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                    title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                    <i class="fas fa-pencil-alt"></i>
-                                                </button>` : ''}
+                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                            title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                            <i class="fas fa-pencil-alt"></i>
+                                                        </button>` : ''}
                     ${isOwner ? `
-                                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                    title="Hapus Catatan">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>` : ''}
+                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                            title="Hapus Catatan">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>` : ''}
                 </div>
             </div>
         `;
@@ -1354,8 +1354,13 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 if (rmSO) rmSO.textContent = keys.vbeln;
                 if (rmPOS) rmPOS.textContent = keys.posnrDb; // Tampilkan POSNR_DB (000010)
 
-                await loadRemarkList(keys);
-                remarkModalBS.show();
+                if (listWrap) {
+                    listWrap.innerHTML = `<div class="text-muted small d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm me-2"></div>Memuat catatan…
+      </div>`;
+                }
+                remarkModalBS.show(); // fetch tanpa blocking UI
+                loadRemarkList(keys);
             });
         }
 

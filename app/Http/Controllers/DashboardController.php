@@ -448,127 +448,107 @@ class DashboardController extends Controller
         $werks = $req->query('werks');
         $auart = $req->query('auart');
 
-        if (!$kunnr) {
+        if ($kunnr === '') {
             return response()->json(['ok' => false, 'error' => 'kunnr missing'], 400);
         }
 
-        // =========================================================================
-        // MODIFIKASI: Logika Penggabungan Data Export dan Replace (apiT2) - Fix untuk Table 2
-        // =========================================================================
+        // ===== Logika gabung Export + Replace (konsisten dgn yang lain) =====
         $mapping = DB::table('maping')->get();
-        // Dapatkan AUART Export (non-replace)
+
         $exportAuartCodes = $mapping->filter(function ($item) {
             $d = strtolower($item->Deskription);
             return Str::contains($d, 'export')
                 && !Str::contains($d, 'local')
                 && !Str::contains($d, 'replace');
         })->pluck('IV_AUART')->unique()->toArray();
-        // Dapatkan AUART Replace
+
         $replaceAuartCodes = $mapping->filter(function ($item) {
             return Str::contains(strtolower($item->Deskription), 'replace');
         })->pluck('IV_AUART')->unique()->toArray();
 
-        $auartList = [empty($auart) ? 'NO_AUART' : $auart];
-
-        // Jika AUART yang diklik adalah kode AUART EXPORT yang asli, kita gabungkan REPLACE.
-        if (!empty($auart) && in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes)) {
-            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        // Jika konteks AUART = Export asli, gabungkan dengan Replace
+        $auartList = $auart ? [$auart] : [];
+        if ($auart && in_array($auart, $exportAuartCodes) && !in_array($auart, $replaceAuartCodes)) {
+            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
         }
 
-        $auartList = array_unique(array_filter($auartList));
-        // Konversi list menjadi string yang dikutip untuk digunakan dalam klausa IN (SQL)
-        $auartListString = collect($auartList)->map(fn($a) => DB::getPdo()->quote($a))->join(',');
+        // ====== PRE-AGREGASI (cepat) ======
+        // Total nilai & outstanding qty per SO
+        $aggTotals = DB::table('so_yppr079_t1 as t1')
+            ->when($werks, fn($q) => $q->where('t1.IV_WERKS_PARAM', $werks))
+            ->when(!empty($auartList), fn($q) => $q->whereIn('t1.IV_AUART_PARAM', $auartList))
+            ->groupBy('t1.VBELN')
+            ->select(
+                't1.VBELN',
+                DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS total_value'),
+                DB::raw('CAST(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS outs_qty')
+            );
 
-        // Klausa WHERE IN untuk subqueries T1
-        $auartWhereInClause = empty($auartListString) ? "" : " AND t1.IV_AUART_PARAM IN ({$auartListString})";
-        $auartWhereInClauseIr = empty($auartListString) ? "" : " AND ir.IV_AUART_PARAM IN ({$auartListString})";
-        $werksClauseIr = strlen((string)$werks) ? " AND ir.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "";
+        // Jumlah remark per SO (untuk badge biru)
+        $remarksBySo = DB::table('item_remarks as ir')
+            ->when($werks, fn($q) => $q->where('ir.IV_WERKS_PARAM', $werks))
+            ->when(!empty($auartList), fn($q) => $q->whereIn('ir.IV_AUART_PARAM', $auartList))
+            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
+            ->groupBy('ir.VBELN')
+            ->select('ir.VBELN', DB::raw('COUNT(*) AS po_remark_count'));
 
-
-        $q = DB::table('so_yppr079_t2 as t2')
-            ->distinct()
-            ->select([
-                't2.VBELN',
-                't2.BSTNK',
-                't2.WAERK',
-                't2.EDATU',
-
-                // total value all
-                DB::raw("(SELECT COALESCE(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))),0)
-                    FROM so_yppr079_t1 AS t1
-                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                    {$auartWhereInClause}
-                   ) AS total_value"),
-
-                // outs qty
-                DB::raw("(SELECT COALESCE(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))),0)
-                    FROM so_yppr079_t1 AS t1
-                    WHERE TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                    " . (strlen((string)$werks) ? " AND t1.IV_WERKS_PARAM = " . DB::getPdo()->quote($werks) : "") . "
-                    {$auartWhereInClause}
-                    AND CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0
-                   ) AS outs_qty"),
-
-                // >>> NEW: jumlah remark pada item untuk VBELN ini
-                DB::raw("(SELECT COUNT(*)
-                    FROM item_remarks AS ir
-                    WHERE TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
-                    {$werksClauseIr}
-                    {$auartWhereInClauseIr}
-                    AND TRIM(COALESCE(ir.remark,'')) <> ''
-                   ) AS po_remark_count"),
-            ])
-            // Filter utama berdasarkan KUNNR
+        // ====== QUERY UTAMA ======
+        $rows = DB::table('so_yppr079_t2 as t2')
+            ->leftJoinSub($aggTotals, 'ag', fn($j) => $j->on('ag.VBELN', '=', 't2.VBELN'))
+            ->leftJoinSub($remarksBySo, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't2.VBELN'))
+            ->when($werks, fn($q) => $q->where('t2.IV_WERKS_PARAM', $werks))
+            ->when(!empty($auartList), fn($q) => $q->whereIn('t2.IV_AUART_PARAM', $auartList))
+            // toleransi format KUNNR agar kompatibel dgn data lama
             ->where(function ($q) use ($kunnr) {
                 $q->where('t2.KUNNR', $kunnr)
                     ->orWhereRaw('TRIM(CAST(t2.KUNNR AS CHAR)) = TRIM(?)', [$kunnr])
                     ->orWhereRaw('CAST(TRIM(t2.KUNNR) AS UNSIGNED) = CAST(TRIM(?) AS UNSIGNED)', [$kunnr]);
             })
-            // Filter Plant (Werks)
-            ->when(strlen((string)$werks) > 0, function ($q) use ($werks) {
-                $q->where(function ($qq) use ($werks) {
-                    $qq->where('t2.WERKS', $werks)
-                        ->orWhere('t2.IV_WERKS_PARAM', $werks)
-                        ->orWhereRaw('TRIM(CAST(t2.WERKS AS CHAR)) = TRIM(?)', [$werks])
-                        ->orWhereRaw('TRIM(CAST(t2.IV_WERKS_PARAM AS CHAR)) = TRIM(?)', [$werks]);
-                });
-            })
-            // Filter utama T2 menggunakan AUART LIST (Export + Replace)
-            ->whereIn('t2.IV_AUART_PARAM', $auartList)
+            ->select(
+                't2.VBELN',
+                't2.BSTNK',
+                't2.WAERK',
+                't2.EDATU',
+                DB::raw('COALESCE(ag.total_value, 0)  AS total_value'),
+                DB::raw('COALESCE(ag.outs_qty, 0)     AS outs_qty'),
+                DB::raw('COALESCE(rk.po_remark_count, 0) AS po_remark_count')
+            )
             ->get();
 
-        $rows = $q;
-        $today = new \DateTime();
-        $today->setTime(0, 0, 0);
-
+        // ====== Hitung Overdue & format tanggal (di PHP, cepat) ======
+        $today = now()->startOfDay();
         foreach ($rows as $row) {
-            $overdue = 0;
+            $row->Overdue = 0;
             $row->FormattedEdatu = '';
+
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
-                    // Coba parse dengan 2 format
-                    $edatuDate = \DateTime::createFromFormat('Y-m-d', $row->EDATU)
+                    $edatu = \DateTime::createFromFormat('Y-m-d', $row->EDATU)
                         ?: \DateTime::createFromFormat('d-m-Y', $row->EDATU);
 
-                    if ($edatuDate) {
-                        $row->FormattedEdatu = $edatuDate->format('d-m-Y');
-                        $edatuDate->setTime(0, 0, 0);
+                    if ($edatu) {
+                        $row->FormattedEdatu = $edatu->format('d-m-Y');
+                        $edatu->setTime(0, 0, 0);
 
-                        $diff = $today->diff($edatuDate);
-                        // Hitung Overdue (positif = sudah lewat)
-                        $overdue = $diff->invert ? (int)$diff->days : -(int)$diff->days;
+                        // positif = sudah lewat (overdue), negatif = masih sisa hari
+                        $diff = $today->diff(Carbon::instance($edatu));
+                        $row->Overdue = $diff->invert ? (int)$diff->days : -(int)$diff->days;
                     }
-                } catch (\Exception $e) {
-                    // Jika gagal parse tanggal
-                    $overdue = 0;
+                } catch (\Throwable $e) {
+                    $row->Overdue = 0;
                 }
             }
-            $row->Overdue = $overdue; // Set nilai Overdue ke objek baris
         }
 
-        $sortedRows = $rows->sortBy('Overdue')->values();
-        return response()->json(['ok' => true, 'data' => $sortedRows]);
+        // Urutkan: overdue (+) diletakkan paling atas, lalu yang paling dekat
+        $sorted = collect($rows)->sort(function ($a, $b) {
+            $aOver = $a->Overdue > 0;
+            $bOver = $b->Overdue > 0;
+            if ($aOver !== $bOver) return $aOver ? -1 : 1;
+            return $b->Overdue <=> $a->Overdue; // dalam grup: terbesar dulu
+        })->values();
+
+        return response()->json(['ok' => true, 'data' => $sorted]);
     }
 
     public function apiT3(Request $req)
@@ -597,6 +577,19 @@ class DashboardController extends Controller
             $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
         }
 
+        $remarksAgg = DB::table('item_remarks as ir')
+            ->select(
+                DB::raw('TRIM(CAST(ir.VBELN AS CHAR)) as VBELN'),
+                DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0') as POSNR_DB"),
+                DB::raw('COUNT(*) as remark_count'),
+                DB::raw('MAX(ir.created_at) as last_remark_at')
+            )
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereIn('ir.IV_AUART_PARAM', $auartList)
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+            ->groupBy(DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'), DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0')"));
+
+        // HAPUS leftJoin('item_remarks as ir', ...) lama
         $rows = DB::table('so_yppr079_t1 as t1')
             ->leftJoin(
                 'so_yppr079_t2 as t2',
@@ -604,14 +597,10 @@ class DashboardController extends Controller
                 '=',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))')
             )
-            // <<< PENAMBAHAN: LEFT JOIN ke tabel REMARK PO >>>
-            ->leftJoin('item_remarks as ir', function ($j) {
-                $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
-                    ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
-                    ->on('ir.VBELN', '=', 't1.VBELN')
-                    ->on('ir.POSNR', '=', 't1.POSNR');
+            ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(ragg.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'))
+                    ->on('ragg.POSNR_DB', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
             })
-            // <<< AKHIR PENAMBAHAN JOINT REMARK >>>
             ->select(
                 't1.id',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR)) as VBELN'),
@@ -625,12 +614,11 @@ class DashboardController extends Controller
                 't1.KALAB2',
                 't1.NETPR',
                 't1.WAERK',
-                // <<< KOLOM TAMBAHAN UNTUK REMARK LOGIC >>>
                 't1.IV_WERKS_PARAM as WERKS_KEY',
                 't1.IV_AUART_PARAM as AUART_KEY',
-                DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_DB"), // POSNR versi DB ('000010')
-                'ir.remark' // Ambil remark
-                // <<< AKHIR KOLOM TAMBAHAN >>>
+                DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_DB"),
+                DB::raw('COALESCE(ragg.remark_count, 0) as remark_count'),
+                DB::raw('ragg.last_remark_at as last_remark_at')
             )
             ->whereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
             ->when($werks, fn($q) => $q->where('t1.IV_WERKS_PARAM', $werks))
