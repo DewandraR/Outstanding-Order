@@ -16,6 +16,7 @@
         "top_customers_value_usd_sby": "<b>4 Pelanggan dengan Nilai Outstanding Terbesar (Surabaya)</b><br>Empat pelanggan dengan nilai total pesanan yang **belum selesai** terbesar di Plant Surabaya.",
         "top_customers_overdue_smg": "<b>4 Pelanggan dengan Jumlah PO Terlambat Terbanyak (Semarang)</b><br>Empat pelanggan dengan jumlah **Nomor Pesanan** yang **sudah lewat tanggal kirim** (terlambat) terbanyak di Plant Semarang.",
         "top_customers_overdue_sby": "<b>4 Pelanggan dengan Jumlah PO Terlambat Terbanyak (Surabaya)</b><br>Empat pelanggan dengan jumlah **Nomor Pesanan** yang **sudah lewat tanggal kirim** (terlambat) terbanyak di Plant Surabaya.",
+        "items_with_remark": "<b>Tentang tabel ini</b><br>Tabel ini berisi item pesanan yang diberi <i>catatan</i> oleh tim. Catatan dipakai untuk menandai hal-hal yang perlu perhatian.<br><em>Tips:</em> klik salah satu baris untuk membuka laporan pesanan yang terkait.",
         "performance_details": "<b>Sebaran Status PO Outstanding</b><br>Tabel ringkas sebaran PO Outstanding berdasarkan keterlambatan: <b>On track</b>, <b>1–30 hari terlambat</b>, <b>31–60 hari terlambat</b>, <b>61–90 hari terlambat</b>, dan <b>lebih dari 90 hari terlambat</b>.",
         "small_qty_by_customer": "<b>Sisa Barang Kecil (≤5 Unit) Berdasarkan Pelanggan</b><br>Daftar pelanggan yang memiliki banyak item kecil (sisa ≤ 5 unit) yang belum selesai. Ini membantu mencari 'sisa-sisa' yang cepat diselesaikan."
     },

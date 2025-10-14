@@ -589,15 +589,17 @@
     <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
 
     <script>
-        // Set Default Chart Font/Style
+        // =========================
+        // Chart.js defaults
+        // =========================
         Chart.defaults.font.family = 'Inter, sans-serif';
         Chart.defaults.plugins.legend.position = 'bottom';
         Chart.defaults.responsive = true;
         Chart.defaults.maintainAspectRatio = false;
 
-        /* =========================================================
-           HELPER UMUM (DARI KODE ASLI)
-           ======================================================== */
+        // =========================
+        // Helpers (formatting + UI)
+        // =========================
         const formatFullCurrency = (value, currency) => {
             const n = parseFloat(value);
             if (isNaN(n) || n === 0) return '–';
@@ -620,7 +622,6 @@
         const formatQty = (value, decimals = 0) => {
             const n = parseFloat(value);
             if (isNaN(n) || n === 0) return '–';
-
             return new Intl.NumberFormat('id-ID', {
                 minimumFractionDigits: 0,
                 maximumFractionDigits: decimals
@@ -632,32 +633,21 @@
             if (!titleEl) return;
             const textNodes = Array.from(titleEl.childNodes)
                 .filter(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length);
-
             if (!textNodes.length) return;
             const tn = textNodes[textNodes.length - 1];
             let raw = tn.textContent;
-
             raw = raw.replace(/\s*\((USD|IDR)\)\s*$/, '');
-
-            if (/\((USD|IDR)\)/.test(raw)) {
-                tn.textContent = raw.replace(/\((USD|IDR)\)/, `(${currency})`);
-            } else {
-                tn.textContent = `${raw.trim()} (${currency})`;
-            }
+            if (/\((USD|IDR)\)/.test(raw)) tn.textContent = raw.replace(/\((USD|IDR)\)/, `(${currency})`);
+            else tn.textContent = `${raw.trim()} (${currency})`;
         }
 
         function preventInfoButtonPropagation() {
-            // Fungsi ini mencegah klik pada ikon (i) memicu link <a> di luarnya.
-            const infoButtons = document.querySelectorAll('.yz-info-icon');
-            infoButtons.forEach(btn => {
+            document.querySelectorAll('.yz-info-icon').forEach(btn => {
                 if (btn.dataset.clickBound === '1') return;
-
-                // MENGHENTIKAN PENYEBARAN EVENT KLIK
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.stopImmediatePropagation?.();
                 });
-
                 btn.dataset.clickBound = '1';
             });
         }
@@ -684,19 +674,9 @@
             if (canvas) canvas.style.display = '';
         };
 
-        const formatLocations = (locsString) => {
-            if (!locsString) return '';
-            const hasSemarang = locsString.includes('3000');
-            const hasSurabaya = locsString.includes('2000');
-            if (hasSemarang && hasSurabaya) return 'Semarang & Surabaya';
-            if (hasSemarang) return 'Semarang';
-            if (hasSurabaya) return 'Surabaya';
-            return '';
-        };
-
-        /**
-         * Fungsi untuk membuat Horizontal Bar Chart.
-         */
+        // =========================
+        // Chart factory
+        // =========================
         const createHorizontalBarChart = (canvasId, chartData, dataKey, label, color, currency = '') => {
             if (!chartData || chartData.length === 0) {
                 showNoDataMessage(canvasId);
@@ -709,16 +689,14 @@
             if (prev) prev.destroy();
 
             const labels = chartData.map(d => {
-                const customerName = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
-                // Logika PO (Outstanding Value menggunakan currency, Overdue menggunakan count)
+                const name = d.NAME1.length > 25 ? d.NAME1.substring(0, 25) + '...' : d.NAME1;
                 const isOverdueChart = canvasId.startsWith('chartTopOverdueCustomers');
                 const countText = isOverdueChart ? ` (${d.overdue_count} PO)` : ` (${d.so_count} PO)`;
-
-                return `${customerName}${countText}`;
+                return `${name}${countText}`;
             });
             const values = chartData.map(d => d[dataKey]);
 
-            const newChart = new Chart(ctx, {
+            return new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels,
@@ -742,15 +720,9 @@
                                 title: (items) => items[0].label.split('(')[0].trim(),
                                 label: (context) => {
                                     const isOverdueChart = canvasId.startsWith('chartTopOverdueCustomers');
-
-                                    if (!isOverdueChart && currency) {
-                                        return formatFullCurrency(context.raw, currency);
-                                    }
-
-                                    if (isOverdueChart) {
-                                        return `${context.raw} PO Overdue`;
-                                    }
-
+                                    if (!isOverdueChart && currency) return formatFullCurrency(context.raw,
+                                        currency);
+                                    if (isOverdueChart) return `${context.raw} PO Overdue`;
                                     return `${context.raw}`;
                                 }
                             }
@@ -767,11 +739,9 @@
                                 callback: (value) => {
                                     if (Math.floor(value) === value) {
                                         if (currency && !canvasId.startsWith('chartTopOverdueCustomers')) {
-                                            let formatted = new Intl.NumberFormat('id-ID', {
-                                                minimumFractionDigits: 0,
+                                            return new Intl.NumberFormat('id-ID', {
                                                 maximumFractionDigits: 0
                                             }).format(value);
-                                            return formatted;
                                         }
                                         return value;
                                     }
@@ -781,15 +751,11 @@
                     }
                 }
             });
-            return newChart;
         };
 
-        /* =========================================================
-           HELPER KPI BARU (UNTUK FUNGSI TOGGLE)
-           ======================================================== */
-        /**
-         * Memperbarui nilai dan link pada blok KPI tunggal berdasarkan mata uang yang dipilih.
-         */
+        // =========================
+        // KPI helpers
+        // =========================
         const updateKpiBlock = (locPrefix, currency) => {
             const block = document.getElementById(`kpi-block-${locPrefix}`);
             if (!block) return;
@@ -797,74 +763,54 @@
             const curLower = currency.toLowerCase();
             const isUSD = currency === 'USD';
 
-            // Ambil nilai dari data attribute
             const val = parseFloat(block.dataset[`${curLower}Val`]) || 0;
             const qty = parseInt(block.dataset[`${curLower}Qty`]) || 0;
             const overdueVal = parseFloat(block.dataset[`${curLower}OverdueVal`]) || 0;
             const overdueQty = parseInt(block.dataset[`${curLower}OverdueQty`]) || 0;
 
-            // Ambil URL yang sudah terenkripsi dari data attribute
             const reportUrl = isUSD ? (block.dataset.exportUrl || '#') : (block.dataset.localUrl || '#');
 
-            // Format nilai
             const valText = formatFullCurrency(val, currency);
             const qtyText = formatQty(qty, 0);
             const overdueValText = formatFullCurrency(overdueVal, currency);
             const overdueQtyText = formatQty(overdueQty, 0);
 
-            // Tentukan class warna untuk Outstanding Value
             const valColorClass = isUSD ? 'text-usd' : 'text-idr';
-            const overdueColorClass = 'text-danger'; // Tetap merah
-            const qtyColorClass = 'text-info'; // Tetap biru
 
-            // Target elemen
             const valEl = document.getElementById(`${locPrefix}-outstanding-value`);
             const qtyEl = document.getElementById(`${locPrefix}-outstanding-qty`);
             const overdueValEl = document.getElementById(`${locPrefix}-overdue-value`);
             const overdueQtyEl = document.getElementById(`${locPrefix}-overdue-qty`);
 
-            // Target Link
             const links = [
                 document.getElementById(`${locPrefix}-outs-link`),
                 document.getElementById(`${locPrefix}-qty-link`),
                 document.getElementById(`${locPrefix}-overdue-val-link`),
                 document.getElementById(`${locPrefix}-overdue-qty-link`),
-            ].filter(el => el);
+            ].filter(Boolean);
 
-
-            // Update Nilai & Warna Outstanding Value
             if (valEl) {
                 valEl.innerHTML = (val === 0 || valText === '–') ? '<span class="text-muted">–</span>' : valText;
                 valEl.classList.remove('text-primary', 'text-success', 'text-usd', 'text-idr');
                 valEl.classList.add(valColorClass);
             }
-            if (qtyEl) {
-                qtyEl.innerHTML = (qty === 0 || qtyText === '–') ? '<span class="text-muted">–</span>' : qtyText;
-            }
-            if (overdueValEl) {
-                overdueValEl.innerHTML = (overdueVal === 0 || overdueValText === '–') ?
-                    '<span class="text-muted">–</span>' : overdueValText;
-            }
-            if (overdueQtyEl) {
-                overdueQtyEl.innerHTML = (overdueQty === 0 || overdueQtyText === '–') ?
-                    '<span class="text-muted">–</span>' : overdueQtyText;
-            }
+            if (qtyEl) qtyEl.innerHTML = (qty === 0 || qtyText === '–') ? '<span class="text-muted">–</span>' : qtyText;
+            if (overdueValEl) overdueValEl.innerHTML = (overdueVal === 0 || overdueValText === '–') ?
+                '<span class="text-muted">–</span>' : overdueValText;
+            if (overdueQtyEl) overdueQtyEl.innerHTML = (overdueQty === 0 || overdueQtyText === '–') ?
+                '<span class="text-muted">–</span>' : overdueQtyText;
 
-            // Update Link Tujuan (USD -> Export, IDR -> Local)
             links.forEach(link => {
                 link.href = reportUrl;
             });
 
-
-            // Update Tampilan Toggle
             document.querySelectorAll(`#kpi-toggle-holder-${locPrefix} button[data-cur]`).forEach(b => {
                 const isCurrent = b.dataset.cur === currency;
-
                 if (b.dataset.cur === 'USD') {
                     b.classList.toggle('btn-primary', isCurrent);
                     b.classList.toggle('btn-outline-primary', !isCurrent);
                     b.classList.remove('btn-success', 'btn-outline-success');
-                } else if (b.dataset.cur === 'IDR') {
+                } else {
                     b.classList.toggle('btn-success', isCurrent);
                     b.classList.toggle('btn-outline-success', !isCurrent);
                     b.classList.remove('btn-primary', 'btn-outline-primary');
@@ -872,9 +818,6 @@
             });
         };
 
-        /**
-         * Menginisialisasi tombol toggle KPI dan event listener-nya.
-         */
         function initKpiToggles(chartCurrencyFunction, initialChartCurrency) {
             const locations = ['smg', 'sby'];
 
@@ -886,43 +829,24 @@
 
             let currentKpiCurrency = savedKpiCur;
 
-            // 1. Terapkan nilai awal KPI dan panggil chart render
-            locations.forEach(loc => {
-                updateKpiBlock(loc, currentKpiCurrency);
-            });
+            // apply initial KPI + first render of charts
+            locations.forEach(loc => updateKpiBlock(loc, currentKpiCurrency));
+            if (typeof chartCurrencyFunction === 'function') chartCurrencyFunction(currentKpiCurrency);
 
-            // Panggil render chart pertama kali (menggunakan currency KPI)
-            if (typeof chartCurrencyFunction === 'function') {
-                chartCurrencyFunction(currentKpiCurrency);
-            }
-
-            // 2. Tambahkan event listeners untuk toggle KPI
+            // bind toggle buttons on KPI headers
             locations.forEach(loc => {
-                const toggleHolder = document.getElementById(`kpi-toggle-holder-${loc}`);
-                toggleHolder?.addEventListener('click', (e) => {
+                const holder = document.getElementById(`kpi-toggle-holder-${loc}`);
+                holder?.addEventListener('click', (e) => {
                     const btn = e.target.closest('button[data-cur]');
                     if (!btn) return;
                     e.preventDefault();
-
                     const nextCurrency = btn.dataset.cur;
-
                     if (nextCurrency === currentKpiCurrency) return;
-
                     currentKpiCurrency = nextCurrency;
 
-                    // Simpan ke Local Storage untuk preferensi
-                    try {
-                        localStorage.setItem('poKpiCurrency', currentKpiCurrency);
-                        // Simpan ke chart currency juga agar sinkron saat halaman dimuat ulang
-                        localStorage.setItem('poCurrency', currentKpiCurrency);
-                    } catch {}
-
-                    // Perbarui semua blok KPI dan link
-                    locations.forEach(l => updateKpiBlock(l, currentKpiCurrency));
-
-                    // Perbarui chart Top Customers 
-                    if (typeof chartCurrencyFunction === 'function') {
-                        chartCurrencyFunction(currentKpiCurrency);
+                    // panggil setter global (diekspos oleh IIFE)
+                    if (typeof window.__poSetCurrency === 'function') {
+                        window.__poSetCurrency(nextCurrency);
                     }
                 });
             });
@@ -930,16 +854,14 @@
             return currentKpiCurrency;
         }
 
-        /* =========================================================
-           LOGIC DASHBOARD UTAMA (DARI KODE ASLI)
-           ======================================================== */
+        // =========================
+        // MAIN IIFE
+        // =========================
         (() => {
-
             const dataHolder = document.getElementById('dashboard-data-holder');
             if (!dataHolder) return;
             const chartData = JSON.parse(dataHolder.dataset.chartData);
 
-            // --- DEKLARASI CHART & HELPER PENGELOLAAN CHART ---
             const __charts = {
                 topCustomers_smg: null,
                 topCustomers_sby: null,
@@ -953,7 +875,6 @@
                 __charts[k] = null;
             };
 
-            // --- LOGIC PENENTU MATA UANG CHART AWAL ---
             const filterState = {
                 location: dataHolder.dataset.currentLocation || null,
                 type: dataHolder.dataset.selectedType || null,
@@ -962,7 +883,6 @@
             const hasTypeFilter = !!filterState.type;
             const enableCurrencyToggle = (!hasTypeFilter);
 
-            // Tentukan mata uang chart default/initial
             let initialChartCurrency = (dataHolder.dataset.selectedType === 'lokal') ? 'IDR' : 'USD';
             if (enableCurrencyToggle) {
                 try {
@@ -970,20 +890,17 @@
                     if (saved === 'USD' || saved === 'IDR') initialChartCurrency = saved;
                 } catch {}
             }
-
             let currentChartCurrency = initialChartCurrency;
 
-            // --- FUNGSI RENDER CHART TOP CUSTOMERS ---
             function renderTopCustomersByCurrency(currency) {
                 const locations = ['smg', 'sby'];
-                currentChartCurrency = currency; // Simpan currency yang sedang aktif untuk chart
+                currentChartCurrency = currency;
 
                 locations.forEach(loc => {
                     const canvasId = `chartTopCustomersValue_${loc}`;
                     setTitleCurrencySuffixByCanvas(canvasId, currency);
                     __destroy(canvasId);
 
-                    // Key data di Controller adalah: top_customers_value_[usd/idr]_[smg/sby]
                     const dsKey = (currency === 'IDR') ? `top_customers_value_idr_${loc}` :
                         `top_customers_value_usd_${loc}`;
                     const ds = chartData[dsKey];
@@ -999,30 +916,38 @@
                     const canvas = document.getElementById(canvasId);
                     if (canvas) {
                         const newChart = createHorizontalBarChart(
-                            canvasId,
-                            ds,
-                            'total_value',
-                            'Total Outstanding',
-                            colors,
-                            currency
+                            canvasId, ds, 'total_value', 'Total Outstanding', colors, currency
                         );
                         __charts[`topCustomers_${loc}`] = newChart;
                     }
                 });
 
-                // PENGATURAN TOMBOL TOGGLE CHART: Pastikan tombol di kedua chart terupdate
                 document.querySelectorAll('.yz-currency-toggle-chart button[data-cur]').forEach(b => {
                     const v = b.dataset.cur;
-                    // Menggunakan warna yang sama untuk konsistensi
                     b.classList.toggle('btn-primary', v === 'USD' && currency === 'USD');
                     b.classList.toggle('btn-outline-primary', v === 'USD' && currency !== 'USD');
                     b.classList.toggle('btn-success', v === 'IDR' && currency === 'IDR');
                     b.classList.toggle('btn-outline-success', v === 'IDR' && currency !== 'IDR');
                 });
             }
-            // --- END FUNGSI RENDER CHART TOP CUSTOMERS ---
 
-            // --- RENDER CHART OVERDUE (Ini tetap berjalan karena tidak tergantung currency toggle) ---
+            // Setter shared: sinkronkan KPI + Chart + localStorage
+            function setGlobalCurrency(nextCurrency) {
+                if (nextCurrency !== 'USD' && nextCurrency !== 'IDR') return;
+
+                currentChartCurrency = nextCurrency;
+                try {
+                    localStorage.setItem('poCurrency', nextCurrency);
+                    localStorage.setItem('poKpiCurrency', nextCurrency);
+                } catch {}
+
+                ['smg', 'sby'].forEach(loc => updateKpiBlock(loc, nextCurrency));
+                renderTopCustomersByCurrency(nextCurrency);
+            }
+            // >>> expose to global so initKpiToggles can call it
+            window.__poSetCurrency = setGlobalCurrency;
+
+            // Overdue charts (tidak tergantung currency)
             __charts.chartTopOverdueCustomers_smg = createHorizontalBarChart(
                 'chartTopOverdueCustomers_smg',
                 chartData.top_customers_overdue_smg,
@@ -1032,7 +957,6 @@
                     border: 'rgba(220, 53, 69, 1)'
                 }
             );
-
             __charts.chartTopOverdueCustomers_sby = createHorizontalBarChart(
                 'chartTopOverdueCustomers_sby',
                 chartData.top_customers_overdue_sby,
@@ -1042,79 +966,58 @@
                     border: 'rgba(220, 53, 69, 1)'
                 }
             );
-            // --- END RENDER CHART OVERDUE ---
 
-            // --- INISIALISASI KPI TOGGLE (Memicu render chart pertama) ---
+            // Init KPI (this will also do the first chart render)
             if (chartData.kpi_new) {
-                // Inisialisasi KPI. initialChartCurrency digunakan sebagai currency awal KPI.
                 initKpiToggles(renderTopCustomersByCurrency, initialChartCurrency);
             }
 
-            /* Mounting Currency Toggle Chart (memperindah bagian chart) */
+            // Add chart toolbar toggles (USD/IDR) if allowed
             function mountCurrencyToggleIfNeeded() {
                 if (!enableCurrencyToggle) return;
 
                 const canvasIds = ['chartTopCustomersValue_smg', 'chartTopCustomersValue_sby'];
-
                 const makeToggle = () => {
                     const holder = document.createElement('div');
                     holder.className = 'yz-card-toolbar';
-                    // Menggunakan tombol yang lebih kecil
                     holder.innerHTML = `
-                            <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
-                                <button type="button" data-cur="USD"
+                        <div class="btn-group btn-group-sm yz-currency-toggle-chart" role="group">
+                            <button type="button" data-cur="USD"
                                 class="btn btn-sm-square ${currentChartCurrency==='USD'?'btn-primary':'btn-outline-primary'}">USD</button>
-                                <button type="button" data-cur="IDR"
+                            <button type="button" data-cur="IDR"
                                 class="btn btn-sm-square ${currentChartCurrency==='IDR'?'btn-success':'btn-outline-success'}">IDR</button>
-                            </div>
-                            `;
+                        </div>`;
                     return holder;
                 };
 
                 canvasIds.forEach(canvasId => {
                     const targetCanvas = document.getElementById(canvasId);
                     if (!targetCanvas) return;
-
                     const card = targetCanvas.closest('.card');
                     const titleEl = card?.querySelector('.card-title');
                     const headerRow = titleEl?.parentElement;
-
                     if (!card || !headerRow) return;
 
                     card.style.position = 'relative';
                     headerRow.querySelector('.yz-card-toolbar')?.remove();
-
                     const toolbar = makeToggle();
                     headerRow.appendChild(toolbar);
                 });
 
-
-                // LOGIC KLIK UNTUK CHART
+                // Click handler for chart toggles -> use the shared setter
                 document.querySelectorAll('.yz-currency-toggle-chart').forEach(toggleEl => {
                     toggleEl.addEventListener('click', (e) => {
                         const btn = e.target.closest('button[data-cur]');
                         if (!btn) return;
                         const next = btn.dataset.cur;
-                        if (next !== 'USD' && next !== 'IDR') return;
                         if (next === currentChartCurrency) return;
-
-                        // Simpan preferensi chart terpisah dari KPI
-                        currentChartCurrency = next;
-                        try {
-                            localStorage.setItem('poCurrency', currentChartCurrency);
-                        } catch {}
-
-                        // RENDER KEDUA CHART dengan mata uang baru
-                        renderTopCustomersByCurrency(currentChartCurrency);
+                        (window.__poSetCurrency || setGlobalCurrency)(next);
                     });
                 });
             }
-
-            // Panggil mounting toggle chart
             mountCurrencyToggleIfNeeded();
 
-
-            // Panggil fungsi click prevention setelah DOM dimuat
+            // Misc: ensure (i) buttons in titles don't trigger links
             document.addEventListener('DOMContentLoaded', function() {
                 preventInfoButtonPropagation();
                 const intervalId = setInterval(() => {
@@ -1126,21 +1029,21 @@
                 }, 500);
                 setTimeout(() => clearInterval(intervalId), 5000);
             });
-
         })();
     </script>
+
     <script>
         /* ======================== PO: ITEM WITH REMARK (INLINE) ======================== */
         (function poItemWithRemarkTableOnly() {
             const apiRemarkItems = "{{ route('po.api.remark_items') }}";
-            const apiRemarkDelete = "{{ route('po.api.remark_delete') }}"; // Route ini sudah dihapus di Controller
+            const apiRemarkDelete = "{{ route('po.api.remark_delete') }}"; // (route delete memang tidak dipakai)
 
             const listBox = document.getElementById('po-remark-list-box-inline');
             if (!listBox) return;
 
             const dataHolder = document.getElementById('dashboard-data-holder');
             const currentLocation = dataHolder?.dataset.currentLocation || null; // '2000' | '3000' | ''
-            const currentType = dataHolder?.dataset.selectedType || null; // 'lokal'|'export'|''
+            const currentType = dataHolder?.dataset.selectedType || null; // 'lokal' | 'export' | ''
 
             const mappingData = JSON.parse(dataHolder.dataset.mappingData || '{}');
             const auartMap = {};
@@ -1188,7 +1091,6 @@
                     const otName = auartDesc[auart] || auart || '-';
                     const kunnr = (r.KUNNR || '').trim();
 
-                    // Payload untuk redirect ke PO Report
                     const postData = {
                         redirect_to: 'po.report',
                         werks: werks,
@@ -1201,46 +1103,45 @@
                     };
 
                     return `
-            <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
-                <td class="text-center">${i + 1}</td>
-                <td class="text-center">${po || '-'}</td>
-                <td class="text-center">${so || '-'}</td>
-                <td class="text-center">${posnrDisp || '-'}</td>
-                <td class="text-center">${plant || '-'}</td>
-                <td class="text-center">${otName}</td>
-                <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-                {{-- Kolom Aksi DIHAPUS, hanya menyisakan data --}}
-            </tr>`;
+                        <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
+                            <td class="text-center">${i + 1}</td>
+                            <td class="text-center">${po || '-'}</td>
+                            <td class="text-center">${so || '-'}</td>
+                            <td class="text-center">${posnrDisp || '-'}</td>
+                            <td class="text-center">${plant || '-'}</td>
+                            <td class="text-center">${otName}</td>
+                            <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+                            {{-- Kolom Aksi DIHAPUS, hanya menyisakan data --}}
+                        </tr>`;
                 }).join('');
 
                 return `
-        <div class="yz-scrollable-table-container" style="max-height:420px;">
-            <table class="table table-striped table-hover table-sm align-middle mb-0">
-                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                    <tr>
-                        <th class="text-center" style="width:60px;">No.</th>
-                        <th class="text-center" style="min-width:120px;">PO</th>
-                        <th class="text-center" style="min-width:110px;">SO</th>
-                        <th class="text-center" style="min-width:80px;">Item</th>
-                        <th class="text-center" style="min-width:110px;">Plant</th>
-                        <th class="text-center" style="min-width:160px;">Order Type</th>
-                        <th style="min-width:240px;">Remark</th>
-                        {{-- Kolom Aksi DIHAPUS --}}
-                    </tr>
-                </thead>
-                <tbody>${body}</tbody>
-            </table>
-        </div>
-        <div class="small text-muted mt-2">Klik baris untuk membuka laporan PO terkait.</div>`;
+                    <div class="yz-scrollable-table-container" style="max-height:420px;">
+                        <table class="table table-striped table-hover table-sm align-middle mb-0">
+                            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                <tr>
+                                    <th class="text-center" style="width:60px;">No.</th>
+                                    <th class="text-center" style="min-width:120px;">PO</th>
+                                    <th class="text-center" style="min-width:110px;">SO</th>
+                                    <th class="text-center" style="min-width:80px;">Item</th>
+                                    <th class="text-center" style="min-width:110px;">Plant</th>
+                                    <th class="text-center" style="min-width:160px;">Order Type</th>
+                                    <th style="min-width:240px;">Remark</th>
+                                </tr>
+                            </thead>
+                            <tbody>${body}</tbody>
+                        </table>
+                    </div>
+                    <div class="small text-muted mt-2">Klik baris untuk membuka laporan PO terkait.</div>`;
             }
 
             async function loadList() {
                 const card = document.getElementById('po-remark-inline-container');
                 if (card) card.style.display = '';
                 listBox.innerHTML = `
-            <div class="d-flex justify-content-center align-items-center py-4 text-muted">
-                <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
-            </div>`;
+                    <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                    </div>`;
 
                 try {
                     const url = new URL(apiRemarkItems, window.location.origin);
@@ -1261,9 +1162,7 @@
                 }
             }
 
-            // Klik baris => buka PO Report (via redirector)
             listBox.addEventListener('click', (ev) => {
-                // Baris ini dihapus: if (ev.target.closest('.js-del-remark')) return;
                 const tr = ev.target.closest('.js-remark-row');
                 if (!tr?.dataset.payload) return;
 
@@ -1294,6 +1193,7 @@
                 document.body.appendChild(form);
                 form.submit();
             });
+
             loadList();
         })();
     </script>
