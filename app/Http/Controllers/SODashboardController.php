@@ -80,29 +80,35 @@ class SODashboardController extends Controller
         }
 
         // Basis remark items
-        $base = DB::table('item_remarks')
-            ->whereNotNull('remark')->whereRaw('TRIM(remark) <> ""')
-            ->when($location, fn($q, $v) => $q->where('IV_WERKS_PARAM', $v))
-            ->when($effectiveAuart, fn($q, $v) => $q->where('IV_AUART_PARAM', $v));
+        $base = DB::table('item_remarks as ir')
+            ->join('so_yppr079_t1 as t1', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+            })
+            ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
+            ->when($effectiveAuart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
+            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
+            // ⬇️ hanya item outstanding
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0');
 
-        $totalItemRemarks = (clone $base)->count();
-        $totalSoWithRemarks = (clone $base)->distinct()->count('VBELN');
+        $totalItemRemarks   = (clone $base)->count(); // jumlah baris remark (outstanding)
+        $totalSoWithRemarks = (clone $base)->distinct()->count('ir.VBELN');
 
-        // TOP SO by jumlah item remark (opsional untuk tooltip/legend)
         $bySo = (clone $base)
-            ->selectRaw('VBELN, COUNT(*) AS item_count')
-            ->groupBy('VBELN')->orderByDesc('item_count')->get();
+            ->selectRaw('ir.VBELN, COUNT(*) AS item_count')
+            ->groupBy('ir.VBELN')
+            ->orderByDesc('item_count')
+            ->get();
 
         return response()->json([
             'ok' => true,
             'data' => [
-                'total_item_remarks' => $totalItemRemarks,
+                'total_item_remarks'   => $totalItemRemarks,
                 'total_so_with_remarks' => $totalSoWithRemarks,
-                'top_so' => $bySo,
+                'top_so'               => $bySo,
             ]
         ]);
     }
-
     public function apiSoRemarkItems(Request $request)
     {
         $request->validate([
@@ -127,19 +133,27 @@ class SODashboardController extends Controller
         // END: LOGIKA BARU
         // =========================================================================
 
-        $rows = $rows->selectRaw("
-            TRIM(ir.VBELN) AS VBELN,
-            TRIM(ir.POSNR) AS POSNR,
-            COALESCE(t1.MATNR,'') AS MATNR,
-            COALESCE(t1.MAKTX,'') AS MAKTX,
-            COALESCE(t1.WAERK,'') AS WAERK,
-            COALESCE(t1.TOTPR,0) AS TOTPR,
-            ir.IV_WERKS_PARAM,
-            ir.IV_AUART_PARAM,
-            ir.remark,
-            ir.created_at,
-            COALESCE(t2.KUNNR, '') AS KUNNR 
-        ")
+        $rows = DB::table('item_remarks as ir')
+            ->join('so_yppr079_t1 as t1', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
+            })
+            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
+
+            ->selectRaw("
+        TRIM(ir.VBELN) AS VBELN,
+        TRIM(ir.POSNR) AS POSNR,
+        COALESCE(t1.MATNR,'') AS MATNR,
+        COALESCE(t1.MAKTX,'') AS MAKTX,
+        COALESCE(t1.WAERK,'') AS WAERK,
+        COALESCE(t1.TOTPR,0) AS TOTPR,
+        ir.IV_WERKS_PARAM,
+        ir.IV_AUART_PARAM,
+        ir.remark,
+        ir.created_at,
+        COALESCE(t2.KUNNR, '') AS KUNNR
+    ")
             ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
             ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
             ->when($auart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
