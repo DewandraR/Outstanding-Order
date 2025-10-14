@@ -512,7 +512,7 @@ class DashboardController extends Controller
 
                 // >>> NEW: jumlah remark pada item untuk VBELN ini
                 DB::raw("(SELECT COUNT(*)
-                    FROM item_remarks_po AS ir
+                    FROM item_remarks AS ir
                     WHERE TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))
                     {$werksClauseIr}
                     {$auartWhereInClauseIr}
@@ -605,7 +605,7 @@ class DashboardController extends Controller
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))')
             )
             // <<< PENAMBAHAN: LEFT JOIN ke tabel REMARK PO >>>
-            ->leftJoin('item_remarks_po as ir', function ($j) {
+            ->leftJoin('item_remarks as ir', function ($j) {
                 $j->on('ir.IV_WERKS_PARAM', '=', 't1.IV_WERKS_PARAM')
                     ->on('ir.IV_AUART_PARAM', '=', 't1.IV_AUART_PARAM')
                     ->on('ir.VBELN', '=', 't1.VBELN')
@@ -1166,7 +1166,7 @@ class DashboardController extends Controller
             return Str::contains(strtolower($item->Deskription), 'replace');
         })->pluck('IV_AUART')->unique()->toArray();
 
-        $rows = DB::table('item_remarks_po as ir')
+        $rows = DB::table('item_remarks as ir')
             // =========================================================================
             // PERUBAHAN UTAMA: LEFT JOIN -> INNER JOIN
             // INNER JOIN ke t1 untuk memastikan item PO/SO masih ada di so_yppr079_t1

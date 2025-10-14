@@ -321,7 +321,7 @@ COALESCE(
         $exportType = $request->input('export_type');
 
         // Ambil item by id + info header (PO, SO, Customer)
-        $remarksAgg = DB::table('item_remarks_po as r')
+        $remarksAgg = DB::table('item_remarks as r')
             ->leftJoin('users as u', 'u.id', '=', 'r.user_id')
             ->select(
                 'r.VBELN',
@@ -538,7 +538,7 @@ COALESCE(
             }
 
             // >>> APPEND remark baru (tidak overwrite)
-            $id = DB::table('item_remarks_po')->insertGetId($keys + [
+            $id = DB::table('item_remarks')->insertGetId($keys + [
                 'remark'     => $remarkText,
                 'user_id'    => $userId,
                 'created_at' => now(),
@@ -565,7 +565,7 @@ COALESCE(
 
         $posnrDb = str_pad(preg_replace('/\D/', '', $request->posnr), 6, '0', STR_PAD_LEFT);
 
-        $rows = DB::table('item_remarks_po as r')
+        $rows = DB::table('item_remarks as r')
             ->leftJoin('users as u', 'u.id', '=', 'r.user_id')
             ->where('r.IV_WERKS_PARAM', $request->werks)
             ->where('r.IV_AUART_PARAM', $request->auart)
@@ -599,7 +599,7 @@ COALESCE(
 
         $posnrDb = str_pad(preg_replace('/\D/', '', $request->posnr), 6, '0', STR_PAD_LEFT);
 
-        $id = DB::table('item_remarks_po')->insertGetId([
+        $id = DB::table('item_remarks')->insertGetId([
             'IV_WERKS_PARAM' => $request->werks,
             'IV_AUART_PARAM' => $request->auart,
             'VBELN'          => $request->vbeln,
@@ -619,13 +619,13 @@ COALESCE(
         $userId = Auth::id();
         if (!$userId) return response()->json(['ok' => false, 'message' => 'Silakan login.'], 401);
 
-        $row = DB::table('item_remarks_po')->where('id', $id)->first();
+        $row = DB::table('item_remarks')->where('id', $id)->first();
         if (!$row) return response()->json(['ok' => false, 'message' => 'Data tidak ditemukan.'], 404);
         if ((int)$row->user_id !== (int)$userId) {
             return response()->json(['ok' => false, 'message' => 'Anda hanya dapat mengubah catatan milik Anda.'], 403);
         }
 
-        DB::table('item_remarks_po')->where('id', $id)->update([
+        DB::table('item_remarks')->where('id', $id)->update([
             'remark' => trim($request->remark),
             'updated_at' => now()
         ]);
@@ -638,13 +638,13 @@ COALESCE(
         $userId = Auth::id();
         if (!$userId) return response()->json(['ok' => false, 'message' => 'Silakan login.'], 401);
 
-        $row = DB::table('item_remarks_po')->where('id', $id)->first();
+        $row = DB::table('item_remarks')->where('id', $id)->first();
         if (!$row) return response()->json(['ok' => false, 'message' => 'Data tidak ditemukan.'], 404);
         if ((int)$row->user_id !== (int)$userId) {
             return response()->json(['ok' => false, 'message' => 'Anda hanya dapat menghapus catatan milik Anda.'], 403);
         }
 
-        DB::table('item_remarks_po')->where('id', $id)->delete();
+        DB::table('item_remarks')->where('id', $id)->delete();
         return response()->json(['ok' => true, 'message' => 'Catatan dihapus.']);
     }
 }
