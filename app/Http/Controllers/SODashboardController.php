@@ -87,7 +87,7 @@ class SODashboardController extends Controller
             })
             ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
             ->when($effectiveAuart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
-            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
+            ->whereNotNull('ir.remark')->whereRaw("TRIM(ir.remark) <> ''")
             // ⬇️ hanya item outstanding
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0');
 
@@ -111,76 +111,72 @@ class SODashboardController extends Controller
     }
     public function apiSoRemarkItems(Request $request)
     {
-        $request->validate([
-            'location' => 'nullable|string|in:2000,3000',
-            'type' => 'nullable|string|in:lokal,export',
-            'auart' => 'nullable|string',
-            'vbeln' => 'nullable|string', // kalau diisi, hanya 1 SO
-        ]);
-
+        // NORMALISASI input, hindari 422
         $location = $request->query('location');
-        $type = $request->query('type');
-        $auart = $request->query('auart');
-        $vbeln = trim((string)$request->query('vbeln'));
-        $rows = DB::table('item_remarks as ir')
-            // Ganti LEFT JOIN menjadi INNER JOIN untuk memastikan item SO terkait masih ada di t1
-            ->join('so_yppr079_t1 as t1', function ($j) {
-                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
-                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
-            })
-            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'));
-        // =========================================================================
-        // END: LOGIKA BARU
-        // =========================================================================
+        $auart    = $request->query('auart');
+        $vbeln    = trim((string) $request->query('vbeln'));
+        $typeIn   = strtolower(trim((string) $request->query('type')));
+        $type     = in_array($typeIn, ['lokal', 'export'], true) ? $typeIn : null;
 
         $rows = DB::table('item_remarks as ir')
+            // item harus masih ada & outstanding
             ->join('so_yppr079_t1 as t1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
                     ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
             })
             ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+            // label OT dari mapping (termasuk Replace)
+            ->leftJoin('maping as ml', function ($j) {
+                $j->on('ir.IV_AUART_PARAM', '=', 'ml.IV_AUART')
+                    ->on('ir.IV_WERKS_PARAM', '=', 'ml.IV_WERKS');
+            })
+            ->whereNotNull('ir.remark')
+            ->whereRaw("TRIM(ir.remark) <> ''")
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-
-            ->selectRaw("
-        TRIM(ir.VBELN) AS VBELN,
-        TRIM(ir.POSNR) AS POSNR,
-        COALESCE(t1.MATNR,'') AS MATNR,
-        COALESCE(t1.MAKTX,'') AS MAKTX,
-        COALESCE(t1.WAERK,'') AS WAERK,
-        COALESCE(t1.TOTPR,0) AS TOTPR,
-        ir.IV_WERKS_PARAM,
-        ir.IV_AUART_PARAM,
-        ir.remark,
-        ir.created_at,
-        COALESCE(t2.KUNNR, '') AS KUNNR
-    ")
-            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
             ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
-            ->when($auart, fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
+            ->when($auart,    fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
             ->when($vbeln !== '', fn($q) => $q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln]))
-
-            // Tambahkan logika filter untuk 'type' (lokal/export) 
-            ->when($type, function ($query, $typeValue) {
-                $query->join('maping as m', function ($join) {
-                    $join->on('ir.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                        ->on('ir.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
+            // filter type (ZRP1/ZRP2 dianggap Export)
+            ->when($type, function ($q, $typeValue) {
+                $q->join('maping as mf', function ($j) {
+                    $j->on('ir.IV_AUART_PARAM', '=', 'mf.IV_AUART')
+                        ->on('ir.IV_WERKS_PARAM', '=', 'mf.IV_WERKS');
                 });
                 if ($typeValue === 'lokal') {
-                    $query->where('m.Deskription', 'like', '%Local%');
-                } elseif ($typeValue === 'export') {
-                    $query->where('m.Deskription', 'like', '%Export%')
-                        ->where('m.Deskription', 'not like', '%Replace%')
-                        ->where('m.Deskription', 'not like', '%Local%');
+                    $q->where('mf.Deskription', 'like', '%Local%');
+                } else { // export
+                    $q->where(function ($w) {
+                        $w->where('mf.Deskription', 'like', '%Export%')
+                            ->where('mf.Deskription', 'not like', '%Local%')
+                            ->orWhereIn('mf.IV_AUART', ['ZRP1', 'ZRP2']);
+                    });
                 }
             })
-
-            ->orderBy('ir.VBELN')->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
+            ->selectRaw("
+            TRIM(ir.VBELN) AS VBELN,
+            TRIM(ir.POSNR) AS POSNR,
+            COALESCE(t1.MATNR,'') AS MATNR,
+            COALESCE(t1.MAKTX,'') AS MAKTX,
+            COALESCE(t1.WAERK,'') AS WAERK,
+            COALESCE(t1.TOTPR,0) AS TOTPR,
+            ir.IV_WERKS_PARAM,
+            ir.IV_AUART_PARAM,
+            ir.remark,
+            ir.created_at,
+            COALESCE(t2.KUNNR,'') AS KUNNR,
+            CASE
+              WHEN ir.IV_AUART_PARAM='ZRP1' THEN 'KMI Export SBY'
+              WHEN ir.IV_AUART_PARAM='ZRP2' THEN 'KMI Export SMG'
+              ELSE COALESCE(ml.Deskription, ir.IV_AUART_PARAM)
+            END AS OT_NAME
+        ")
+            ->orderBy('ir.VBELN')
+            ->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
             ->limit(2000)
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);
     }
-
     public function apiSoUrgencyDetails(Request $request)
     {
         $request->validate([
@@ -207,18 +203,21 @@ class SODashboardController extends Controller
                 $q->where("{$alias}.IV_AUART_PARAM", $auart);
                 return;
             }
-            if ($type === 'lokal' || $type === 'export') {
+            if ($type === 'lokal') {
                 $q->join('maping as m', function ($j) use ($alias) {
                     $j->on("{$alias}.IV_AUART_PARAM", '=', 'm.IV_AUART')
                         ->on("{$alias}.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Local%');
+            } elseif ($type === 'export') {
+                $q->join('maping as m', function ($j) use ($alias) {
+                    $j->on("{$alias}.IV_AUART_PARAM", '=', 'm.IV_AUART')
+                        ->on("{$alias}.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
+                })->where(function ($w) {
+                    $w->where('m.Deskription', 'like', '%Export%')
+                        ->where('m.Deskription', 'not like', '%Local%')
+                        // ⬇️ Export juga mencakup Replace
+                        ->orWhereIn('m.IV_AUART', ['ZRP1', 'ZRP2']);
                 });
-                if ($type === 'lokal') {
-                    $q->where('m.Deskription', 'like', '%Local%');
-                } else { // export
-                    $q->where('m.Deskription', 'like', '%Export%')
-                        ->where('m.Deskription', 'not like', '%Replace%')
-                        ->where('m.Deskription', 'not like', '%Local%');
-                }
             }
         };
 
@@ -284,18 +283,21 @@ class SODashboardController extends Controller
                 $q->where("{$alias}.IV_AUART_PARAM", $auart);
                 return;
             }
-            if ($type === 'lokal' || $type === 'export') {
+            if ($type === 'lokal') {
                 $q->join('maping as m', function ($j) use ($alias) {
                     $j->on("{$alias}.IV_AUART_PARAM", '=', 'm.IV_AUART')
                         ->on("{$alias}.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
+                })->where('m.Deskription', 'like', '%Local%');
+            } elseif ($type === 'export') {
+                $q->join('maping as m', function ($j) use ($alias) {
+                    $j->on("{$alias}.IV_AUART_PARAM", '=', 'm.IV_AUART')
+                        ->on("{$alias}.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
+                })->where(function ($w) {
+                    $w->where('m.Deskription', 'like', '%Export%')
+                        ->where('m.Deskription', 'not like', '%Local%')
+                        // ⬇️ Export juga mencakup Replace
+                        ->orWhereIn('m.IV_AUART', ['ZRP1', 'ZRP2']);
                 });
-                if ($type === 'lokal') {
-                    $q->where('m.Deskription', 'like', '%Local%');
-                } else { // export
-                    $q->where('m.Deskription', 'like', '%Export%')
-                        ->where('m.Deskription', 'not like', '%Replace%')
-                        ->where('m.Deskription', 'not like', '%Local%');
-                }
             }
         };
 

@@ -643,52 +643,75 @@ class DashboardController extends Controller
 
     public function search(Request $request)
     {
-        $request->validate(['term' => 'required|string|max:100']);
-        $term = trim($request->input('term'));
+        // 1) Validasi input
+        $request->validate([
+            'term' => 'required|string|max:100',
+        ]);
 
-        $so_info = DB::table('so_yppr079_t2')
+        $term = trim((string) $request->input('term'));
+
+        // 2) Cari di T2 (SO/PO) – cocokkan ke VBELN atau BSTNK
+        $soInfo = DB::table('so_yppr079_t2')
             ->where(function ($q) use ($term) {
-                // cari SO atau PO persis (pakai TRIM supaya aman)
+                // TRIM/CAST agar aman terhadap leading zeros dan tipe kolom
                 $q->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$term])
                     ->orWhereRaw('TRIM(CAST(BSTNK AS CHAR)) = ?', [$term]);
             })
             ->select('IV_WERKS_PARAM', 'IV_AUART_PARAM', 'KUNNR', 'VBELN', 'BSTNK')
             ->first();
 
-        if (!$so_info) {
+        if (!$soInfo) {
             return back()
-                ->withErrors(['term' => 'Nomor PO/SO "' . $term . '" tidak ditemukan.'])
+                ->withErrors(['term' => 'Nomor PO/SO "' . e($term) . '" tidak ditemukan.'])
                 ->withInput();
         }
 
-        // Kirim sinyal ke PO Report agar:
-        // - buka halaman PO (bukan SO)
-        // - langsung expand Tabel-1 -> Tabel-2
-        // - highlight baris SO (dan/atau PO)
+        $werks = trim((string) $soInfo->IV_WERKS_PARAM);   // '2000' | '3000'
+        $auart = trim((string) $soInfo->IV_AUART_PARAM);   // contoh: 'ZRP1', 'ZRP2', 'KMI1', dst.
+
+        // 3) Jika AUART adalah ZRP*, ganti menjadi AUART Export untuk plant tsb
+        //    (Export = deskripsi mengandung "export" dan TIDAK mengandung "local"/"replace")
+        $auartForReport = $auart;
+        if (Str::startsWith($auart, 'ZRP')) {
+            $exportAuart = DB::table('maping')
+                ->where('IV_WERKS', $werks)
+                ->whereRaw("LOWER(Deskription) LIKE '%export%'")
+                ->whereRaw("LOWER(Deskription) NOT LIKE '%local%'")
+                ->whereRaw("LOWER(Deskription) NOT LIKE '%replace%'")
+                ->value('IV_AUART'); // ambil satu (yang utama) untuk plant tersebut
+
+            if (!empty($exportAuart)) {
+                $auartForReport = trim((string) $exportAuart);
+            }
+            // jika tidak ketemu mapping Export, fallback tetap pakai AUART ZRP
+        }
         $params = [
-            'view'              => 'po',              // paksa konteks PO
-            'werks'             => $so_info->IV_WERKS_PARAM,
-            'auart'             => $so_info->IV_AUART_PARAM,
-            'compact'           => 1,
-            'auto_expand'       => 1,                     // sinyal buka T2
-            'highlight_kunnr'   => $so_info->KUNNR,       // buka customer yang tepat
-            'highlight_vbeln'   => $so_info->VBELN,       // sorot baris SO
-            'highlight_bstnk'   => $so_info->BSTNK,       // jika user cari PO, tetap tersorot
-            'search_term'       => $term,
-            // (opsional) kompatibilitas lama bila ada JS yang membaca 'auto'
-            'auto'              => 1,
+            'view'             => 'po',               // paksa konteks PO
+            'werks'            => $werks,
+            'auart'            => $auartForReport,    // << kunci: bila ZRP diganti ke Export
+            'compact'          => 1,
+            'auto_expand'      => 1,                  // sinyal buka T2
+            'highlight_kunnr'  => $soInfo->KUNNR,
+            'highlight_vbeln'  => $soInfo->VBELN,
+            'highlight_bstnk'  => $soInfo->BSTNK,
+            'search_term'      => $term,
+            // kompatibilitas lama jika ada JS membaca 'auto'
+            'auto'             => 1,
         ];
 
+        // 5) Enkripsi & redirect ke route po.report
         $encrypted = Crypt::encrypt($params);
 
         return redirect()->route('po.report', [
-            'q'                 => $encrypted,
-            'auto_expand'       => 1,
-            'highlight_kunnr'   => $so_info->KUNNR,
-            'highlight_vbeln'   => $so_info->VBELN,
-            'highlight_bstnk'   => $so_info->BSTNK,
+            'q'                => $encrypted,
+            // kirimkan juga param plaintext untuk kenyamanan di sisi view/JS
+            'auto_expand'      => 1,
+            'highlight_kunnr'  => $soInfo->KUNNR,
+            'highlight_vbeln'  => $soInfo->VBELN,
+            'highlight_bstnk'  => $soInfo->BSTNK,
         ]);
     }
+
 
     public function redirector(Request $request)
     {

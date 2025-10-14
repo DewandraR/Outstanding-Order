@@ -780,6 +780,17 @@
                 } [s]));
             }
 
+            const findExportAuart = (werks) => {
+                const list = (mappingData && mappingData[werks]) || [];
+                for (const t of list) {
+                    const d = String(t.Deskription || '').toLowerCase();
+                    if (d.includes('export') && !d.includes('local') && !d.includes('replace')) {
+                        return String(t.IV_AUART || '').trim();
+                    }
+                }
+                return null;
+            };
+
             (function itemWithRemarkTableOnly() {
                 const apiRemarkItems = "{{ route('so.api.remark_items') }}";
                 const listBox = document.getElementById('remark-list-box-inline');
@@ -809,14 +820,19 @@
                         const werks = (r.IV_WERKS_PARAM || '').trim();
                         const auart = String(r.IV_AUART_PARAM || '').trim();
                         const plant = __plantName(werks);
-                        const otName = __auartDesc[auart] || auart || '-';
+                        const otName = r.OT_NAME || __auartDesc[auart] || auart || '-';
                         const so = (r.VBELN || '').trim();
                         const kunnr = (r.KUNNR || '').trim();
+
+                        const isZrp = auart === 'ZRP1' || auart === 'ZRP2';
+                        const exportAuart = isZrp ? findExportAuart(werks) : null;
+                        const auartForReport = isZrp ? (exportAuart || auart) :
+                            auart; // fallback ke AUART asal bila mapping tidak ketemu
 
                         const postData = {
                             redirect_to: 'so.index',
                             werks: werks,
-                            auart: auart,
+                            auart: auartForReport, // ← kirim AUART (export) ke report
                             compact: 1,
                             highlight_kunnr: kunnr,
                             highlight_vbeln: so,
@@ -866,7 +882,9 @@
                     try {
                         const url = new URL(apiRemarkItems, window.location.origin);
                         if (currentLocation) url.searchParams.set('location', currentLocation);
-                        if (currentType) url.searchParams.set('type', currentType);
+                        if (['lokal', 'export'].includes(currentType)) {
+                            url.searchParams.set('type', currentType);
+                        }
 
                         const res = await fetch(url, {
                             headers: {

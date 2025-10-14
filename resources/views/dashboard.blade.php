@@ -1046,6 +1046,17 @@
             const currentType = dataHolder?.dataset.selectedType || null; // 'lokal' | 'export' | ''
 
             const mappingData = JSON.parse(dataHolder.dataset.mappingData || '{}');
+            const findExportAuart = (werks) => {
+                const list = (mappingData && mappingData[werks]) || [];
+                for (const t of list) {
+                    const d = String(t.Deskription || '').toLowerCase();
+                    if (d.includes('export') && !d.includes('local') && !d.includes('replace')) {
+                        return String(t.IV_AUART || '').trim();
+                    }
+                }
+                return null;
+            };
+
             const auartMap = {};
             if (mappingData) {
                 for (const werks in mappingData) {
@@ -1088,13 +1099,19 @@
                     const werks = (r.IV_WERKS_PARAM || '').trim();
                     const auart = String(r.IV_AUART_PARAM || '').trim();
                     const plant = plantName(werks);
-                    const otName = auartDesc[auart] || auart || '-';
                     const kunnr = (r.KUNNR || '').trim();
+
+                    // ⬇️ tambahkan logika ZRP -> Export
+                    const isZrp = auart === 'ZRP1' || auart === 'ZRP2';
+                    const exportAuart = isZrp ? findExportAuart(werks) : null;
+                    const auartForReport = isZrp ? (exportAuart || auart) :
+                        auart; // fallback jika mapping export tidak ada
+                    const otName = auartDesc[auartForReport] || auartForReport || '-';
 
                     const postData = {
                         redirect_to: 'po.report',
                         werks: werks,
-                        auart: auart,
+                        auart: auartForReport, // ⬅️ kirim AUART Export (bukan ZRP)
                         compact: 1,
                         highlight_kunnr: kunnr,
                         highlight_vbeln: so,
@@ -1103,16 +1120,15 @@
                     };
 
                     return `
-                        <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
-                            <td class="text-center">${i + 1}</td>
-                            <td class="text-center">${po || '-'}</td>
-                            <td class="text-center">${so || '-'}</td>
-                            <td class="text-center">${posnrDisp || '-'}</td>
-                            <td class="text-center">${plant || '-'}</td>
-                            <td class="text-center">${otName}</td>
-                            <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-                            {{-- Kolom Aksi DIHAPUS, hanya menyisakan data --}}
-                        </tr>`;
+                    <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
+                    <td class="text-center">${i + 1}</td>
+                    <td class="text-center">${po || '-'}</td>
+                    <td class="text-center">${so || '-'}</td>
+                    <td class="text-center">${posnrDisp || '-'}</td>
+                    <td class="text-center">${plant || '-'}</td>
+                    <td class="text-center">${otName}</td>
+                    <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+                    </tr>`;
                 }).join('');
 
                 return `
