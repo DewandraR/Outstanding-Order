@@ -16,6 +16,8 @@ use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockDashboardController;
 use App\Http\Controllers\PoReportController;
 use App\Http\Controllers\SoItemRemarkController;
+// [BARU] Tambahkan StockIssueController
+use App\Http\Controllers\StockIssueController;
 
 // === Breeze controllers yang dipakai ===
 use App\Http\Controllers\Auth\RegisteredUserController;
@@ -189,6 +191,9 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::post('/stock-report/redirect', [StockController::class, 'redirector'])->name('stock.redirector');
 	Route::post('/stock-report/export', [StockController::class, 'exportData'])->name('stock.export');
 	Route::get('/stock-dashboard', [StockDashboardController::class, 'index'])->name('stock.dashboard');
+
+	// [MODIFIKASI] Tambahkan Route untuk Stock Issue
+	Route::get('/stock-issue', [StockIssueController::class, 'index'])->name('stock.issue');
 
 	/*
     |----------------------- Profil & CRUD Mapping ----------------------

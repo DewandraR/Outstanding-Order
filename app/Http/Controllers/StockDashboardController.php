@@ -4,19 +4,34 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Crypt;                 // ⬅️ tambah
-use Illuminate\Contracts\Encryption\DecryptException; // ⬅️ tambah
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Support\Facades\Auth; // WAJIB: Tambah import Auth
 
 class StockDashboardController extends Controller
 {
     public function index(Request $request)
     {
+        $allowedUserIds = [1];
+        $isAllowedUser = Auth::check() && in_array(Auth::id(), $allowedUserIds);
+
+        // 2. Definisi menu Stock Issue untuk Semarang (3000)
+        $semarangStockIssueMenus = [
+            'assy' => ['label' => 'Level ASSY', 'type' => 'assy'],
+            'ptg'  => ['label' => 'Level PTG', 'type' => 'ptg'],
+            'pkg'  => ['label' => 'Level PKG', 'type' => 'pkg'],
+        ];
+
+        // [MODIFIKASI END]
+
         // 1) ambil lokasi dari q (terenkripsi)
         $location = null;
         if ($request->filled('q')) {
             try {
                 $payload = Crypt::decrypt($request->query('q'));
                 if (is_array($payload)) {
+                    // Hanya perlu werks dan type di Stock Report, tapi kita tambahkan 
+                    // location di payload StockDashboardController ini untuk demo
                     $location = $payload['location'] ?? null; // '2000' | '3000' | null
                 }
             } catch (DecryptException $e) {
@@ -49,7 +64,7 @@ class StockDashboardController extends Controller
             ->select(
                 's.NAME1',
                 's.IV_WERKS_PARAM',
-                DB::raw('SUM(CASE WHEN s.KALAB  > 0 THEN s.KALAB  ELSE 0 END) AS whfg_qty'),
+                DB::raw('SUM(CASE WHEN s.KALAB > 0 THEN s.KALAB ELSE 0 END) AS whfg_qty'),
                 DB::raw('SUM(CASE WHEN s.KALAB2 > 0 THEN s.KALAB2 ELSE 0 END) AS fg_qty')
             )
             ->groupBy('s.NAME1', 's.IV_WERKS_PARAM')
@@ -82,11 +97,16 @@ class StockDashboardController extends Controller
         $dashboardData = [
             'kpi' => $kpi,
             'topCustomers' => ['whfg' => $rankWhfg, 'fg' => $rankFg],
+            // [MODIFIKASI] Tambahkan data menu tambahan berdasarkan lokasi dan izin user
+            'stockIssueMenus' => [
+                '3000' => $isAllowedUser ? $semarangStockIssueMenus : [], // Semarang (3000) + Cek Izin
+                '2000' => [], // Surabaya (2000) tanpa menu tambahan
+            ],
         ];
 
         return view('stock_dashboard.dashboard', [
             'dashboardData'    => $dashboardData,
-            'selectedLocation' => $location,   // <- pakai ini di Blade untuk status 'active'
+            'selectedLocation' => $location, // <- pakai ini di Blade untuk status 'active'
             'mapping'          => $mapping,
         ]);
     }

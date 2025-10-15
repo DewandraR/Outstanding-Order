@@ -7,6 +7,11 @@ Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000
   python api.py --sync                # semua pair di tabel `maping`
 
+  UNTUK STOCK
+  python api.py --sync_stock
+  python api.py --sync_stock --timeout 3000
+
+
 Mode server (opsional):
   python api.py --serve
 
@@ -42,7 +47,8 @@ Get-Content -Wait storage\logs\yppr_sync.log
 """
 
 import os, json, decimal, datetime
-from typing import Any, Dict, List, Optional
+import sys
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import Flask, jsonify, request
 import mysql.connector
@@ -67,7 +73,15 @@ DB_CFG = {
     "password": os.environ.get("DB_PASS", ""),
     "database": os.environ.get("DB_NAME", "outstanding_yppr"),
 }
-RFC_NAME = "Z_FM_YPPR079_SO"
+RFC_NAME_SO    = "Z_FM_YPPR079_SO"
+RFC_NAME_STOCK = "Z_FM_YSDR048"
+
+# 🌟 PEMETAAN BARU UNTUK SYNC STOCK
+STOCK_TABLE_MAP = {
+    "IV_SIAD": "stock_assy",
+    "IV_SIPD": "stock_ptg",
+    "IV_SIPP": "stock_pkg",
+}
 
 app = Flask(__name__)
 
@@ -86,7 +100,7 @@ def connect_sap(username: str, password: str) -> Connection:
     )
 
 # ---------- Util ----------
-def get_sap_credentials_from_headers():
+def get_sap_credentials_from_headers() -> Tuple[str, str]:
     u = request.headers.get("X-SAP-Username") or os.getenv("SAP_USERNAME", "auto_email")
     p = request.headers.get("X-SAP-Password") or os.getenv("SAP_PASSWORD", "11223344")
     print(
@@ -97,7 +111,7 @@ def get_sap_credentials_from_headers():
     )
     return (u, p)
 
-def get_sap_credentials_from_env():
+def get_sap_credentials_from_env() -> Tuple[str, str]:
     return (
         os.getenv("SAP_USERNAME", "auto_email"),
         os.getenv("SAP_PASSWORD", "11223344"),
@@ -131,7 +145,7 @@ def fdate_yyyymmdd(s):
 
 def call_rfc_with_timeout(conn: Connection, seconds: int, fm: str, **params) -> Dict[str, Any]:
     # Kirim CHAR/NUMC sebagai string
-    for key in ("IV_WERKS", "IV_AUART"):
+    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP"):
         if key in params and params[key] is not None:
             params[key] = str(params[key])
     with ThreadPoolExecutor(max_workers=1) as ex:
@@ -142,17 +156,12 @@ def call_rfc_with_timeout(conn: Connection, seconds: int, fm: str, **params) -> 
             raise TimeoutError(f"SAP RFC '{fm}' timed out after {seconds}s")
 
 def fetch_pairs_from_maping(filter_werks=None, filter_auart=None, limit: int = None):
-    """
-    filter_werks: str atau list[str]
-    filter_auart: str atau list[str]
-    """
+    """Mengambil pasangan WERKS/AUART dari tabel `maping`. Digunakan oleh Z_FM_YPPR079_SO."""
     db = connect_mysql()
     cur = db.cursor(dictionary=True)
     try:
         sql = "SELECT IV_WERKS, IV_AUART FROM maping"
         cond, args = [], []
-
-        # WERKS bisa string atau list
         if filter_werks:
             if isinstance(filter_werks, (list, tuple)):
                 placeholders = ",".join(["%s"] * len(filter_werks))
@@ -162,7 +171,6 @@ def fetch_pairs_from_maping(filter_werks=None, filter_auart=None, limit: int = N
                 cond.append("IV_WERKS = %s")
                 args.append(str(filter_werks))
 
-        # AUART bisa string atau list
         if filter_auart:
             if isinstance(filter_auart, (list, tuple)):
                 placeholders = ",".join(["%s"] * len(filter_auart))
@@ -177,15 +185,34 @@ def fetch_pairs_from_maping(filter_werks=None, filter_auart=None, limit: int = N
         sql += " ORDER BY IV_WERKS, IV_AUART"
         if limit and limit > 0:
             sql += f" LIMIT {int(limit)}"
-
         cur.execute(sql, tuple(args))
         return cur.fetchall()
     finally:
         cur.close(); db.close()
 
-# ---------- DDL ----------
+# -------------------- DDL & Buffer Logic for Z_FM_YPPR079_SO (SO Sync) --------------------
+
+COMMON_SO_COLS = [
+    "IV_WERKS_PARAM", "IV_AUART_PARAM", "VBELN", "POSNR",
+    "MANDT", "KUNNR", "NAME1", "AUART", "NETPR", "NETWR",
+    "TOTPR", "TOTPR2", "WAERK",
+    "EDATU", "WERKS", "BSTNK",
+    "KWMENG", "BMENG", "VRKME", "MEINS",
+    "MATNR", "MAKTX",
+    "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
+    "MENGX1", "MENGX2", "MENGE",
+    "ASSYM", "PAINT", "PACKG",
+    "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
+    "TYPE1", "TYPE2", "TYPE", "DAYX",
+    "fetched_at",
+]
+SO_COL_LIST = ", ".join(COMMON_SO_COLS)
+SO_PLACEHOLDERS = ", ".join(["%s"] * len(COMMON_SO_COLS))
+_SO_NON_KEY_UPDATE = [c for c in COMMON_SO_COLS if c not in ("IV_WERKS_PARAM","IV_AUART_PARAM","VBELN","POSNR")]
+_SO_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _SO_NON_KEY_UPDATE])
+
 def ensure_tables():
-    # T1 TANPA UNIQUE agar semua baris RFC benar-benar masuk
+    """Memastikan tabel untuk Z_FM_YPPR079_SO ada."""
     ddl1 = """
     CREATE TABLE IF NOT EXISTS so_yppr079_t1 (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -217,7 +244,6 @@ def ensure_tables():
       MODIFY TYPE1 VARCHAR(25),
       MODIFY TYPE2 VARCHAR(25);
     """
-    # T3 tetap punya UNIQUE (seperti sebelumnya)
     ddl3 = """
     CREATE TABLE IF NOT EXISTS so_yppr079_t3 (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -245,179 +271,32 @@ def ensure_tables():
     db = connect_mysql()
     cur = db.cursor()
     try:
-        # Buat tabel dasar
         cur.execute(ddl1)
         cur.execute(ddl2)
         cur.execute(ddl2_fix)
         cur.execute(ddl3)
-
-        # Pastikan kolom KALAB2 ada di semua tabel (untuk kompatibilitas ke belakang)
         for _tbl in ("so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3"):
             try:
                 cur.execute(f"ALTER TABLE {_tbl} ADD COLUMN KALAB2 DECIMAL(18,3) AFTER KALAB")
             except Exception:
-                # kolom sudah ada → aman
                 pass
-
-        # ---- Perapihan index unik lama (kalau ada) ----
-        # T1: buang UNIQUE lawas agar boleh menyimpan semua baris RFC
         try:
             cur.execute("ALTER TABLE so_yppr079_t1 DROP INDEX uq_t1")
         except Exception:
-            pass  # index tidak ada → aman
-
-        # T2: pastikan T2 PUNYA UNIQUE (karena dibuat LIKE T1 yang kini tanpa unique)
-        #     agar ON DUPLICATE KEY UPDATE di T2 tetap bekerja
+            pass
         try:
             cur.execute("""
                 ALTER TABLE so_yppr079_t2
                 ADD UNIQUE KEY uq_t2 (IV_WERKS_PARAM, IV_AUART_PARAM, VBELN, POSNR)
             """)
         except Exception:
-            pass  # mungkin sudah ada → aman
-
+            pass
         db.commit()
     finally:
         cur.close(); db.close()
 
-# ---------- UPSERT (tetap disimpan untuk kompatibilitas lama) ----------
-def upsert_generic(cur, table, werks, auart, rows):
-    """
-    Simpan baris T_DATAx ke tabel (t1/t2). Placeholder & value dibangun
-    dari list kolom, sehingga jumlahnya selalu cocok.
-    """
-    cols = [
-        "IV_WERKS_PARAM", "IV_AUART_PARAM", "VBELN", "POSNR",
-        "MANDT", "KUNNR", "NAME1", "AUART", "NETPR", "NETWR",
-        "TOTPR", "TOTPR2", "WAERK",
-        "EDATU", "WERKS", "BSTNK",
-        "KWMENG", "BMENG", "VRKME", "MEINS",
-        "MATNR", "MAKTX",
-        "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
-        "MENGX1", "MENGX2", "MENGE",
-        "ASSYM", "PAINT", "PACKG",
-        "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
-        "TYPE1", "TYPE2", "TYPE", "DAYX",
-        "fetched_at",
-    ]
-    col_list = ", ".join(cols)
-    placeholders = ", ".join(["%s"] * len(cols))
-    upd_cols = [c for c in cols if c not in ("IV_WERKS_PARAM", "IV_AUART_PARAM", "VBELN", "POSNR")]
-    set_clause = ", ".join([f"{c}=VALUES({c})" for c in upd_cols])
-
-    sql = f"""
-    INSERT INTO {table} ({col_list})
-    VALUES ({placeholders})
-    ON DUPLICATE KEY UPDATE {set_clause}
-    """
-
-    now = datetime.datetime.now()
-
-    def param_tuple(r):
-        return (
-            werks, auart,
-            r.get("VBELN"),
-            str(r.get("POSNR")) if r.get("POSNR") is not None else None,
-            r.get("MANDT"), r.get("KUNNR"), r.get("NAME1"), r.get("AUART"),
-            fnum(r.get("NETPR")), fnum(r.get("NETWR")),
-            fnum(r.get("TOTPR")), fnum(r.get("TOTPR2")), r.get("WAERK"),
-            fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
-            fnum(r.get("KWMENG")), fnum(r.get("BMENG")), r.get("VRKME"), r.get("MEINS"),
-            r.get("MATNR"), r.get("MAKTX"),
-            fnum(r.get("KALAB")), fnum(r.get("KALAB2")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
-            fnum(r.get("QTY_BALANCE")), fnum(r.get("QTY_BALANCE2")),
-            fnum(r.get("MENGX1")), fnum(r.get("MENGX2")), fnum(r.get("MENGE")),
-            fnum(r.get("ASSYM")), fnum(r.get("PAINT")), fnum(r.get("PACKG")),
-            fnum(r.get("QTYS")), fnum(r.get("MACHI")), fnum(r.get("EBDIN")),
-            fnum(r.get("MACHP")), fnum(r.get("EBDIP")),
-            r.get("TYPE1"), r.get("TYPE2"), r.get("TYPE"),
-            int(r.get("DAYX") or 0),
-            now,
-        )
-
-    batch = [param_tuple(r) for r in (rows or [])]
-    if batch:
-        cur.executemany(sql, batch)
-
-def upsert_t3(cur, werks, auart, rows):
-    """
-    Simpan T_DATA3 ke tabel T3 (bukan JSON). Skemanya sama dengan T1/T2.
-    """
-    cols = [
-        "IV_WERKS_PARAM", "IV_AUART_PARAM", "VBELN", "POSNR",
-        "MANDT", "KUNNR", "NAME1", "AUART", "NETPR", "NETWR",
-        "TOTPR", "TOTPR2", "WAERK",
-        "EDATU", "WERKS", "BSTNK",
-        "KWMENG", "BMENG", "VRKME", "MEINS",
-        "MATNR", "MAKTX",
-        "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
-        "MENGX1", "MENGX2", "MENGE",
-        "ASSYM", "PAINT", "PACKG",
-        "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
-        "TYPE1", "TYPE2", "TYPE", "DAYX",
-        "fetched_at",
-    ]
-    col_list = ", ".join(cols)
-    placeholders = ", ".join(["%s"] * len(cols))
-    upd_cols = [c for c in cols if c not in ("IV_WERKS_PARAM","IV_AUART_PARAM","VBELN","POSNR")]
-    set_clause = ", ".join([f"{c}=VALUES({c})" for c in upd_cols])
-
-    sql = f"""
-    INSERT INTO so_yppr079_t3 ({col_list})
-    VALUES ({placeholders})
-    ON DUPLICATE KEY UPDATE {set_clause}
-    """
-
-    now = datetime.datetime.now()
-
-    def param_tuple(r):
-        return (
-            werks, auart,
-            r.get("VBELN"),
-            str(r.get("POSNR")) if r.get("POSNR") is not None else None,
-            r.get("MANDT"), r.get("KUNNR"), r.get("NAME1"), r.get("AUART"),
-            fnum(r.get("NETPR")), fnum(r.get("NETWR")),
-            fnum(r.get("TOTPR")), fnum(r.get("TOTPR2")), r.get("WAERK"),
-            fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
-            fnum(r.get("KWMENG")), fnum(r.get("BMENG")), r.get("VRKME"), r.get("MEINS"),
-            r.get("MATNR"), r.get("MAKTX"),
-            fnum(r.get("KALAB")), fnum(r.get("KALAB2")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
-            fnum(r.get("QTY_BALANCE")), fnum(r.get("QTY_BALANCE2")),
-            fnum(r.get("MENGX1")), fnum(r.get("MENGX2")), fnum(r.get("MENGE")),
-            fnum(r.get("ASSYM")), fnum(r.get("PAINT")), fnum(r.get("PACKG")),
-            fnum(r.get("QTYS")), fnum(r.get("MACHI")), fnum(r.get("EBDIN")),
-            fnum(r.get("MACHP")), fnum(r.get("EBDIP")),
-            r.get("TYPE1"), r.get("TYPE2"), r.get("TYPE"),
-            int(r.get("DAYX") or 0),
-            now,
-        )
-
-    batch = [param_tuple(r) for r in (rows or [])]
-    if batch:
-        cur.executemany(sql, batch)
-
-# ---------- Bulk-buffer helpers ----------
-COMMON_COLS = [
-    "IV_WERKS_PARAM", "IV_AUART_PARAM", "VBELN", "POSNR",
-    "MANDT", "KUNNR", "NAME1", "AUART", "NETPR", "NETWR",
-    "TOTPR", "TOTPR2", "WAERK",
-    "EDATU", "WERKS", "BSTNK",
-    "KWMENG", "BMENG", "VRKME", "MEINS",
-    "MATNR", "MAKTX",
-    "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
-    "MENGX1", "MENGX2", "MENGE",
-    "ASSYM", "PAINT", "PACKG",
-    "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
-    "TYPE1", "TYPE2", "TYPE", "DAYX",
-    "fetched_at",
-]
-COL_LIST = ", ".join(COMMON_COLS)
-PLACEHOLDERS = ", ".join(["%s"] * len(COMMON_COLS))
-_NON_KEY_UPDATE = [c for c in COMMON_COLS if c not in ("IV_WERKS_PARAM","IV_AUART_PARAM","VBELN","POSNR")]
-_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _NON_KEY_UPDATE])
-
-def _row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime):
-    """Bangun 1 tuple parameter insert sesuai kolom COMMON_COLS."""
+def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
+    """Bangun 1 tuple parameter insert sesuai kolom COMMON_SO_COLS."""
     return (
         werks, auart,
         r.get("VBELN"),
@@ -439,13 +318,12 @@ def _row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetim
         now,
     )
 
-def _bulk_insert(cur, table: str, params: list, batch_size: int = 1000):
-    """Bulk insert dengan ON DUPLICATE KEY UPDATE agar duplikat dalam 1 batch tidak error."""
-    if not params:
-        return 0
+def _bulk_insert_so_upsert(cur, table: str, params: list, batch_size: int = 1000):
+    """Bulk insert dengan ON DUPLICATE KEY UPDATE untuk T2/T3."""
+    if not params: return 0
     sql = (
-        f"INSERT INTO {table} ({COL_LIST}) VALUES ({PLACEHOLDERS}) "
-        f"ON DUPLICATE KEY UPDATE {_SET_CLAUSE}"
+        f"INSERT INTO {table} ({SO_COL_LIST}) VALUES ({SO_PLACEHOLDERS}) "
+        f"ON DUPLICATE KEY UPDATE {_SO_SET_CLAUSE}"
     )
     total = 0
     for i in range(0, len(params), batch_size):
@@ -454,11 +332,10 @@ def _bulk_insert(cur, table: str, params: list, batch_size: int = 1000):
         total += len(chunk)
     return total
 
-def _bulk_insert_plain(cur, table: str, params: list, batch_size: int = 1000):
+def _bulk_insert_so_plain(cur, table: str, params: list, batch_size: int = 1000):
     """Bulk insert tanpa upsert (dipakai untuk T1 setelah TRUNCATE)."""
-    if not params:
-        return 0
-    sql = f"INSERT INTO {table} ({COL_LIST}) VALUES ({PLACEHOLDERS})"
+    if not params: return 0
+    sql = f"INSERT INTO {table} ({SO_COL_LIST}) VALUES ({SO_PLACEHOLDERS})"
     total = 0
     for i in range(0, len(params), batch_size):
         chunk = params[i:i+batch_size]
@@ -466,25 +343,88 @@ def _bulk_insert_plain(cur, table: str, params: list, batch_size: int = 1000):
         total += len(chunk)
     return total
 
-# ---------- LOGIKA SYNC ----------
-def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, timeout_sec: int = 3000):
-    """
-    Versi buffer:
-    - Kumpulkan semua hasil ke array (t1_buf/t2_buf/t3_buf) sepanjang loop pair
-    - Setelah semua pair selesai, kosongkan tabel (TRUNCATE)
-    - Lalu masukkan seluruh buffer sekaligus
-    """
-    ensure_tables()
+# -------------------- DDL & Buffer Logic for Z_FM_YSDR048 (Stock Sync) --------------------
 
+STOCK_COLS = [
+    "NAME1", "BSTNK", "VBELN", "POSNR", 
+    "MATNH", "MAKTXH", "MATNR", "MAKTX", 
+    "MATNRX", "IDNRK", "STOCK3", "MEINS", 
+    "STATS", "BUDAT", "PSMNG", "WEMNG", 
+    "NETPR", "TPRC", "TTIME",
+]
+STOCK_COL_LIST = ", ".join(STOCK_COLS + ["IV_PARAM", "fetched_at"])
+STOCK_PLACEHOLDERS = ", ".join(["%s"] * (len(STOCK_COLS) + 2))
+
+def ensure_stock_tables():
+    """Memastikan tabel untuk Z_FM_YSDR048 ada dengan nama baru (stock_assy, stock_ptg, stock_pkg)."""
+    base_ddl = """
+    CREATE TABLE IF NOT EXISTS {table_name} (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      IV_PARAM VARCHAR(10) NOT NULL,
+      NAME1 VARCHAR(120), BSTNK VARCHAR(80), VBELN VARCHAR(20), POSNR VARCHAR(10),
+      MATNH VARCHAR(40), MAKTXH VARCHAR(200), MATNR VARCHAR(40), MAKTX VARCHAR(200),
+      MATNRX VARCHAR(40), IDNRK VARCHAR(40), STOCK3 DECIMAL(18,3), MEINS VARCHAR(6),
+      STATS VARCHAR(25), BUDAT DATE, PSMNG DECIMAL(18,3), WEMNG DECIMAL(18,3),
+      NETPR DECIMAL(18,2), TPRC DECIMAL(18,2), TTIME VARCHAR(25),
+      fetched_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """
+    
+    table_names = list(STOCK_TABLE_MAP.values())
+    
+    db = connect_mysql()
+    cur = db.cursor()
+    try:
+        for name in table_names:
+            ddl = base_ddl.format(table_name=name)
+            cur.execute(ddl)
+        
+        for name in table_names:
+            try:
+                cur.execute(f"ALTER TABLE {name} ADD INDEX idx_vbeln (VBELN)")
+                cur.execute(f"ALTER TABLE {name} ADD INDEX idx_matnr (MATNR)")
+            except Exception:
+                pass
+        
+        db.commit()
+    finally:
+        cur.close(); db.close()
+
+def _stock_row_params(param: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
+    """Bangun 1 tuple parameter insert sesuai kolom STOCK_COLS."""
+    posnr = str(r.get("POSNR")).zfill(4) if r.get("POSNR") is not None else None
+    
+    return (
+        r.get("NAME1"), r.get("BSTNK"), r.get("VBELN"), posnr,
+        r.get("MATNH"), r.get("MAKTXH"), r.get("MATNR"), r.get("MAKTX"),
+        r.get("MATNRX"), r.get("IDNRK"), fnum(r.get("STOCK3")), r.get("MEINS"),
+        r.get("STATS"), fdate_yyyymmdd(r.get("BUDAT")), fnum(r.get("PSMNG")), fnum(r.get("WEMNG")),
+        fnum(r.get("NETPR")), fnum(r.get("TPRC")), r.get("TTIME"),
+        param, 
+        now,
+    )
+
+def _bulk_insert_stock_plain(cur, table: str, params: list, batch_size: int = 1000):
+    """Bulk insert tanpa upsert (dipakai untuk tabel stok setelah TRUNCATE)."""
+    if not params: return 0
+    sql = f"INSERT INTO {table} ({STOCK_COL_LIST}) VALUES ({STOCK_PLACEHOLDERS})"
+    total = 0
+    for i in range(0, len(params), batch_size):
+        chunk = params[i:i+batch_size]
+        cur.executemany(sql, chunk)
+        total += len(chunk)
+    return total
+
+# -------------------- LOGIKA SYNC LAMA (Z_FM_YPPR079_SO) --------------------
+def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, timeout_sec: int = 3000):
+    """Logika sinkronisasi lama untuk Z_FM_YPPR079_SO."""
+    ensure_tables()
     username, password = get_sap_credentials_from_env()
     if not username or not password:
-        return {
-            "ok": False,
-            "error": "Missing SAP_USERNAME or SAP_PASSWORD (dotenv not loaded or .env values empty)."
-        }
+        return {"ok": False, "error": "Missing SAP_USERNAME or SAP_PASSWORD."}
 
     start_ts = datetime.datetime.now()
-    print(f"[INFO] Start do_sync at {start_ts:%Y-%m-%d %H:%M:%S}", flush=True)
+    print(f"[INFO] Start do_sync SO at {start_ts:%Y-%m-%d %H:%M:%S}", flush=True)
 
     pairs = fetch_pairs_from_maping(filter_werks, filter_auart, limit)
     total = len(pairs)
@@ -492,7 +432,6 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
     if not pairs:
         return {"ok": False, "error": "No mapping pairs found for given filter.", "pairs": []}
 
-    # koneksi SAP sekali
     try:
         print("[INFO] Connecting to SAP...", flush=True)
         sap = connect_sap(username, password)
@@ -501,7 +440,6 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         print(f"[ERROR] SAP connection failed: {e}", flush=True)
         return {"ok": False, "error": f"SAP connection failed: {e}", "pairs": []}
 
-    # Buffer untuk semua tabel
     t1_buf: List[tuple] = []
     t2_buf: List[tuple] = []
     t3_buf: List[tuple] = []
@@ -512,29 +450,19 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         for idx, p in enumerate(pairs, 1):
             werks = str(p["IV_WERKS"]); auart = str(p["IV_AUART"])
             try:
-                print(f"[{idx}/{total}] {werks}/{auart} - calling RFC...", flush=True)
-                r = call_rfc_with_timeout(sap, timeout_sec, RFC_NAME, IV_WERKS=werks, IV_AUART=auart)
+                print(f"[{idx}/{total}] {werks}/{auart} - calling RFC {RFC_NAME_SO}...", flush=True)
+                r = call_rfc_with_timeout(sap, timeout_sec, RFC_NAME_SO, IV_WERKS=werks, IV_AUART=auart)
 
-                t1 = r.get("T_DATA1", []) or []
-                t2 = r.get("T_DATA2", []) or []
-                t3 = r.get("T_DATA3", []) or []
-
+                t1 = r.get("T_DATA1", []) or []; t2 = r.get("T_DATA2", []) or []; t3 = r.get("T_DATA3", []) or []
                 now = datetime.datetime.now()
-
-                # Simpan ke buffer (array)
-                t1_buf.extend(_row_params(werks, auart, row, now) for row in t1)
-                t2_buf.extend(_row_params(werks, auart, row, now) for row in t2)
-                t3_buf.extend(_row_params(werks, auart, row, now) for row in t3)
-
+                t1_buf.extend(_so_row_params(werks, auart, row, now) for row in t1)
+                t2_buf.extend(_so_row_params(werks, auart, row, now) for row in t2)
+                t3_buf.extend(_so_row_params(werks, auart, row, now) for row in t3)
                 total_t1 += len(t1); total_t2 += len(t2); total_t3 += len(t3)
                 summary.append({"werks": werks, "auart": auart, "t1_saved": len(t1), "t2_saved": len(t2), "t3_saved": len(t3)})
-
                 print(f"[{idx}/{total}] {werks}/{auart} - saved t1={len(t1)} t2={len(t2)} t3={len(t3)} to array", flush=True)
 
-            except FuturesTimeout as te:
-                print(f"[{idx}/{total}] {werks}/{auart} - TIMEOUT: {te}", flush=True)
-                summary.append({"werks": werks, "auart": auart, "error": f"timeout: {te}"})
-            except TimeoutError as te:
+            except (FuturesTimeout, TimeoutError) as te:
                 print(f"[{idx}/{total}] {werks}/{auart} - TIMEOUT: {te}", flush=True)
                 summary.append({"werks": werks, "auart": auart, "error": f"timeout: {te}"})
             except Exception as e:
@@ -545,57 +473,130 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         except Exception: pass
 
     print("Semua pair telah tersimpan ke buffer.", flush=True)
-
-    # Tulis ke DB: kosongkan tabel lama, lalu insert semua buffer
-    db  = connect_mysql()
-    cur = db.cursor()
+    db  = connect_mysql(); cur = db.cursor()
     inserted_t1 = inserted_t2 = inserted_t3 = 0
     try:
-        print("Menghapus tabel lama (TRUNCATE)…", flush=True)
+        print("Menghapus tabel SO lama (TRUNCATE)…", flush=True)
+        cur.execute("SET FOREIGN_KEY_CHECKS=0"); cur.execute("TRUNCATE TABLE so_yppr079_t1")
+        cur.execute("TRUNCATE TABLE so_yppr079_t2"); cur.execute("TRUNCATE TABLE so_yppr079_t3")
+        cur.execute("SET FOREIGN_KEY_CHECKS=1")
+        print("Memasukkan query SQL buffered ke database…", flush=True)
+        inserted_t1 = _bulk_insert_so_plain(cur, "so_yppr079_t1", t1_buf)
+        inserted_t2 = _bulk_insert_so_upsert(cur, "so_yppr079_t2", t2_buf)
+        inserted_t3 = _bulk_insert_so_upsert(cur, "so_yppr079_t3", t3_buf)
+        db.commit()
+        print(f"[INFO] Inserted buffered rows: t1={inserted_t1} t2={inserted_t2} t3={inserted_t3}", flush=True)
+    except Exception as e:
+        db.rollback(); print(f"[ERROR] Gagal menulis buffered data: {e}", flush=True)
+        return {"ok": False, "error": f"DB insert failed: {e}", "summary": summary}
+    finally:
+        try: cur.close(); db.close()
+        except Exception: pass
+
+    done_ts = datetime.datetime.now()
+    print(f"[INFO] Done SO sync. totals: t1={total_t1} t2={total_t2} t3={total_t3} @ {done_ts:%Y-%m-%d %H:%M:%S}", flush=True)
+
+    return {
+        "ok": True, "totals": {"t1": total_t1, "t2": total_t2, "t3": total_t3},
+        "inserted": {"t1": inserted_t1, "t2": inserted_t2, "t3": inserted_t3},
+        "pairs": summary, "started_at": start_ts.isoformat(), "finished_at": done_ts.isoformat(),
+    }
+
+
+# -------------------- LOGIKA SYNC BARU (Z_FM_YSDR048) --------------------
+def do_sync_stock(timeout_sec: int = 3000):
+    """Menjalankan Z_FM_YSDR048 3x dan menyimpan hasilnya ke tabel stock_assy, stock_ptg, stock_pkg."""
+    ensure_stock_tables()
+
+    username, password = get_sap_credentials_from_env()
+    if not username or not password:
+        return {"ok": False, "error": "Missing SAP_USERNAME or SAP_PASSWORD."}
+
+    start_ts = datetime.datetime.now()
+    print(f"[INFO] Start do_sync_stock at {start_ts:%Y-%m-%d %H:%M:%S}", flush=True)
+    print(f"[INFO] Using RFC: {RFC_NAME_STOCK}", flush=True)
+
+    try:
+        print("[INFO] Connecting to SAP...", flush=True)
+        sap = connect_sap(username, password)
+        print("[INFO] SAP connected.", flush=True)
+    except Exception as e:
+        print(f"[ERROR] SAP connection failed: {e}", flush=True)
+        return {"ok": False, "error": f"SAP connection failed: {e}", "summary": []}
+
+    sync_params = {"IV_SIAD": "X", "IV_SIPD": "X", "IV_SIPP": "X"}
+    
+    buffers: Dict[str, List[tuple]] = {}; summary: List[Dict[str, Any]] = []
+    
+    try:
+        for param_name, param_value in sync_params.items():
+            now = datetime.datetime.now()
+            # 🌟 MENGGUNAKAN PEMETAAN BARU
+            table_name = STOCK_TABLE_MAP[param_name] 
+            buffers[table_name] = []
+            
+            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": ""}; params[param_name] = param_value
+            
+            try:
+                print(f"[INFO] Calling RFC for {param_name}='{param_value}' -> {table_name}...", flush=True)
+                r = call_rfc_with_timeout(sap, timeout_sec, RFC_NAME_STOCK, **params)
+                t1_data = r.get("T_DATA1", []) or []
+                buffers[table_name].extend(_stock_row_params(param_name, row, now) for row in t1_data)
+                summary.append({"param": param_name, "table": table_name, "rows_fetched": len(t1_data)})
+                print(f"[INFO] {param_name}='{param_value}' - fetched {len(t1_data)} rows to array", flush=True)
+
+            except (FuturesTimeout, TimeoutError) as te:
+                print(f"[ERROR] {param_name}='{param_value}' - TIMEOUT: {te}", flush=True)
+                summary.append({"param": param_name, "error": f"timeout: {te}"})
+            except Exception as e:
+                print(f"[ERROR] {param_name}='{param_value}' - ERROR: {e}", flush=True)
+                summary.append({"param": param_name, "error": f"RFC/parse error: {e}"})
+    finally:
+        try: sap.close()
+        except Exception: pass
+
+    print("Semua panggilan RFC telah tersimpan ke buffer.", flush=True)
+
+    db  = connect_mysql(); cur = db.cursor()
+    inserted_counts = {}
+    try:
+        print("Menghapus tabel stok lama (TRUNCATE)…", flush=True)
         cur.execute("SET FOREIGN_KEY_CHECKS=0")
-        cur.execute("TRUNCATE TABLE so_yppr079_t1")
-        cur.execute("TRUNCATE TABLE so_yppr079_t2")
-        cur.execute("TRUNCATE TABLE so_yppr079_t3")
+        
+        for table_name in buffers.keys():
+            cur.execute(f"TRUNCATE TABLE {table_name}") # Tabel yang ada di buffer akan dikosongkan
+        
         cur.execute("SET FOREIGN_KEY_CHECKS=1")
 
         print("Memasukkan query SQL buffered ke database…", flush=True)
 
-        # T1: INSERT plain (tanpa upsert) → jumlah row di DB = jumlah baris RFC T1
-        inserted_t1 = _bulk_insert_plain(cur, "so_yppr079_t1", t1_buf)
-
-        # T2/T3: tetap upsert (punya UNIQUE), seperti semula
-        inserted_t2 = _bulk_insert(cur, "so_yppr079_t2", t2_buf)
-        inserted_t3 = _bulk_insert(cur, "so_yppr079_t3", t3_buf)
-
+        for table_name, buffer in buffers.items():
+            inserted_count = _bulk_insert_stock_plain(cur, table_name, buffer)
+            inserted_counts[table_name] = inserted_count
+            print(f"[INFO] Inserted {inserted_count} rows into {table_name}", flush=True)
+        
         db.commit()
-        print(f"[INFO] Inserted buffered rows: t1={inserted_t1} t2={inserted_t2} t3={inserted_t3}", flush=True)
+        print(f"[INFO] Inserted buffered rows: {inserted_counts}", flush=True)
     except Exception as e:
-        db.rollback()
-        print(f"[ERROR] Gagal menulis buffered data: {e}", flush=True)
+        db.rollback(); print(f"[ERROR] Gagal menulis buffered data: {e}", flush=True)
         return {"ok": False, "error": f"DB insert failed: {e}", "summary": summary}
     finally:
-        try: cur.close()
-        except Exception: pass
-        try: db.close()
+        try: cur.close(); db.close()
         except Exception: pass
 
     done_ts = datetime.datetime.now()
-    print(f"[INFO] Done. totals: t1={total_t1} t2={total_t2} t3={total_t3} @ {done_ts:%Y-%m-%d %H:%M:%S}", flush=True)
+    print(f"[INFO] Done Stock sync. totals: {inserted_counts} @ {done_ts:%Y-%m-%d %H:%M:%S}", flush=True)
 
     return {
-        "ok": True,
-        "totals": {"t1": total_t1, "t2": total_t2, "t3": total_t3},
-        "inserted": {"t1": inserted_t1, "t2": inserted_t2, "t3": inserted_t3},
-        "pairs": summary,
-        "started_at": start_ts.isoformat(),
-        "finished_at": done_ts.isoformat(),
+        "ok": True, "inserted": inserted_counts, "summary": summary,
+        "started_at": start_ts.isoformat(), "finished_at": done_ts.isoformat(),
     }
 
 # ---------- Endpoints (opsional) ----------
 @app.route("/", methods=["GET"])
 def home():
     return (
-        "OK. POST /api/yppr079/sync?werks=2000&auart=ZOR3&timeout=3000 "
+        "OK. POST /api/yppr079/sync (SO) atau /api/ysdr048/sync (Stock). "
         "Headers (opsional): X-SAP-Username / X-SAP-Password; ENV juga didukung.",
         200, {"Content-Type": "text/plain"}
     )
@@ -604,41 +605,62 @@ def home():
 def sync_yppr079_http():
     ensure_tables()
     u, p = get_sap_credentials_from_headers()
-    filter_werks = request.args.get("werks")
-    filter_auart = request.args.get("auart")
-    limit_param  = request.args.get("limit", type=int)
-    timeout_sec  = request.args.get("timeout", default=3000, type=int)
+    filter_werks = request.args.get("werks"); filter_auart = request.args.get("auart")
+    limit_param  = request.args.get("limit", type=int); timeout_sec  = request.args.get("timeout", default=3000, type=int)
 
-    # sementara pakai ENV helper di do_sync; override ENV dulu
-    os.environ["SAP_USERNAME"] = u
-    os.environ["SAP_PASSWORD"] = p
-
+    os.environ["SAP_USERNAME"] = u; os.environ["SAP_PASSWORD"] = p
     result = do_sync(filter_werks, filter_auart, limit_param, timeout_sec)
     return app.response_class(
         response=json.dumps(to_jsonable(result), ensure_ascii=False),
-        status=(200 if result.get("ok") else 500),
-        mimetype="application/json",
+        status=(200 if result.get("ok") else 500), mimetype="application/json",
     )
+    
+@app.route("/api/ysdr048/sync", methods=["POST"])
+def sync_ysdr048_http():
+    """Endpoint HTTP untuk sinkronisasi Stock (Z_FM_YSDR048)."""
+    ensure_stock_tables()
+    u, p = get_sap_credentials_from_headers()
+    timeout_sec  = request.args.get("timeout", default=3000, type=int)
+
+    os.environ["SAP_USERNAME"] = u; os.environ["SAP_PASSWORD"] = p
+    result = do_sync_stock(timeout_sec)
+    return app.response_class(
+        response=json.dumps(to_jsonable(result), ensure_ascii=False),
+        status=(200 if result.get("ok") else 500), mimetype="application/json",
+    )
+
 
 # ---------- Main ----------
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="YPPR079 API/Sync")
+    parser = argparse.ArgumentParser(description="YPPR079/YSDR048 API/Sync")
     parser.add_argument("--serve", action="store_true", help="Jalankan server Flask")
-    parser.add_argument("--sync", action="store_true", help="Jalankan sinkronisasi langsung (tanpa HTTP)")
-    parser.add_argument("--werks", type=str, help="Filter IV_WERKS")
-    parser.add_argument("--auart", nargs="+", help="Filter IV_AUART(Boleh lebih dari satu AUART)")
-    parser.add_argument("--limit", type=int, help="Batas jumlah pair dari tabel maping")
+    
+    parser.add_argument("--sync", action="store_true", help="Jalankan sinkronisasi SO Z_FM_YPPR079_SO (tanpa HTTP)")
+    parser.add_argument("--werks", type=str, help="Filter IV_WERKS (untuk --sync)")
+    parser.add_argument("--auart", nargs="+", help="Filter IV_AUART (untuk --sync)")
+    parser.add_argument("--limit", type=int, help="Batas jumlah pair (untuk --sync)")
+    
+    parser.add_argument("--sync_stock", action="store_true", help="Jalankan sinkronisasi Stock Z_FM_YSDR048 (tanpa HTTP)")
+    
     parser.add_argument("--timeout", type=int, default=3000, help="Timeout per panggilan RFC (detik)")
     args = parser.parse_args()
 
     if args.sync:
         result = do_sync(
             filter_werks=args.werks,
-            filter_auart=args.auart,   # boleh None, string, atau list
+            filter_auart=args.auart,
             limit=args.limit,
             timeout_sec=args.timeout
         )
         print(json.dumps(to_jsonable(result), ensure_ascii=False, indent=2))
-    else:
+    elif args.sync_stock:
+        result = do_sync_stock(
+            timeout_sec=args.timeout
+        )
+        print(json.dumps(to_jsonable(result), ensure_ascii=False, indent=2))
+    elif args.serve:
         app.run(host="127.0.0.1", port=5000, debug=True)
+    else:
+        parser.print_help()
+        sys.exit(1)

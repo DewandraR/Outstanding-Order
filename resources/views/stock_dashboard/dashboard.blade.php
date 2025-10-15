@@ -50,6 +50,25 @@
             /* Menjaga konsistensi ikon */
         }
 
+        /* 🚨 BARU: Gaya untuk Menu Item Stock Issue (Level ASSY/PTG/PKG) */
+        .dropdown-issue-icon {
+            font-size: 1rem;
+            color: #4f46e5;
+            /* Warna ungu indigo yang estetik */
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+
+        .dropdown-issue-header {
+            color: #ef4444 !important;
+            /* Biarkan header tetap merah sebagai tanda 'Issue' */
+            font-weight: 700;
+            border-bottom: 1px solid #fee2e2;
+            padding-bottom: 0.25rem;
+            margin-bottom: 0.5rem;
+        }
+
         /* ========================================================= */
         /* END: STYLE UNTUK HEADER KONSISTENSI */
         /* ========================================================= */
@@ -74,6 +93,21 @@
         $encStockReport = function ($werks, $type) {
             return route('stock.index', ['q' => Crypt::encrypt(['werks' => $werks, 'type' => $type])]);
         };
+
+        // Helper untuk membuat URL terenkripsi ke Stock Issue (Asumsi: route bernama 'stock.issue' ada)
+        $encStockIssue = function ($werks, $level) {
+            return route('stock.issue', ['q' => Crypt::encrypt(['werks' => $werks, 'level' => $level])]);
+        };
+
+        // Ambil menu tambahan dari $dashboardData
+        $stockIssueMenus = $dashboardData['stockIssueMenus'] ?? [];
+
+        // 🚨 BARU: Map ikon untuk setiap level Stock Issue
+        $issueIcons = [
+            'assy' => 'fas fa-gears', // Assembly/Gears
+            'ptg' => 'fas fa-cut', // Potong/Cut
+            'pkg' => 'fas fa-boxes-stacked', // Packaging/Boxes
+        ];
     @endphp
 
     {{-- HEADER & FILTER --}}
@@ -109,6 +143,26 @@
                                 <i class="fas fa-cubes me-2 text-success"></i> Packing
                             </a>
                         </li>
+
+                        {{-- Menu Stock Issue untuk user tertentu di Semarang --}}
+                        @if (!empty($stockIssueMenus[$werks]))
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            {{-- 🚨 MENGGUNAKAN STYLE HEADER BARU --}}
+                            <h6 class="dropdown-header text-uppercase small dropdown-issue-header">Stock Issue -
+                                {{ $name }}</h6>
+                            @foreach ($stockIssueMenus[$werks] as $menuItem)
+                                <li>
+                                    <a class="dropdown-item" href="{{ $encStockIssue($werks, $menuItem['type']) }}">
+                                        {{-- 🚨 MENGGUNAKAN IKON DAN KELAS STYLE BARU --}}
+                                        <i
+                                            class="{{ $issueIcons[$menuItem['type']] ?? 'fas fa-box-open' }} dropdown-issue-icon"></i>
+                                        {{ $menuItem['label'] }}
+                                    </a>
+                                </li>
+                            @endforeach
+                        @endif
                     </ul>
                 </div>
             @endforeach

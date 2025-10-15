@@ -1,4 +1,3 @@
-{{-- resources/views/layouts/app.blade.php --}}
 <!doctype html>
 <html lang="id">
 
@@ -7,14 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title', config('app.name', 'Laravel'))</title>
 
-    {{-- CSRF Token untuk form/ajax --}}
+    {{-- CSRF Token for form/ajax --}}
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     {{-- Fonts & CSS vendor --}}
+    {{-- PASTIKAN path aset ini benar di project Laravel Anda --}}
     <link rel="stylesheet" href="{{ asset('vendor/fonts/poppins/poppins.css') }}">
     <link rel="stylesheet" href="{{ asset('vendor/bootstrap/css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ asset('vendor/fontawesome/css/all.min.css') }}">
-    {{-- Style layout utama --}}
+    {{-- Main layout style --}}
     <link rel="stylesheet" href="{{ asset('css/app-layout.css') }}">
 
     @stack('styles')
@@ -32,7 +32,7 @@
             </div>
         </a>
 
-        {{-- AREA NAV --}}
+        {{-- NAV AREA --}}
         <div class="flex-grow-1 d-flex flex-column overflow-auto">
             @php
                 use Illuminate\Support\Facades\Crypt;
@@ -53,16 +53,20 @@
                 // Aktif jika di Dashboard ATAU Report Detail SO
                 $isSoActive = request()->routeIs('so.dashboard') || request()->routeIs('so.index');
 
-                // Aktif jika di Dashboard ATAU Report Detail Stock
-                $isStockActive = request()->routeIs('stock.dashboard') || request()->routeIs('stock.index');
+                // 🚨 KUNCI PERBAIKAN: Aktif jika di Stock Dashboard, Stock Report, atau Stock Issue
+                $isStockActive =
+                    request()->routeIs('stock.dashboard') ||
+                    request()->routeIs('stock.index') ||
+                    request()->routeIs('stock.issue');
                 // -----------------------------
             @endphp
 
-            {{-- NAV & SEARCH hanya untuk user login --}}
+            {{-- NAV & SEARCH only for logged-in user --}}
             @auth
                 <ul class="sidebar-nav">
-                    {{-- Pencarian --}}
+                    {{-- Search --}}
                     <li class="nav-item px-2 mt-2 mb-2">
+                        {{-- ASUMSI: Route search dashboard ada --}}
                         <form action="{{ route('dashboard.search') }}" method="POST" class="sidebar-search-form">
                             @csrf
                             <div class="input-group">
@@ -93,7 +97,7 @@
                         </a>
                     </li>
 
-                    {{-- Stock Dashboard & Report --}}
+                    {{-- Stock Dashboard & Report (Termasuk Stock Issue) --}}
                     <li class="nav-item">
                         <a class="nav-link {{ $isStockActive ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">
                             <i class="fas fa-warehouse nav-icon"></i> Stock Dashboard
@@ -102,9 +106,9 @@
                 </ul>
             @endauth
 
-            {{-- AUTH AREA (bawah) --}}
+            {{-- AUTH AREA (bottom) --}}
             <div class="user-profile mt-auto pt-2 px-2">
-                {{-- Tamu: tombol Sign In (+optional Register jika ada) --}}
+                {{-- Guest: Sign In button (+optional Register if available) --}}
                 @guest
                     <div class="p-3">
                         <a class="btn btn-success w-100 mb-2" href="{{ route('login') }}">
@@ -118,7 +122,7 @@
                     </div>
                 @endguest
 
-                {{-- User login: dropdown + logout --}}
+                {{-- Logged-in user: dropdown + logout --}}
                 @auth
                     <div class="dropdown dropup w-100">
                         <button class="btn w-100 d-flex align-items-center justify-content-between" type="button"
@@ -133,7 +137,7 @@
                             <i class="fas fa-chevron-up ms-2"></i>
                         </button>
                         <ul class="dropdown-menu" aria-labelledby="userMenuButton">
-                            {{-- **LINK PROFILE BARU** --}}
+                            {{-- PROFILE LINK --}}
                             <li>
                                 <a class="dropdown-item" href="{{ route('profile.edit') }}">
                                     <i class="fas fa-user-edit"></i> Profile
@@ -218,17 +222,17 @@
             }
         });
 
-        // Hardening: cegah bfcache menampilkan halaman rahasia setelah logout
+        // Hardening: prevent bfcache from showing protected pages after logout
         window.addEventListener('pageshow', function(e) {
             if (e.persisted) window.location.reload();
         });
     </script>
 
-    {{-- Bantuan ikon (popover) untuk chart, jika kamu pakai file ini --}}
-
+    {{-- Chart help icon (popover) --}}
+    {{-- ASUMSI: file chart-help.js dan chart-help.json ada --}}
     <script src="{{ asset('js/chart-help.js') }}" data-json="{{ asset('chart-help.json') }}" defer></script>
 
-    {{-- Optional: inject js via flash session (misal pembersihan storage saat logout) --}}
+    {{-- Optional: inject js via flash session (e.g., storage cleanup on logout) --}}
     @if (session()->has('js_script'))
         <script>
             const script = @json(session('js_script'));
