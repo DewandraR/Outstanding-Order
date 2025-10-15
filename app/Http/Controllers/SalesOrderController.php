@@ -863,7 +863,7 @@ class SalesOrderController extends Controller
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string',
-            'remark' => 'required|string|max:200',
+            'remark' => 'required|string|max:60',
         ]);
 
         $userId = Auth::id();
@@ -921,7 +921,7 @@ class SalesOrderController extends Controller
     public function apiUpdateItemRemark(Request $request, $id)
     {
         $validated = $request->validate([
-            'remark' => 'required|string|max:200', // max 200, but UI limit is 60. Max 200 to be safe.
+            'remark' => 'required|string|max:60',
         ]);
 
         $userId = Auth::id();
