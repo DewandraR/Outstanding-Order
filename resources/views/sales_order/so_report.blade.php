@@ -665,8 +665,8 @@
     <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
     <script>
         /* =========================================================
-                                                Helper: apply filter (POST -> so.redirector)
-                                            ========================================================= */
+                                                                        Helper: apply filter (POST -> so.redirector)
+                                                                    ========================================================= */
         function applySoFilter(params) {
             const f = document.createElement('form');
             f.method = 'POST';
@@ -792,6 +792,15 @@
                     maximumFractionDigits: d
                 });
             };
+            const uniqBy = (arr, keyer) => {
+                const seen = new Set();
+                return (arr || []).filter(x => {
+                    const k = keyer(x);
+                    if (seen.has(k)) return false;
+                    seen.add(k);
+                    return true;
+                });
+            };
             const escapeHtml = (s) => String(s)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -810,6 +819,14 @@
                 const jd = await r.json();
                 if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
 
+                const dedupItems = uniqBy(jd.data, x =>
+                    `${x.VBELN_KEY}|${x.POSNR_KEY}|${x.MATNR ?? ''}`
+                );
+
+                // map id->SO pakai data yang sudah didedupe
+                dedupItems.forEach(x => itemIdToSO.set(String(x.id), vbeln));
+                itemsCache.set(vbeln, dedupItems);
+                return dedupItems;
                 jd.data.forEach(x => itemIdToSO.set(String(x.id), vbeln));
                 itemsCache.set(vbeln, jd.data);
                 return jd.data;
@@ -1215,7 +1232,8 @@
                         const js = await res.json();
                         if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
 
-                        wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
+                        const soRows = uniqBy(js.data, r => `${r.VBELN}`);
+                        wrap.innerHTML = renderLevel2_SO(soRows, kunnr);
                         wrap.dataset.loaded = '1';
 
                         const soTable = wrap.querySelector('table');
@@ -1528,13 +1546,13 @@
                 ${it.is_owner ? 
                     // [MODIFIKASI BARU] Tombol Edit
                     `<button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark" data-id="${it.id}" data-remark="${escapeHtml(it.remark || '')}" title="Edit Catatan">
-                                                            <i class="fas fa-pencil-alt"></i>
-                                                        </button>` : ''}
+                                                                                    <i class="fas fa-pencil-alt"></i>
+                                                                                </button>` : ''}
                 ${it.is_owner ? 
                     // Tombol Delete
                     `<button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark" data-id="${it.id}" title="Hapus Catatan">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>` : ''}
+                                                                                    <i class="fas fa-trash"></i>
+                                                                                </button>` : ''}
             </div>`;
                         rmList.appendChild(item);
                     });
@@ -1803,12 +1821,12 @@
 
                     const response = await fetch(apiUrl);
                     const result = await response.json();
+                    const rows = uniqBy(result.data, r => `${r.SO}|${r.POSNR}|${r.MATNR ?? ''}`);
 
-                    if (result.ok && result.data.length > 0) {
-                        const uniqSO = new Set(result.data.map(r => (r.SO || '').toString().trim()).filter(
-                            Boolean));
+                    if (result.ok && rows.length > 0) {
+                        const uniqSO = new Set(rows.map(r => (r.SO || '').toString().trim()).filter(Boolean));
                         const totalSO = uniqSO.size;
-                        const totalItem = result.data.length;
+                        const totalItem = rows.length;
                         exportSmallQtyPdfBtn.disabled = false;
 
                         if (exportForm) {
@@ -2133,6 +2151,7 @@
                     if (POSNR6 && itemsBox) {
                         const itemTr = findItemRow(itemsBox, VBELN, POSNR6);
                         if (itemTr) scrollAndFlash(itemTr);
+                        soRow.classList.remove('row-highlighted');
                     }
                     return;
                 }
