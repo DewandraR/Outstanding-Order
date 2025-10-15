@@ -53,12 +53,15 @@
                 // Aktif jika di Dashboard ATAU Report Detail SO
                 $isSoActive = request()->routeIs('so.dashboard') || request()->routeIs('so.index');
 
-                // 🚨 KUNCI PERBAIKAN: Aktif jika di Stock Dashboard, Stock Report, atau Stock Issue
+                // Aktif jika di Stock Dashboard, Stock Report, atau Stock Issue
                 $isStockActive =
                     request()->routeIs('stock.dashboard') ||
                     request()->routeIs('stock.index') ||
                     request()->routeIs('stock.issue');
-                // -----------------------------
+
+                // ====== TARGET SEARCH BERDASARKAN KONTEN AKTIF ======
+                // Jika SO aktif -> 'so'; jika Stock aktif -> 'stock'; selain itu default 'po'
+                $searchTarget = $isSoActive ? 'so' : ($isStockActive ? 'stock' : 'po');
             @endphp
 
             {{-- NAV & SEARCH only for logged-in user --}}
@@ -66,13 +69,16 @@
                 <ul class="sidebar-nav">
                     {{-- Search --}}
                     <li class="nav-item px-2 mt-2 mb-2">
-                        {{-- ASUMSI: Route search dashboard ada --}}
-                        <form action="{{ route('dashboard.search') }}" method="POST" class="sidebar-search-form">
+                        {{-- Route search dashboard --}}
+                        <form action="{{ route('dashboard.search') }}" method="POST" class="sidebar-search-form"
+                            id="sidebar-global-search">
                             @csrf
                             <div class="input-group">
                                 <input type="text" class="form-control" name="term" placeholder="Search PO / SO No..."
                                     required value="{{ request('term') ?? ($decryptedQ['search_term'] ?? '') }}"
                                     aria-label="Search SO or PO Number">
+                                {{-- HIDDEN: target dikirim ke controller untuk menentukan report tujuan --}}
+                                <input type="hidden" name="target" id="search-target" value="{{ $searchTarget }}">
                                 <button class="btn btn-search" type="submit">
                                     <i class="fas fa-search"></i>
                                 </button>
@@ -85,21 +91,24 @@
 
                     {{-- PO Dashboard (visual) & Report --}}
                     <li class="nav-item">
-                        <a class="nav-link {{ $isPoActive ? 'active' : '' }}" href="{{ route('dashboard') }}">
+                        <a class="nav-link {{ $isPoActive ? 'active' : '' }}" href="{{ route('dashboard') }}"
+                            data-report-target="po">
                             <i class="fas fa-chart-line nav-icon"></i> Outstanding PO
                         </a>
                     </li>
 
                     {{-- SO Dashboard (visual) & Report --}}
                     <li class="nav-item">
-                        <a class="nav-link {{ $isSoActive ? 'active' : '' }}" href="{{ route('so.dashboard') }}">
+                        <a class="nav-link {{ $isSoActive ? 'active' : '' }}" href="{{ route('so.dashboard') }}"
+                            data-report-target="so">
                             <i class="fas fa-chart-pie nav-icon"></i> Outstanding SO
                         </a>
                     </li>
 
                     {{-- Stock Dashboard & Report (Termasuk Stock Issue) --}}
                     <li class="nav-item">
-                        <a class="nav-link {{ $isStockActive ? 'active' : '' }}" href="{{ route('stock.dashboard') }}">
+                        <a class="nav-link {{ $isStockActive ? 'active' : '' }}" href="{{ route('stock.dashboard') }}"
+                            data-report-target="stock">
                             <i class="fas fa-warehouse nav-icon"></i> Stock Dashboard
                         </a>
                     </li>
@@ -204,11 +213,9 @@
     </div>
 
     {{-- Script vendor --}}
-
     <script src="{{ asset('vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 
-    {{-- Toggle sidebar (mobile) --}}
-
+    {{-- Toggle sidebar (mobile) + sinkronisasi target search --}}
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const sidebarToggler = document.getElementById('sidebar-toggler');
@@ -219,6 +226,27 @@
                 const toggleSidebar = () => sidebar.classList.toggle('is-open');
                 sidebarToggler.addEventListener('click', toggleSidebar);
                 overlay.addEventListener('click', toggleSidebar);
+            }
+
+            // === Sinkronkan hidden "target" berdasarkan link sidebar yang aktif ===
+            const targetInput = document.getElementById('search-target');
+            if (targetInput) {
+                // Saat load: jika ada nav-link.active yang punya data-report-target, pakai itu
+                const activeLink = document.querySelector('.sidebar-nav .nav-link.active[data-report-target]');
+                if (activeLink && activeLink.dataset.reportTarget) {
+                    targetInput.value = activeLink.dataset.reportTarget;
+                }
+
+                // Jika user mengklik menu sebelum submit search (SPA-like), set target sementara
+                document.querySelectorAll('.sidebar-nav .nav-link[data-report-target]').forEach(a => {
+                    a.addEventListener('click', () => {
+                        if (a.dataset.reportTarget) {
+                            targetInput.value = a.dataset.reportTarget;
+                        }
+                    }, {
+                        passive: true
+                    });
+                });
             }
         });
 

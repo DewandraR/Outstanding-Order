@@ -633,15 +633,28 @@ class DashboardController extends Controller
     {
         // 1) Validasi input
         $request->validate([
-            'term' => 'required|string|max:100',
+            'term'   => 'required|string|max:100',
+            'target' => 'nullable|in:po,so,stock',
         ]);
 
-        $term = trim((string) $request->input('term'));
+        $term   = trim((string) $request->input('term'));
+        $target = $request->input('target');
+
+        // Fallback kalau hidden "target" tak terkirim: deteksi dari referer
+        if (!$target) {
+            $ref = (string) $request->headers->get('referer', '');
+            if (\Illuminate\Support\Str::contains($ref, ['/so-dashboard'])) {
+                $target = 'so';
+            } elseif (\Illuminate\Support\Str::contains($ref, ['/stock-dashboard'])) {
+                $target = 'stock';
+            } else {
+                $target = 'po';
+            }
+        }
 
         // 2) Cari di T2 (SO/PO) – cocokkan ke VBELN atau BSTNK
         $soInfo = DB::table('so_yppr079_t2')
             ->where(function ($q) use ($term) {
-                // TRIM/CAST agar aman terhadap leading zeros dan tipe kolom
                 $q->whereRaw('TRIM(CAST(VBELN AS CHAR)) = ?', [$term])
                     ->orWhereRaw('TRIM(CAST(BSTNK AS CHAR)) = ?', [$term]);
             })
@@ -655,50 +668,95 @@ class DashboardController extends Controller
         }
 
         $werks = trim((string) $soInfo->IV_WERKS_PARAM);   // '2000' | '3000'
-        $auart = trim((string) $soInfo->IV_AUART_PARAM);   // contoh: 'ZRP1', 'ZRP2', 'KMI1', dst.
+        $auart = trim((string) $soInfo->IV_AUART_PARAM);
 
-        // 3) Jika AUART adalah ZRP*, ganti menjadi AUART Export untuk plant tsb
-        //    (Export = deskripsi mengandung "export" dan TIDAK mengandung "local"/"replace")
+        /*
+     |------------------------------------------
+     | Cabang: SO Report
+     | route name: so.index  (/outstanding-so)
+     |------------------------------------------
+     */
+        if ($target === 'so') {
+            $payload = [
+                'view'            => 'so',
+                'werks'           => $werks,
+                'auart'           => $auart,   // <-- tambahkan ini
+                'auto'            => 1,
+                'highlight_kunnr' => $soInfo->KUNNR,
+                'highlight_vbeln' => $soInfo->VBELN,
+                'search_term'     => $term,
+            ];
+
+            $q = Crypt::encrypt($payload);
+            return redirect()->route('so.index', ['q' => $q]);
+        }
+
+        /*
+     |------------------------------------------
+     | Cabang: Stock Report
+     | route name: stock.index  (/stock-report)
+     |------------------------------------------
+     */
+        if ($target === 'stock') {
+            $payload = [
+                'view'             => 'stock',
+                'werks'            => $werks,
+                'auto_expand'      => 1,                 // untuk konsistensi dengan pola "expand"
+                'highlight_kunnr'  => $soInfo->KUNNR,
+                'highlight_vbeln'  => $soInfo->VBELN,
+                'highlight_bstnk'  => $soInfo->BSTNK,
+                'search_term'      => $term,
+            ];
+
+            $q = Crypt::encrypt($payload);
+            return redirect()->route('stock.index', ['q' => $q]);
+        }
+
+        /*
+     |------------------------------------------
+     | Default: PO Report (existing behaviour)
+     | route name: po.report  (/po-report)
+     | Termasuk logika mapping ZRP -> Export AUART
+     |------------------------------------------
+     */
         $auartForReport = $auart;
-        if (Str::startsWith($auart, 'ZRP')) {
+        if (strtoupper($auart) === 'ZRP') {
             $exportAuart = DB::table('maping')
                 ->where('IV_WERKS', $werks)
                 ->whereRaw("LOWER(Deskription) LIKE '%export%'")
                 ->whereRaw("LOWER(Deskription) NOT LIKE '%local%'")
                 ->whereRaw("LOWER(Deskription) NOT LIKE '%replace%'")
-                ->value('IV_AUART'); // ambil satu (yang utama) untuk plant tersebut
+                ->value('IV_AUART'); // ambil satu (yang utama) untuk plant tsb
 
             if (!empty($exportAuart)) {
                 $auartForReport = trim((string) $exportAuart);
             }
-            // jika tidak ketemu mapping Export, fallback tetap pakai AUART ZRP
         }
+
         $params = [
-            'view'             => 'po',               // paksa konteks PO
+            'view'             => 'po',
             'werks'            => $werks,
-            'auart'            => $auartForReport,    // << kunci: bila ZRP diganti ke Export
+            'auart'            => $auartForReport,
             'compact'          => 1,
             'auto_expand'      => 1,                  // sinyal buka T2
             'highlight_kunnr'  => $soInfo->KUNNR,
             'highlight_vbeln'  => $soInfo->VBELN,
             'highlight_bstnk'  => $soInfo->BSTNK,
             'search_term'      => $term,
-            // kompatibilitas lama jika ada JS membaca 'auto'
-            'auto'             => 1,
+            'auto'             => 1,                  // kompatibilitas lama jika ada JS baca "auto"
         ];
 
-        // 5) Enkripsi & redirect ke route po.report
         $encrypted = Crypt::encrypt($params);
 
         return redirect()->route('po.report', [
-            'q'                => $encrypted,
-            // kirimkan juga param plaintext untuk kenyamanan di sisi view/JS
-            'auto_expand'      => 1,
-            'highlight_kunnr'  => $soInfo->KUNNR,
-            'highlight_vbeln'  => $soInfo->VBELN,
-            'highlight_bstnk'  => $soInfo->BSTNK,
+            'q'               => $encrypted,
+            'auto_expand'     => 1,
+            'highlight_kunnr' => $soInfo->KUNNR,
+            'highlight_vbeln' => $soInfo->VBELN,
+            'highlight_bstnk' => $soInfo->BSTNK,
         ]);
     }
+
 
 
     public function redirector(Request $request)

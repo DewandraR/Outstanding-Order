@@ -665,8 +665,8 @@
     <script src="{{ asset('vendor/chartjs/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
     <script>
         /* =========================================================
-                        Helper: apply filter (POST -> so.redirector)
-                    ========================================================= */
+                                                Helper: apply filter (POST -> so.redirector)
+                                            ========================================================= */
         function applySoFilter(params) {
             const f = document.createElement('form');
             f.method = 'POST';
@@ -1263,6 +1263,7 @@
                                 }
                                 itemTr.style.display = '';
                                 updateT2FooterVisibility(t2tbl);
+                                soRow.classList.remove('row-highlighted');
 
                                 if (itemTr.dataset.loaded === '1') {
                                     applySelectionsToRenderedItems(box);
@@ -1527,13 +1528,13 @@
                 ${it.is_owner ? 
                     // [MODIFIKASI BARU] Tombol Edit
                     `<button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark" data-id="${it.id}" data-remark="${escapeHtml(it.remark || '')}" title="Edit Catatan">
-                                    <i class="fas fa-pencil-alt"></i>
-                                </button>` : ''}
+                                                            <i class="fas fa-pencil-alt"></i>
+                                                        </button>` : ''}
                 ${it.is_owner ? 
                     // Tombol Delete
                     `<button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark" data-id="${it.id}" title="Hapus Catatan">
-                                    <i class="fas fa-trash"></i>
-                                </button>` : ''}
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>` : ''}
             </div>`;
                         rmList.appendChild(item);
                     });
@@ -2036,8 +2037,7 @@
                             behavior: 'smooth',
                             block: 'center'
                         });
-                        el.classList.add('row-highlighted');
-                        setTimeout(() => el.classList.remove('row-highlighted'), 3000);
+                        el.classList.add('row-highlighted'); // persist (tanpa timeout)
                     } catch {}
                 };
                 const findItemRow = (box, vbeln, pos6) => {
@@ -2048,14 +2048,20 @@
                     }
                     return null;
                 };
-                const openToSO = async (customerRow) => {
+                const openToSO = async (customerRow, {
+                    openItems = false
+                } = {}) => {
                     if (!customerRow) return {
                         wrap: null,
                         soRow: null,
                         itemsBox: null
                     };
+
+                    // pastikan level-1 terbuka
                     if (!customerRow.classList.contains('is-open')) customerRow.click();
+
                     const wrap = customerRow.nextElementSibling?.querySelector('.yz-nest-wrap');
+                    // tunggu Tabel-2 ter-render
                     const okT2 = await waitFor(() => wrap && wrap.dataset.loaded === '1', {
                         timeout: 7000
                     });
@@ -2064,6 +2070,7 @@
                         soRow: null,
                         itemsBox: null
                     };
+
                     const soRow = wrap.querySelector(
                         `.js-t2row[data-vbeln='${CSS.escape(VBELN)}']`);
                     if (!soRow) return {
@@ -2071,10 +2078,22 @@
                         soRow: null,
                         itemsBox: null
                     };
+
                     const itemNest = soRow.nextElementSibling;
                     const itemsBox = itemNest?.querySelector('.yz-slot-items');
-                    const opened = itemNest && itemNest.style.display !== 'none';
-                    if (!opened) soRow.click();
+                    const isOpen = itemNest && itemNest.style.display !== 'none';
+
+                    // Buka Tabel-3 hanya jika diminta (remark / ada POSNR)
+                    if (openItems && !isOpen) soRow.click();
+
+                    if (!openItems) {
+                        return {
+                            wrap,
+                            soRow,
+                            itemsBox: null
+                        }; // untuk search: cukup Tabel-2
+                    }
+
                     const okT3 = await waitFor(() => itemNest && itemNest.dataset.loaded === '1', {
                         timeout: 7000
                     });
@@ -2083,6 +2102,7 @@
                         soRow,
                         itemsBox: null
                     };
+
                     return {
                         wrap,
                         soRow,
@@ -2100,26 +2120,35 @@
                     const {
                         soRow,
                         itemsBox
-                    } = await openToSO(crow);
+                    } = await openToSO(crow, {
+                        openItems: !!POSNR6
+                    });
+
                     if (!soRow) return;
-                    const target = (POSNR6 && findItemRow(itemsBox, VBELN, POSNR6)) ||
-                        Array.from(itemsBox?.querySelectorAll('tr[data-item-id]') || []).find(tr => {
-                            const badge = tr.querySelector('.remark-count-badge');
-                            return badge && Number(badge.dataset.count || 0) > 0;
-                        });
-                    scrollAndFlash(target || soRow);
+
+                    // Selalu highlight baris SO (Tabel-2)
+                    scrollAndFlash(soRow);
+
+                    // Kalau ada POSNR: highlight juga baris item di Tabel-3
+                    if (POSNR6 && itemsBox) {
+                        const itemTr = findItemRow(itemsBox, VBELN, POSNR6);
+                        if (itemTr) scrollAndFlash(itemTr);
+                    }
                     return;
                 }
 
                 if (VBELN && !KUNNR) {
                     let foundSoRow = null,
                         foundItemsBox = null;
+
                     const customerRows = Array.from(document.querySelectorAll('.yz-customer-card'));
                     for (const row of customerRows) {
                         const {
                             soRow,
                             itemsBox
-                        } = await openToSO(row);
+                        } = await openToSO(row, {
+                            openItems: !!POSNR6
+                        });
                         if (soRow) {
                             foundSoRow = soRow;
                             foundItemsBox = itemsBox;
@@ -2127,12 +2156,15 @@
                         }
                     }
                     if (!foundSoRow) return;
-                    const target = (POSNR6 && findItemRow(foundItemsBox, VBELN, POSNR6)) ||
-                        Array.from(foundItemsBox?.querySelectorAll('tr[data-item-id]') || []).find(tr => {
-                            const badge = tr.querySelector('.remark-count-badge');
-                            return badge && Number(badge.dataset.count || 0) > 0;
-                        });
-                    scrollAndFlash(target || foundSoRow);
+
+                    // Selalu highlight baris SO (Tabel-2)
+                    scrollAndFlash(foundSoRow);
+
+                    // Kalau ada POSNR: highlight juga baris item di Tabel-3
+                    if (POSNR6 && foundItemsBox) {
+                        const itemTr = findItemRow(foundItemsBox, VBELN, POSNR6);
+                        if (itemTr) scrollAndFlash(itemTr);
+                    }
                 }
             })();
         });

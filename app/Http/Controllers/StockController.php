@@ -15,7 +15,7 @@ class StockController extends Controller
 {
     public function index(Request $request)
     {
-        // ⬅️ DECRYPT ?q jika ada
+        // ⬅️ DECRYPT ?q jika ada lalu merge ke request
         if ($request->filled('q')) {
             try {
                 $data = Crypt::decrypt($request->query('q'));
@@ -25,6 +25,7 @@ class StockController extends Controller
             }
         }
 
+        // Mapping untuk sidebar/label
         $mapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
             ->orderBy('IV_WERKS')->orderBy('IV_AUART')
@@ -34,14 +35,10 @@ class StockController extends Controller
 
         $werks = $request->query('werks');
 
-        // ⬅️ redirect default TYPE tapi dalam bentuk terenkripsi
-        if ($werks && !$request->has('type')) {
-            $enc = Crypt::encrypt(['werks' => $werks, 'type' => 'whfg']);
-            return redirect()->route('stock.index', ['q' => $enc]);
-        }
-
+        // ✅ OPSI A: TANPA REDIRECT — default type diset langsung
         $type = $request->query('type') === 'fg' ? 'fg' : 'whfg';
 
+        // Data untuk pill totals (qty)
         $pillTotals = ['whfg_qty' => 0, 'fg_qty' => 0];
         if ($werks) {
             $pillTotals['whfg_qty'] = (float) DB::table('so_yppr079_t1')
@@ -74,7 +71,7 @@ class StockController extends Controller
                         DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
                         DB::raw('SUM(t1.KALAB) AS TOTAL_QTY')
                     );
-            } else {
+            } else { // fg
                 $q->where('t1.KALAB2', '>', 0)
                     ->select(
                         't1.KUNNR',
@@ -90,15 +87,15 @@ class StockController extends Controller
                 ->orderBy('t1.NAME1', 'asc')
                 ->paginate(25);
 
-            // ⬅️ hanya append ?q agar tidak bocor lagi
+            // ⬅️ hanya append ?q agar tidak bocor parameter lain
             if ($request->filled('q')) {
                 $rows->appends(['q' => $request->query('q')]);
             }
 
-            // MENGAMBIL TOTAL QTY DARI PILlTOTALS
+            // Total Qty global (pakai pillTotals)
             $grandTotalQty = ($type === 'whfg') ? $pillTotals['whfg_qty'] : $pillTotals['fg_qty'];
 
-            // MENGAMBIL TOTAL NILAI BERDASARKAN CURRENCY DARI DATABASE
+            // Total Value global per currency
             $valueQuery = DB::table('so_yppr079_t1')
                 ->select('WAERK', DB::raw(
                     $type === 'whfg' ? 'SUM(NETPR * KALAB) as val' : 'SUM(NETPR * KALAB2) as val'
@@ -109,15 +106,17 @@ class StockController extends Controller
                 ->groupBy('WAERK')
                 ->get();
 
-            foreach ($valueQuery as $r) $grandTotalsCurr[$r->WAERK] = (float) $r->val;
+            foreach ($valueQuery as $r) {
+                $grandTotalsCurr[$r->WAERK] = (float) $r->val;
+            }
         }
 
         return view('stock_report', [
             'mapping'         => $mapping,
             'rows'            => $rows,
             'selected'        => ['werks' => $werks, 'type' => $type],
-            'grandTotalQty'   => $grandTotalQty,   // DIKIRIM KE BLADE
-            'grandTotalsCurr' => $grandTotalsCurr, // DIKIRIM KE BLADE
+            'grandTotalQty'   => $grandTotalQty,
+            'grandTotalsCurr' => $grandTotalsCurr,
             'pillTotals'      => $pillTotals,
         ]);
     }
@@ -133,7 +132,7 @@ class StockController extends Controller
     }
 
     /**
-     * API: Ambil daftar SO untuk 1 customer (level-2 table).
+     * API: Ambil daftar SO untuk 1 customer (Level-2).
      */
     public function getSoByCustomer(Request $request)
     {
@@ -141,7 +140,13 @@ class StockController extends Controller
         $type = $request->type === 'fg' ? 'fg' : 'whfg';
 
         $rows = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
+            // ✅ JOIN AMAN (TRIM/CAST) untuk antisipasi tipe kolom berbeda/padding
+            ->leftJoin(
+                'so_yppr079_t2 as t2',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
             ->where('t1.KUNNR', $request->kunnr)
             ->where('t1.IV_WERKS_PARAM', $request->werks);
 
@@ -185,11 +190,14 @@ class StockController extends Controller
             $row->FormattedEdatu = $formattedEdatu;
         }
 
-        return response()->json(['ok' => true, 'data' => collect($rows)->sortBy('Overdue')->values()]);
+        return response()->json([
+            'ok'   => true,
+            'data' => collect($rows)->sortBy('Overdue')->values()
+        ]);
     }
 
     /**
-     * API: Ambil item untuk 1 SO (level-3 table).
+     * API: Ambil item untuk 1 SO (Level-3).
      */
     public function getItemsBySo(Request $request)
     {
@@ -213,7 +221,7 @@ class StockController extends Controller
                     ELSE (KALAB2 * NETPR)
                 END as VALUE")
             )
-            ->where('VBELN', $request->vbeln)
+            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = TRIM(?)', [$request->vbeln])
             ->where('IV_WERKS_PARAM', $request->werks)
             ->when($type === 'whfg', fn($q) => $q->where('KALAB', '>', 0))
             ->when($type === 'fg', fn($q) => $q->where('KALAB2', '>', 0))
@@ -254,7 +262,7 @@ class StockController extends Controller
                 't1.KALAB2',
                 't1.NETPR',
                 't1.WAERK',
-                // Ambil info header tambahan (NAME1/Customer Name, PO/BSTNK)
+                // Info header tambahan (Customer Name, PO)
                 DB::raw("(SELECT NAME1 FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS NAME1"),
                 DB::raw("(SELECT BSTNK FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS BSTNK")
             )
@@ -263,7 +271,7 @@ class StockController extends Controller
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
-        $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName = $locationMap[$werks] ?? $werks;
         $stockType    = $type === 'whfg' ? 'WHFG' : 'PACKING';
 
@@ -271,17 +279,15 @@ class StockController extends Controller
         $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".{$fileExtension}";
 
         if ($exportType === 'excel') {
-            // 🟢 MENGAKTIFKAN EXCEL DOWNLOAD
             return Excel::download(new StockItemsExport($items, $type), $fileName);
         }
 
-        // PDF: Pastikan data untuk header info ada di level terluar (seperti yang dilakukan di subquery)
         $dataForPdf = [
-            'items'          => $items,
-            'locationName'   => $locationName,
-            'werks'          => $werks,
-            'stockType'      => $stockType,
-            'today'          => now(),
+            'items'        => $items,
+            'locationName' => $locationName,
+            'werks'        => $werks,
+            'stockType'    => $stockType,
+            'today'        => now(),
         ];
 
         $pdf = Pdf::loadView('sales_order.stock_pdf_template', $dataForPdf)

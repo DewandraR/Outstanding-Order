@@ -62,7 +62,11 @@
         use Illuminate\Support\Facades\Crypt;
     @endphp
 
-    <div id="stock-root" data-werks="{{ $selectedWerks ?? '' }}" data-type="{{ $selectedType ?? '' }}" style="display:none">
+    <div id="stock-root" data-werks="{{ $selectedWerks ?? '' }}" data-type="{{ $selectedType ?? '' }}"
+        data-auto-expand="{{ (int) request()->boolean('auto_expand', $selected['auto_expand'] ?? false) }}"
+        data-h-kunnr="{{ request('highlight_kunnr', '') }}" data-h-vbeln="{{ request('highlight_vbeln', '') }}"
+        data-h-bstnk="{{ request('highlight_bstnk', '') }}" data-h-posnr="{{ request('highlight_posnr', '') }}"
+        style="display:none">
     </div>
 
     {{-- =========================================================
@@ -233,7 +237,8 @@
 
                                     {{-- Total Stock Value --}}
                                     <div class="metric-box fs-5 mx-4 text-end" style="min-width: 180px;">
-                                        <div class="fw-bold fs-4 text-dark">{{ $formatTotalsStock($grandTotalsCurr) }}</div>
+                                        <div class="fw-bold fs-4 text-dark">{{ $formatTotalsStock($grandTotalsCurr) }}
+                                        </div>
                                         <div class="small text-muted">Total Value</div>
                                     </div>
                                 </div>
@@ -701,6 +706,9 @@
                                     return;
                                 }
 
+                                // ⬇️ HILANGKAN HIGHLIGHT SAAT USER MEMBUKA TABEL 3
+                                soRow.classList.remove('row-highlighted');
+
                                 await openItemsIfNeededForSORow(soRow);
                                 soTbodyLocal?.classList.add(
                                     'so-focus-mode');
@@ -766,6 +774,7 @@
                                     return;
                                 }
 
+                                soRow.classList.remove('row-highlighted');
                                 await openItemsIfNeededForSORow(soRow);
                                 soTbodyLocal?.classList.add(
                                     'so-focus-mode');
@@ -936,6 +945,111 @@
                     document.body.removeChild(form);
                 });
             }
+        });
+    </script>
+@endpush
+
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const root = document.getElementById('stock-root');
+            if (!root) return;
+
+            const needAuto = parseInt(root.dataset.autoExpand || '0') === 1;
+            const HL_KUNNR = (root.dataset.hKunnr || '').trim();
+            const HL_VBELN = (root.dataset.hVbeln || '').trim();
+            const HL_POSNR = (root.dataset.hPosnr || '').trim();
+
+            // Kalau tidak ada auto_expand & tidak ada target SO, tidak perlu lanjut
+            if (!needAuto && !HL_VBELN) return;
+
+            // Polyfill CSS.escape
+            if (!window.CSS) window.CSS = {};
+            if (typeof window.CSS.escape !== 'function') {
+                window.CSS.escape = s => String(s).replace(/([^\w-])/g, '\\$1');
+            }
+
+            // Helpers
+            const onlyDigits = s => String(s || '').replace(/\D/g, '');
+            const pad10 = s => onlyDigits(s).padStart(10, '0');
+            const pad6 = s => onlyDigits(s).padStart(6, '0');
+            const wait = (ms) => new Promise(res => setTimeout(res, ms));
+
+            const scrollAndFlash = (el) => {
+                if (!el) return;
+                el.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                el.classList.add('row-highlighted'); // persist, tidak ada timeout
+            };
+
+
+            // Temukan kartu customer (Level 1)
+            const findCustomerCard = () => {
+                const d = onlyDigits(HL_KUNNR);
+                if (!d) return null;
+                return document.querySelector(`.yz-customer-card[data-kunnr='${CSS.escape(pad10(d))}']`) ||
+                    document.querySelector(`.yz-customer-card[data-kunnr$='${CSS.escape(d)}']`);
+            };
+
+            (async () => {
+                const card = findCustomerCard();
+                if (!card) return;
+
+                const slotId = card.dataset.kid;
+                const slot = document.getElementById(slotId);
+                if (!slot) return;
+
+                // ❗ Klik SEKALI saja bila belum terbuka (pakai class, bukan style)
+                if (!card.classList.contains('is-open')) {
+                    card.click(); // listener di script utama akan: focus mode + load Tabel 2
+                }
+
+                // Tunggu sampai Tabel 2 (SO list) sudah ter-render
+                let tries = 0;
+                while (tries++ < 150) {
+                    if (slot.querySelector('.js-t2row')) break;
+                    await wait(80);
+                }
+
+                const t2Rows = Array.from(slot.querySelectorAll('.js-t2row'));
+                if (!t2Rows.length) return;
+
+                // Cari SO yang dimaksud (VBELN); fallback ke baris pertama
+                const targetRow =
+                    (HL_VBELN && slot.querySelector(`.js-t2row[data-vbeln='${CSS.escape(HL_VBELN)}']`)) ||
+                    t2Rows[0];
+
+                if (!targetRow) return;
+
+                // Highlight baris SO (Tabel 2)
+                document.querySelectorAll('.row-highlighted').forEach(el => el.classList.remove(
+                    'row-highlighted'));
+                scrollAndFlash(targetRow);
+
+                // Auto-buka & highlight item tertentu (opsional, jika POSNR dikirim)
+                if (HL_POSNR && typeof openItemsIfNeededForSORow === 'function') {
+                    openItemsIfNeededForSORow(targetRow);
+
+                    let tries2 = 0,
+                        t3row = null,
+                        wanted = pad6(HL_POSNR);
+                    while (tries2++ < 120) {
+                        const nest = targetRow.nextElementSibling;
+                        if (!nest) break;
+                        const rows = Array.from(nest.querySelectorAll('tbody tr[data-item-id]'));
+                        if (rows.length) {
+                            t3row = rows.find(tr => pad6((tr.children[1]?.textContent || '').trim()) ===
+                                wanted) || null;
+                            if (t3row) break;
+                        }
+                        await wait(80);
+                    }
+                    if (t3row) scrollAndFlash(t3row);
+                }
+            })();
         });
     </script>
 @endpush
