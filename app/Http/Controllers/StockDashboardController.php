@@ -12,7 +12,7 @@ class StockDashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $allowedUserIds = [1];
+        $allowedUserIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12];
         $isAllowedUser = Auth::check() && in_array(Auth::id(), $allowedUserIds);
 
         // 2. Definisi menu Stock Issue untuk Semarang (3000)
