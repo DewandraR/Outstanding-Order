@@ -1364,42 +1364,6 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             });
         }
 
-        async function prefetchRemarkCountsForBox(box) {
-            const rows = box.querySelectorAll("tr[data-vbeln][data-werks-key][data-auart-key][data-posnr-db]");
-            if (!rows.length) return;
-
-            await Promise.allSettled(Array.from(rows).map(async (row) => {
-                const keys = {
-                    werks: row.dataset.werksKey,
-                    auart: row.dataset.auartKey,
-                    vbeln: row.dataset.vbeln,
-                    posnr: row.dataset.posnrDb
-                };
-
-                const url = new URL(API_REMARK_LIST, window.location.origin);
-                Object.entries(keys).forEach(([k, v]) => url.searchParams.set(k, v));
-
-                try {
-                    const res = await fetch(url);
-                    const js = await res.json();
-                    const count = (res.ok && js.ok && Array.isArray(js.data)) ? js.data.length : 0;
-
-                    const badge = row.querySelector('.remark-count-badge');
-                    if (badge) {
-                        badge.textContent = String(count);
-                        badge.style.display = count > 0 ? 'inline-flex' : 'none';
-                    }
-                } catch (_) {
-                    /* abaikan error per item */
-                }
-            }));
-
-            // Setelah badge-badge item terisi, update flag di baris SO (T2)
-            const any = rows[0];
-            if (any) window.updatePoRemarkFlagFromDom(any.dataset.vbeln);
-        }
-        /* ==================== END REMARK (Multi-user) ==================== */
-
 
         /* ====================== RENDER & HELPER T2/T3/ETC ====================== */
         function updateT2FooterVisibility(t2Table) {
@@ -2051,7 +2015,6 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
 
                 box.innerHTML = renderT3(j3.data);
                 tgt.dataset.loaded = '1';
-                prefetchRemarkCountsForBox(box);
 
                 // tetap panggil ini agar icon di T2 nyala jika ada item yang punya remark
                 if (window.updatePoRemarkFlagFromDom) {
@@ -2102,9 +2065,6 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
 
                     box.innerHTML = renderT3(j3.data);
                     nest.dataset.loaded = '1';
-
-                    // PRELOAD JUMLAH REMARK PER ITEM
-                    prefetchRemarkCountsForBox(box);
 
                     updatePoRemarkFlagFromDom(vbeln);
 
