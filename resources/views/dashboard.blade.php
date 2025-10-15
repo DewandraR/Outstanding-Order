@@ -393,17 +393,28 @@
         <div class="col-lg-12">
             <div class="card yz-card shadow-sm h-100" id="po-remark-inline-container">
                 <div class="card-body d-flex flex-column">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
                         <h5 class="card-title" data-help-key="po.items_with_remark">
                             <i class="fas fa-sticky-note me-2"></i>PO Item with Remark
                         </h5>
+                        {{-- START: TOGGLE BARU MIRIP KPI --}}
+                        <div class="btn-group-toggle-kpi" id="po-remark-plant-toggle">
+                            <button type="button" data-loc="" class="active">All Plant</button>
+                            <button type="button" data-loc="3000">SMG</button>
+                            <button type="button" data-loc="2000">SBY</button>
+                        </div>
+                        {{-- END: TOGGLE BARU MIRIP KPI --}}
+
                     </div>
+
                     <hr class="mt-2">
                     <div id="po-remark-list-box-inline" class="flex-grow-1">
                         <div class="text-center text-muted py-4">
-                            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                            <div class="spinner-border spinner-border-sm me-2"></div> Loading
+                            data...
                         </div>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -1036,16 +1047,18 @@
         /* ======================== PO: ITEM WITH REMARK (INLINE) ======================== */
         (function poItemWithRemarkTableOnly() {
             const apiRemarkItems = "{{ route('po.api.remark_items') }}";
-            const apiRemarkDelete = "{{ route('po.api.remark_delete') }}"; // (route delete memang tidak dipakai)
-
             const listBox = document.getElementById('po-remark-list-box-inline');
             if (!listBox) return;
 
             const dataHolder = document.getElementById('dashboard-data-holder');
-            const currentLocation = dataHolder?.dataset.currentLocation || null; // '2000' | '3000' | ''
-            const currentType = dataHolder?.dataset.selectedType || null; // 'lokal' | 'export' | ''
+            // Ambil lokasi awal dari filter dashboard utama
+            let currentRemarkLocation = dataHolder?.dataset.currentLocation || ''; // '2000' | '3000' | ''
+            // Ambil type dari filter dashboard utama
+            const currentType = dataHolder?.dataset.selectedType || null; // 'lokal' | 'export' | null
 
             const mappingData = JSON.parse(dataHolder.dataset.mappingData || '{}');
+
+            // --- HELPER FUNCTIONS LOKAL ---
             const findExportAuart = (werks) => {
                 const list = (mappingData && mappingData[werks]) || [];
                 for (const t of list) {
@@ -1085,10 +1098,12 @@
                 '3000': 'Semarang'
             } [String(w || '').trim()] || (w ?? ''));
             const auartDesc = auartMap;
+            // --- END HELPER FUNCTIONS LOKAL ---
 
+            // --- FUNGSI UTAMA BUILD TABLE ---
             function buildTable(rows) {
                 if (!rows?.length) {
-                    return `<div class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark.</div>`;
+                    return `<div class="text-center text-muted py-4"><i class="fas fa-info-circle me-2"></i>Tidak ada item dengan remark untuk filter saat ini.</div>`;
                 }
 
                 const body = rows.map((r, i) => {
@@ -1101,17 +1116,15 @@
                     const plant = plantName(werks);
                     const kunnr = (r.KUNNR || '').trim();
 
-                    // ⬇️ tambahkan logika ZRP -> Export
                     const isZrp = auart === 'ZRP1' || auart === 'ZRP2';
                     const exportAuart = isZrp ? findExportAuart(werks) : null;
-                    const auartForReport = isZrp ? (exportAuart || auart) :
-                        auart; // fallback jika mapping export tidak ada
+                    const auartForReport = isZrp ? (exportAuart || auart) : auart;
                     const otName = auartDesc[auartForReport] || auartForReport || '-';
 
                     const postData = {
                         redirect_to: 'po.report',
                         werks: werks,
-                        auart: auartForReport, // ⬅️ kirim AUART Export (bukan ZRP)
+                        auart: auartForReport,
                         compact: 1,
                         highlight_kunnr: kunnr,
                         highlight_vbeln: so,
@@ -1120,48 +1133,56 @@
                     };
 
                     return `
-                    <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
-                    <td class="text-center">${i + 1}</td>
-                    <td class="text-center">${po || '-'}</td>
-                    <td class="text-center">${so || '-'}</td>
-                    <td class="text-center">${posnrDisp || '-'}</td>
-                    <td class="text-center">${plant || '-'}</td>
-                    <td class="text-center">${otName}</td>
-                    <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-                    </tr>`;
+                <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat laporan PO">
+                <td class="text-center">${i + 1}</td>
+                <td class="text-center">${po || '-'}</td>
+                <td class="text-center">${so || '-'}</td>
+                <td class="text-center">${posnrDisp || '-'}</td>
+                <td class="text-center">${plant || '-'}</td>
+                <td class="text-center">${otName}</td>
+                <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+                </tr>`;
                 }).join('');
 
                 return `
-                    <div class="yz-scrollable-table-container" style="max-height:420px;">
-                        <table class="table table-striped table-hover table-sm align-middle mb-0">
-                            <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                <tr>
-                                    <th class="text-center" style="width:60px;">No.</th>
-                                    <th class="text-center" style="min-width:120px;">PO</th>
-                                    <th class="text-center" style="min-width:110px;">SO</th>
-                                    <th class="text-center" style="min-width:80px;">Item</th>
-                                    <th class="text-center" style="min-width:110px;">Plant</th>
-                                    <th class="text-center" style="min-width:160px;">Order Type</th>
-                                    <th style="min-width:240px;">Remark</th>
-                                </tr>
-                            </thead>
-                            <tbody>${body}</tbody>
-                        </table>
-                    </div>
-                    <div class="small text-muted mt-2">Klik baris untuk membuka laporan PO terkait.</div>`;
+                <div class="yz-scrollable-table-container" style="max-height:420px;">
+                    <table class="table table-striped table-hover table-sm align-middle mb-0">
+                        <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                            <tr>
+                                <th class="text-center" style="width:60px;">No.</th>
+                                <th class="text-center" style="min-width:120px;">PO</th>
+                                <th class="text-center" style="min-width:110px;">SO</th>
+                                <th class="text-center" style="min-width:80px;">Item</th>
+                                <th class="text-center" style="min-width:110px;">Plant</th>
+                                <th class="text-center" style="min-width:160px;">Order Type</th>
+                                <th style="min-width:240px;">Remark</th>
+                            </tr>
+                        </thead>
+                        <tbody>${body}</tbody>
+                    </table>
+                </div>
+                <div class="small text-muted mt-2">Klik baris untuk membuka laporan PO terkait.</div>`;
             }
 
-            async function loadList() {
+            // --- FUNGSI LOAD DATA DARI API ---
+            async function loadList(locationCode = currentRemarkLocation) {
+                // Update state Plant yang aktif
+                currentRemarkLocation = locationCode;
+
                 const card = document.getElementById('po-remark-inline-container');
                 if (card) card.style.display = '';
                 listBox.innerHTML = `
-                    <div class="d-flex justify-content-center align-items-center py-4 text-muted">
-                        <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
-                    </div>`;
+                <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+                    <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+                </div>`;
 
                 try {
                     const url = new URL(apiRemarkItems, window.location.origin);
-                    if (currentLocation) url.searchParams.set('location', currentLocation);
+
+                    // Terapkan Plant filter dari toggle
+                    if (locationCode) url.searchParams.set('location', locationCode);
+
+                    // Terapkan Type filter dari dashboard utama
                     if (currentType) url.searchParams.set('type', currentType);
 
                     const res = await fetch(url, {
@@ -1178,6 +1199,43 @@
                 }
             }
 
+            // --- LOGIKA TOGGLE UI DAN EVENT LISTENER ---
+            const plantToggle = document.getElementById('po-remark-plant-toggle');
+            if (plantToggle) {
+                plantToggle.addEventListener('click', (e) => {
+                    const btn = e.target.closest('button[data-loc]');
+                    if (!btn) return;
+                    e.preventDefault();
+
+                    // Update UI toggle (hapus 'active' dari semua, tambahkan ke yang diklik)
+                    plantToggle.querySelectorAll('button').forEach(b => {
+                        b.classList.remove('active');
+                    });
+                    btn.classList.add('active');
+
+                    const nextLocation = btn.dataset.loc;
+
+                    // Perbarui filter dan muat ulang list
+                    loadList(nextLocation);
+                });
+
+                // Inisialisasi status tombol awal
+                const initialButton = plantToggle.querySelector(`button[data-loc="${currentRemarkLocation}"]`);
+
+                plantToggle.querySelectorAll('button').forEach(b => {
+                    b.classList.remove('active');
+                });
+
+                if (initialButton) {
+                    initialButton.classList.add('active');
+                } else {
+                    // Default ke "All Plant"
+                    plantToggle.querySelector('button[data-loc=""]').classList.add('active');
+                }
+            }
+            // --- END LOGIKA TOGGLE UI DAN EVENT LISTENER ---
+
+            // --- EVENT LISTENER KLIK BARIS (REDIRECT) ---
             listBox.addEventListener('click', (ev) => {
                 const tr = ev.target.closest('.js-remark-row');
                 if (!tr?.dataset.payload) return;
@@ -1197,6 +1255,7 @@
                 const csrf = document.createElement('input');
                 csrf.type = 'hidden';
                 csrf.name = '_token';
+                // Asumsi token tersedia di meta tag
                 csrf.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
                 form.appendChild(csrf);
 
@@ -1210,7 +1269,8 @@
                 form.submit();
             });
 
-            loadList();
+            // Panggil loadList untuk memuat data awal
+            loadList(currentRemarkLocation);
         })();
     </script>
 @endpush

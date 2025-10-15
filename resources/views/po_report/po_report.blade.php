@@ -874,7 +874,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                     block: 'center'
                 });
                 el.classList.add('row-highlighted');
-                setTimeout(() => el.classList.remove('row-highlighted'), 3000);
+                setTimeout(() => el.classList.remove('row-highlighted'), 6000);
                 el.style.transition = 'none';
                 setTimeout(() => el.style.transition = '', 90);
             } catch (e) {
@@ -1048,15 +1048,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                            title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                            <i class="fas fa-pencil-alt"></i>
-                                                        </button>` : ''}
+                                                            <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                <i class="fas fa-pencil-alt"></i>
+                                                            </button>` : ''}
                     ${isOwner ? `
-                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                            title="Hapus Catatan">
-                                                            <i class="fas fa-trash"></i>
-                                                        </button>` : ''}
+                                                            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                title="Hapus Catatan">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>` : ''}
                 </div>
             </div>
         `;

@@ -333,10 +333,17 @@
             <div class="col-lg-12">
                 <div class="card yz-card shadow-sm h-100" id="remark-inline-container">
                     <div class="card-body d-flex flex-column">
-                        <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
                             <h5 class="card-title" data-help-key="so.items_with_remark">
                                 <i class="fas fa-sticky-note me-2"></i>Item with Remark
                             </h5>
+                            {{-- TOGGLE BARU UNTUK FILTER PLANT (MIRIP KPI DESIGN) --}}
+                            <div class="btn-group-toggle-kpi" id="remark-plant-toggle">
+                                <button type="button" data-loc="" class="active">All Plant</button>
+                                <button type="button" data-loc="3000">SMG</button>
+                                <button type="button" data-loc="2000">SBY</button>
+                            </div>
+                            {{-- END TOGGLE BARU --}}
                         </div>
                         <hr class="mt-2">
                         <div id="remark-list-box-inline" class="flex-grow-1">
@@ -768,6 +775,36 @@
             }
             // --- END INISIALISASI KPI TOGGLE ---
 
+            const getCurrentRemarkFilter = (plantCode) => {
+                // Ambil type dari filter dashboard utama
+                const currentType = filterState.type;
+
+                // Jika filter dashboard utama adalah 'lokal' atau 'export',
+                // gunakan filter tersebut, abaikan Plant Code spesifik
+                if (currentType === 'lokal') {
+                    return {
+                        location: plantCode || null,
+                        type: 'lokal',
+                        auart: null
+                    };
+                }
+                if (currentType === 'export') {
+                    return {
+                        location: plantCode || null,
+                        type: 'export',
+                        auart: null
+                    };
+                }
+
+                // Jika filter dashboard utama adalah All Type:
+                // Panggil API dengan filter Plant Code saja.
+                // API akan mengambil ALL Order Type di Plant tersebut (tanpa filter type/auart).
+                return {
+                    location: plantCode || null,
+                    type: null,
+                    auart: null
+                };
+            };
 
             /* ======================== ITEM WITH REMARK (INLINE) ======================== */
             function escapeHtml(str = '') {
@@ -795,8 +832,13 @@
                 const apiRemarkItems = "{{ route('so.api.remark_items') }}";
                 const listBox = document.getElementById('remark-list-box-inline');
                 if (!listBox) return;
-                const currentLocation = filterState.location;
-                const currentType = filterState.type;
+
+                // Ambil filter awal dari dashboard utama
+                // Plant dari filter dashboard utama (dapat berupa '2000', '3000', atau '')
+                let currentRemarkLocation = filterState.location || '';
+                // Type dari filter dashboard utama ('lokal', 'export', atau null/kosong)
+                let currentRemarkType = filterState.type || '';
+
                 const stripZeros = v => {
                     const s = String(v ?? '').trim();
                     if (!s) return '';
@@ -825,66 +867,75 @@
                         const kunnr = (r.KUNNR || '').trim();
 
                         const isZrp = auart === 'ZRP1' || auart === 'ZRP2';
+                        // findExportAuart harus didefinisikan di scope yang lebih tinggi jika diperlukan
+                        // Asumsi findExportAuart() tersedia di scope ini (seperti di kode Anda sebelumnya)
                         const exportAuart = isZrp ? findExportAuart(werks) : null;
-                        const auartForReport = isZrp ? (exportAuart || auart) :
-                            auart; // fallback ke AUART asal bila mapping tidak ketemu
+                        const auartForReport = isZrp ? (exportAuart || auart) : auart;
 
                         const postData = {
                             redirect_to: 'so.index',
                             werks: werks,
-                            auart: auartForReport, // ← kirim AUART (export) ke report
+                            auart: auartForReport, // Kirim AUART (export/lokal) yang efektif ke report
                             compact: 1,
-                            highlight_kunnr: kunnr,
                             highlight_vbeln: so,
                             highlight_posnr: posnr6,
                             auto_expand: '1'
                         };
 
+                        if (kunnr) postData.highlight_kunnr = kunnr;
+
                         return `
-                        <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat detail SO">
-                            <td class="text-center">${i + 1}</td>
-                            <td class="text-center">${so || '-'}</td>
-                            <td class="text-center">${item || '-'}</td>
-                            <td class="text-center">${plant || '-'}</td>
-                            <td class="text-center">${otName}</td>
-                            <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
-                        </tr>`;
+            <tr class="js-remark-row" data-payload='${JSON.stringify(postData)}' style="cursor:pointer;" title="Klik untuk melihat detail SO">
+                <td class="text-center">${i + 1}</td>
+                <td class="text-center">${so || '-'}</td>
+                <td class="text-center">${item || '-'}</td>
+                <td class="text-center">${plant || '-'}</td>
+                <td class="text-center">${otName}</td>
+                <td>${escapeHtml(r.remark || '').replace(/\n/g,'<br>')}</td>
+            </tr>`;
                     }).join('');
 
                     return `
-                        <div class="yz-scrollable-table-container" style="max-height:420px;">
-                            <table class="table table-striped table-hover table-sm align-middle mb-0">
-                                <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
-                                    <tr>
-                                        <th class="text-center" style="width:60px;">No.</th>
-                                        <th class="text-center" style="min-width:110px;">SO</th>
-                                        <th class="text-center" style="min-width:90px;">Item</th>
-                                        <th class="text-center" style="min-width:110px;">Plant</th>
-                                        <th class="text-center" style="min-width:160px;">Order Type</th>
-                                        <th style="min-width:220px;">Remark</th>
-                                        {{-- Kolom Aksi Dihapus --}}
-                                    </tr>
-                                </thead>
-                                <tbody>${body}</tbody>
-                            </table>
-                        </div>
-                        <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
+            <div class="yz-scrollable-table-container" style="max-height:420px;">
+                <table class="table table-striped table-hover table-sm align-middle mb-0">
+                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                        <tr>
+                            <th class="text-center" style="width:60px;">No.</th>
+                            <th class="text-center" style="min-width:110px;">SO</th>
+                            <th class="text-center" style="min-width:90px;">Item</th>
+                            <th class="text-center" style="min-width:110px;">Plant</th>
+                            <th class="text-center" style="min-width:160px;">Order Type</th>
+                            <th style="min-width:220px;">Remark</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>
+            <div class="small text-muted mt-2">Klik baris untuk membuka laporan SO terkait.</div>`;
                 }
 
-                async function loadList() {
+                async function loadList(locationCode = currentRemarkLocation) {
+                    currentRemarkLocation = locationCode; // Update state plant
+
                     const inlineCard = document.getElementById('remark-inline-container');
                     inlineCard.style.display = '';
                     listBox.innerHTML = `
-                        <div class="d-flex justify-content-center align-items-center py-4 text-muted">
-                            <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
-                        </div>`;
+            <div class="d-flex justify-content-center align-items-center py-4 text-muted">
+                <div class="spinner-border spinner-border-sm me-2"></div> Loading data...
+            </div>`;
 
                     try {
                         const url = new URL(apiRemarkItems, window.location.origin);
-                        if (currentLocation) url.searchParams.set('location', currentLocation);
-                        if (['lokal', 'export'].includes(currentType)) {
-                            url.searchParams.set('type', currentType);
-                        }
+
+                        // Menggunakan filter dari getCurrentRemarkFilter (asumsi sudah didefinisikan)
+                        const effectiveFilter = getCurrentRemarkFilter(locationCode);
+
+                        // Terapkan filter ke URL
+                        if (effectiveFilter.location) url.searchParams.set('location', effectiveFilter
+                            .location);
+                        if (effectiveFilter.type) url.searchParams.set('type', effectiveFilter.type);
+                        // Hanya kirim AUART jika ada (biasanya null karena kita andalkan filter type)
+                        if (effectiveFilter.auart) url.searchParams.set('auart', effectiveFilter.auart);
 
                         const res = await fetch(url, {
                             headers: {
@@ -896,12 +947,50 @@
                         listBox.innerHTML = buildTable(json.data || []);
                     } catch (e) {
                         listBox.innerHTML =
-                            `<div class="alert alert-danger m-0"><i class="fas fa-exclamation-triangle me-2"></i>${e.message}</div>`;
+                            `<div class="alert alert-danger m-0"><i class="fas fa-exclamation-triangle me-2"></i>Gagal memuat item remark. (${e.message})</div>`;
                     }
                 }
 
+                // --- LOGIKA TOGGLE UI DAN EVENT LISTENER ---
+                const plantToggle = document.getElementById('remark-plant-toggle');
+                if (plantToggle) {
+                    plantToggle.addEventListener('click', (e) => {
+                        const btn = e.target.closest('button[data-loc]');
+                        if (!btn) return;
+
+                        e.preventDefault();
+
+                        // Ubah class toggle: Hapus 'active' dari semua, tambahkan ke yang diklik
+                        plantToggle.querySelectorAll('button').forEach(b => {
+                            b.classList.remove('active');
+                        });
+                        btn.classList.add('active');
+
+                        const nextLocation = btn.dataset.loc;
+
+                        // Perbarui filter dan muat ulang list
+                        loadList(nextLocation);
+                    });
+
+                    // Set state awal tombol toggle sesuai dengan filter dashboard utama
+                    let initialRemarkLocation = filterState.location || '';
+                    const initialButton = plantToggle.querySelector(`button[data-loc="${initialRemarkLocation}"]`);
+
+                    // Bersihkan semua state aktif, lalu set state awal
+                    plantToggle.querySelectorAll('button').forEach(b => {
+                        b.classList.remove('active');
+                    });
+
+                    if (initialButton) {
+                        initialButton.classList.add('active');
+                    } else {
+                        // Default ke "All Plant" jika filter awal tidak cocok atau kosong
+                        plantToggle.querySelector('button[data-loc=""]').classList.add('active');
+                    }
+                }
+                // --- END LOGIKA TOGGLE UI DAN EVENT LISTENER ---
+
                 listBox.addEventListener('click', (ev) => {
-                    // Cek jika yang diklik BUKAN tombol .js-del-remark (sudah tidak ada, tapi dipertahankan untuk keamanan)
                     if (ev.target.closest('.js-del-remark')) return;
 
                     const tr = ev.target.closest('.js-remark-row');
@@ -937,9 +1026,9 @@
                     form.submit();
                 });
 
-                loadList();
+                // Panggil loadList dengan filter lokasi awal
+                loadList(currentRemarkLocation);
             })();
-
         })();
     </script>
 @endpush
