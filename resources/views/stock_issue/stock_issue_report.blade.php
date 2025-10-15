@@ -7,6 +7,7 @@
     @php
         // Tambahkan import Crypt di sini untuk memastikan fungsinya tersedia di Blade
         use Illuminate\Support\Facades\Crypt;
+        use Illuminate\Support\Str; // Tambahkan untuk Str::slug
 
         // 1. Helper Functions (Dipertahankan)
         $fmtNumber = fn($n, $d = 0) => number_format((float) $n, $d, ',', '.');
@@ -14,6 +15,9 @@
             $n = (float) $value;
             return '$' . number_format($n, 0, '.', ',');
         };
+
+        // 🚨 BARU: Helper untuk mengubah UoM
+        $formatUom = fn($uom) => strtoupper(trim($uom)) === 'ST' ? 'PC' : $uom;
 
         // 2. LOGIKA BARU UNTUK GROUPING (TABEL 1)
         $customerSummary = $stockData->groupBy('NAME1')->map(function ($group) {
@@ -47,14 +51,14 @@
     @endphp
 
     {{-- =========================================================
-    NAV BAR (Pills: Level ASSY, PTG, PKG)
+    NAV BAR (Pills: Level ASSY, PTG, PKG) - TAMPILAN ESTETIK
     ========================================================= --}}
     <div class="card nav-pill-card shadow-sm mb-4">
         <div class="card-body p-2">
             <ul class="nav nav-pills pills-issue p-1 flex-wrap">
                 @foreach ($pills as $key => $pill)
                     <li class="nav-item mb-1 me-2">
-                        {{-- 🚨 GANTI: pill-issue menjadi pill-level --}}
+                        {{-- 🚨 MENGGUNAKAN pill-level --}}
                         <a class="nav-link pill-level {{ strtolower($level) == $key ? 'active' : '' }}"
                             href="{{ $createEncryptedRoute($pill) }}">
                             {{ $pill['label'] }}
@@ -184,7 +188,9 @@
     {{-- Memanggil style dari Stock Report agar tampilan konsisten --}}
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
-        /* Tambahkan style khusus jika diperlukan, misal untuk card issue */
+        /* ========================================================= */
+        /* START: STYLE UNTUK ISSUE REPORT */
+        /* ========================================================= */
         .yz-customer-card.is-open+.yz-nest-card .yz-nest-wrap {
             /* Pastikan latar belakang nested table kontras */
             background: #fff;
@@ -224,6 +230,9 @@
             box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
         }
 
+        /* ========================================================= */
+        /* START: NAVIGASI LEVEL ESTETIK (PILL-LEVEL) */
+        /* ========================================================= */
         :root {
             /* Warna kustom untuk Stock Issue Navigasi (misal: Biru/Ungu) */
             --level-blue: #4f46e5;
@@ -276,12 +285,11 @@
             filter: brightness(1.05);
         }
 
-        /* Container Card (untuk Pill) sedikit disamarkan karena pill-nya sudah menonjol */
+        /* Container Card (untuk Pill) - Hapus Border/Shadow */
         .card.nav-pill-card {
             background-color: transparent !important;
             box-shadow: none !important;
             border: none !important;
-            /* Hapus border card container */
         }
 
         /* Hilangkan padding default pada card body agar pill menempel ke card parent di blade */
@@ -294,50 +302,20 @@
             padding: 0 !important;
         }
 
-        /* ... Sisa Style Kustom Anda ... */
-        .yz-customer-card.is-open+.yz-nest-card .yz-nest-wrap {
-            /* Pastikan latar belakang nested table kontras */
-            background: #fff;
-        }
-
-        /* Tambahkan style untuk Level 2 jika diperlukan */
-        .yz-nest-wrap .table-wrapper {
-            max-height: 50vh;
-            /* Batasi tinggi container tabel agar bisa di-scroll */
-            overflow-y: auto;
-        }
-
-        .title {
-            font-size: 2.25rem;
-            font-weight: 800;
-            color: #1e40af;
-            /* Warna biru gelap yang kuat */
-            margin-bottom: 0.25rem;
-        }
-
-        .subtitle {
-            font-size: 1rem;
-            color: #6b7280;
-            margin-bottom: 0.75rem;
-        }
-
-        .total-items-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.35rem 0.75rem;
-            background-color: #dbeafe;
-            /* Latar belakang biru sangat lembut */
-            color: #1e40af;
-            font-weight: 600;
-            border-radius: 9999px;
-            font-size: 0.8rem;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-        }
+        /* ========================================================= */
+        /* END: NAVIGASI LEVEL ESTETIK */
+        /* ========================================================= */
     </style>
 @endpush
 
 @push('scripts')
     <script>
+        // 🚨 KUNCI PERBAIKAN: Gunakan formatUom di JavaScript
+        function formatUom(uom) {
+            const cleanUom = String(uom).toUpperCase().trim();
+            return cleanUom === 'ST' ? 'PC' : uom;
+        }
+
         // Gunakan fungsi untuk membuat Tabel 2 (Detail Item) dalam bentuk HTML
         function renderLevel2_Items(rows) {
             if (!rows || rows.length === 0) {
@@ -382,7 +360,8 @@
                         <td class="material-col">${item.MATNH ?? ''}</td>
                         <td class="description-col text-start">${item.MAKTXH ?? ''}</td>
                         <td class="qty-col text-end fw-bold">${formatNumber(item.STOCK3)}</td>
-                        <td class="text-center">${item.MEINS ?? ''}</td>
+                        {{-- 🚨 MENGGUNAKAN formatUom --}}
+                        <td class="text-center">${formatUom(item.MEINS) ?? ''}</td>
                         <td class="value-col text-end fw-bold">${formatMoney(item.TPRC)}</td>
                     </tr>
                 `;
@@ -394,6 +373,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             // Ambil semua data stok mentah yang dikirim dari controller
+            // 🚨 PENTING: Jika $stockData kosong (misalnya karena error di controller), pastikan ia adalah array/objek kosong
             const stockData = @json($stockData);
 
             // Kelompokkan data stok berdasarkan nama pelanggan
@@ -425,6 +405,8 @@
                         if (r !== row) {
                             r.classList.remove('is-open', 'is-focused');
                             r.querySelector('.kunnr-caret')?.classList.remove('rot');
+                            document.getElementById(r.dataset.kid).style.display =
+                                'none';
                         }
                     });
 

@@ -102,10 +102,10 @@
         // Ambil menu tambahan dari $dashboardData
         $stockIssueMenus = $dashboardData['stockIssueMenus'] ?? [];
 
-        // 🚨 BARU: Map ikon untuk setiap level Stock Issue
+        // 🚨 PERUBAHAN: Mengganti ikon 'ptg' menjadi 'fa-spray-can' (Kaleng Semprot)
         $issueIcons = [
             'assy' => 'fas fa-gears', // Assembly/Gears
-            'ptg' => 'fas fa-cut', // Potong/Cut
+            'ptg' => 'fas fa-spray-can', // Painting/Spray Can
             'pkg' => 'fas fa-boxes-stacked', // Packaging/Boxes
         ];
     @endphp

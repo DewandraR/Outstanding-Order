@@ -12,8 +12,10 @@ class StockDashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $allowedUserIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12];
-        $isAllowedUser = Auth::check() && in_array(Auth::id(), $allowedUserIds);
+        // [MODIFIKASI] GANTI LOGIKA: Cek berdasarkan Role (ADMIN atau SMG)
+        $user = Auth::user();
+        $isAllowedUser = $user && in_array($user->role, ['ADMIN', 'SMG']);
+        // END [MODIFIKASI]
 
         // 2. Definisi menu Stock Issue untuk Semarang (3000)
         $semarangStockIssueMenus = [
@@ -99,7 +101,7 @@ class StockDashboardController extends Controller
             'topCustomers' => ['whfg' => $rankWhfg, 'fg' => $rankFg],
             // [MODIFIKASI] Tambahkan data menu tambahan berdasarkan lokasi dan izin user
             'stockIssueMenus' => [
-                '3000' => $isAllowedUser ? $semarangStockIssueMenus : [], // Semarang (3000) + Cek Izin
+                '3000' => $isAllowedUser ? $semarangStockIssueMenus : [], // Semarang (3000) + Cek Izin Role
                 '2000' => [], // Surabaya (2000) tanpa menu tambahan
             ],
         ];
