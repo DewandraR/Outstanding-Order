@@ -11,7 +11,6 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 
@@ -24,8 +23,8 @@ class SoItemsExport implements
     WithStrictNullComparison,
     WithColumnFormatting
 {
-    protected $items;
-    protected $customerRows = []; // baris-baris header "Customer: ..."
+    protected Collection $items;
+    protected array $customerRows = []; // baris-baris judul "Customer: ..."
 
     public function __construct(Collection $items)
     {
@@ -35,7 +34,7 @@ class SoItemsExport implements
     public function collection()
     {
         $currentRow = 2; // baris 1 = heading
-        $finalCollection = new Collection();
+        $final = new Collection();
 
         $groups = $this->items->groupBy(function ($item) {
             $name = preg_replace('/\s+/', ' ', trim($item->headerInfo->NAME1 ?? ''));
@@ -43,69 +42,79 @@ class SoItemsExport implements
         });
 
         foreach ($groups as $customerName => $rows) {
-            // baris judul customer (akan di-merge A..M)
+            // baris judul customer (akan di-merge A..N)
             $customerHeader = (object) [
                 'is_customer_header' => true,
                 'customer_name'      => 'Customer: ' . $customerName,
             ];
-            $finalCollection->push($customerHeader);
+            $final->push($customerHeader);
             $this->customerRows[] = $currentRow;
             $currentRow++;
 
             foreach ($rows as $item) {
                 $item->is_customer_header = false;
-                $finalCollection->push($item);
+                $final->push($item);
                 $currentRow++;
             }
         }
 
-        return $finalCollection;
+        return $final;
     }
 
     public function headings(): array
     {
-        // ❌ Kolom "Customer" dihapus.
+        // Kolom: 14 kolom total (A..N)
         return [
-            'PO',
-            'SO',
-            'Item',
-            'Material FG',
-            'Description',
-            'Qty SO',
-            'Outs. SO',
-            'WHFG',
-            'Stock Packg.',
-            'GR ASSY',
-            'GR PAINT',
-            'GR PKG',
-            'Remark',
+            'PO',               // A
+            'SO',               // B
+            'Item',             // C
+            'Material FG',      // D
+            'Description',      // E
+            'Qty SO',           // F
+            'Outs. SO',         // G
+            'WHFG',             // H
+            'Stock Packg.',     // I
+            '% MACHI',          // J  (PRSM)
+            '% ASSY',           // K  (PRSA)
+            '% PAINT',          // L  (PRSI)
+            '% PACKING',        // M  (PRSP)
+            'Remark',           // N
         ];
     }
 
     public function map($item): array
     {
-        // baris header customer: taruh teks di kolom A, sisanya kosong (total 13 kolom)
+        // baris judul customer: isi kolom A saja, sisanya kosong (A..N = 14 kolom)
         if (property_exists($item, 'is_customer_header') && $item->is_customer_header) {
-            return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', ''];
+            return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', '', ''];
         }
 
-        // Baris data item — semua angka jadi integer (tanpa desimal)
+        // Pastikan nilai persen tetap 0..100 (integer)
+        $clamp = function ($n) {
+            $n = (int)($n ?? 0);
+            if ($n < 0)   $n = 0;
+            if ($n > 100) $n = 100;
+            return $n;
+        };
+
         return [
-            $item->headerInfo->BSTNK ?? '', // A: PO
-            $item->VBELN,                   // B: SO
-            (int) ($item->POSNR ?? 0),      // C: Item
-            $item->MATNR,                   // D: Material FG
-            $item->MAKTX,                   // E: Description
+            $item->headerInfo->BSTNK ?? '',  // A: PO
+            $item->VBELN ?? '',              // B: SO
+            (int)($item->POSNR ?? 0),        // C: Item
+            $item->MATNR ?? '',              // D: Material FG
+            $item->MAKTX ?? '',              // E: Description
 
-            (int) ($item->KWMENG ?? 0),     // F: Qty SO
-            (int) ($item->PACKG  ?? 0),     // G: Outs. SO
-            (int) ($item->KALAB  ?? 0),     // H: WHFG
-            (int) ($item->KALAB2 ?? 0),     // I: Stock Packg.
-            (int) ($item->ASSYM  ?? 0),     // J: GR ASSY
-            (int) ($item->PAINT  ?? 0),     // K: GR PAINT
-            (int) ($item->MENGE  ?? 0),     // L: GR PKG
+            (int)($item->KWMENG ?? 0),       // F: Qty SO
+            (int)($item->PACKG  ?? 0),       // G: Outs. SO
+            (int)($item->KALAB  ?? 0),       // H: WHFG
+            (int)($item->KALAB2 ?? 0),       // I: Stock Packg.
 
-            $item->remark,                  // M: Remark
+            $clamp($item->PRSM ?? 0),        // J: % MACHI
+            $clamp($item->PRSA ?? 0),        // K: % ASSY
+            $clamp($item->PRSI ?? 0),        // L: % PAINT
+            $clamp($item->PRSP ?? 0),        // M: % PACKING
+
+            $item->remark ?? '',             // N: Remark
         ];
     }
 
@@ -115,9 +124,9 @@ class SoItemsExport implements
             1 => ['font' => ['bold' => true]], // heading tebal
         ];
 
-        // Merge baris judul customer melebar dari A sampai M (13 kolom)
+        // Merge baris judul customer melebar dari A sampai N (14 kolom)
         foreach ($this->customerRows as $row) {
-            $sheet->mergeCells("A{$row}:M{$row}");
+            $sheet->mergeCells("A{$row}:N{$row}");
             $styles[$row] = [
                 'font' => ['bold' => true, 'size' => 12],
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => 'E9ECEF']],
@@ -138,18 +147,23 @@ class SoItemsExport implements
 
     public function columnFormats(): array
     {
-        // Format integer tanpa desimal; jika tak ingin pemisah ribuan, ganti ke '0'
+        // Angka bulat tanpa desimal
         $intNoDecimal = '#,##0';
+        // Tampilkan 0..100 dengan tanda % tanpa perlu bagi 100
+        $pct0to100 = '0"%"';
 
-        // Kolom angka sekarang F..L (Qty SO sampai GR PKG)
         return [
+            // Kuantitas
             'F' => $intNoDecimal, // Qty SO
             'G' => $intNoDecimal, // Outs. SO
             'H' => $intNoDecimal, // WHFG
             'I' => $intNoDecimal, // Stock Packg.
-            'J' => $intNoDecimal, // GR ASSY
-            'K' => $intNoDecimal, // GR PAINT
-            'L' => $intNoDecimal, // GR PKG
+
+            // Persentase proses
+            'J' => $pct0to100,    // % MACHI
+            'K' => $pct0to100,    // % ASSY
+            'L' => $pct0to100,    // % PAINT
+            'M' => $pct0to100,    // % PACKING
         ];
     }
 }

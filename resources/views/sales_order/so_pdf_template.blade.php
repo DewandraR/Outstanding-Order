@@ -70,18 +70,15 @@
             background-color: #f2f2f2;
             font-size: 9px;
             padding: 5px 3px;
-            /* Kurangi padding horizontal untuk kolom banyak */
             text-align: center;
             border: 1px solid #ddd;
             border-top: none;
-            /* Perataan khusus untuk deskripsi dan remark */
             word-wrap: break-word;
         }
 
         /* Baris Data Item */
         .item-row td {
             padding: 3px 3px;
-            /* Kurangi padding horizontal untuk kolom banyak */
             border: 1px solid #ddd;
             vertical-align: middle;
             word-wrap: break-word;
@@ -98,47 +95,38 @@
         .text-right {
             text-align: right;
         }
+
+        /* Supaya remark muat */
+        .remark-cell {
+            white-space: pre-line;
+        }
     </style>
 </head>
 
 <body>
 
     @php
-        // FIX: Tambahkan pengecekan jika $items kosong
-        if ($items->isEmpty()) {
-            $currency = 'IDR';
-            $locationName = $locationName ?? 'N/A';
-            $auartDescription = $auartDescription ?? 'N/A';
-        } else {
-            $currency = $items->first()->WAERK ?? 'IDR';
-        }
+        // Jika kosong, set default seperlunya
+        $locationName = $locationName ?? 'N/A';
+        $auartDescription = $auartDescription ?? ($auart ?? 'N/A');
 
-        // Helpers dan Variabel Lokal
+        // Helpers
         $formatNumber = function ($n, $d = 0) {
             return number_format((float) $n, $d, ',', '.');
         };
-        $formatMoney = function ($value, $currency, $d = 2) {
-            $n = (float) $value;
-            $fn = function ($v, $d) use ($currency) {
-                if ($currency === 'IDR') {
-                    return number_format($v, $d, ',', '.');
-                }
-                if ($currency === 'USD') {
-                    return number_format($v, $d, '.', ',');
-                }
-                return number_format($v, $d, ',', '.');
-            };
-
-            if ($currency === 'IDR') {
-                return 'Rp ' . $fn($n, $d);
+        $formatPct = function ($v) {
+            $n = is_null($v) ? 0 : (float) $v;
+            // amankan agar 0..100
+            if ($n < 0) {
+                $n = 0;
             }
-            if ($currency === 'USD') {
-                return '$' . $fn($n, $d);
+            if ($n > 100) {
+                $n = 100;
             }
-            return trim(($currency ?: '') . ' ' . $fn($n, $d));
+            return number_format($n, 0, ',', '.') . '%';
         };
 
-        // Memulai loop untuk membuat header berulang per Customer
+        // Grouping per customer (headerInfo dibuat di controller)
         $itemsGrouped = collect($items)->groupBy('headerInfo.NAME1');
     @endphp
 
@@ -150,70 +138,86 @@
     @forelse ($itemsGrouped as $customerName => $groupRows)
         <table class="group-table">
             @php
-                $customerItemIndex = 0; // Reset index untuk setiap customer
-                $currentCustomer = $customerName;
+                $customerItemIndex = 0;
+                $currentCustomer = $customerName ?: '-';
             @endphp
 
-            {{-- THEAD: Blok yang akan berulang di setiap halaman --}}
+            {{-- THEAD: Berulang per halaman --}}
             <thead class="customer-header-group">
-                {{-- 1. Baris Customer Header (akan berulang) --}}
+                {{-- 1) Judul Customer --}}
                 <tr class="customer-header-row">
-                    <td colspan="14">
+                    {{-- ⬇️ Total kolom sekarang 15, jadi colspan=15 --}}
+                    <td colspan="15">
                         Customer: {{ $currentCustomer }}
                     </td>
                 </tr>
 
-                {{-- 2. Header Kolom Item (akan berulang) --}}
+                {{-- 2) Header Kolom Item --}}
                 <tr class="item-thead-row">
                     <th style="width: 3%;">No.</th>
                     <th style="width: 7%;">PO</th>
                     <th style="width: 6%;">SO</th>
                     <th style="width: 3%;">Item</th>
                     <th style="width: 8%;">Material FG</th>
-                    <th class="text-left" style="width:25%;">Desc FG</th>
+                    <th class="text-left" style="width:22%;">Desc FG</th>
                     <th style="width: 4%;">Qty SO</th>
                     <th style="width: 4%;">Outs. SO</th>
                     <th style="width: 4%;">WHFG</th>
-                    <th style="width: 4%;">Stock Packg.</th>
-                    <th style="width: 4%;">GR ASSY</th>
-                    <th style="width: 4%;">GR PAINT</th>
-                    <th style="width: 4%;">GR PKG</th>
-                    <th class="text-left" style="width:14%;">Remark</th>
+                    <th style="width: 5%;">Stock Packg.</th>
+
+                    {{-- ⬇️ Kolom persentase proses (baru) --}}
+                    <th style="width: 4%;">MACHI&nbsp;%</th>
+                    <th style="width: 4%;">ASSY&nbsp;%</th>
+                    <th style="width: 4%;">PAINT&nbsp;%</th>
+                    <th style="width: 4%;">PACKING&nbsp;%</th>
+
+                    <th class="text-left" style="width:12%;">Remark</th>
                 </tr>
             </thead>
 
-            {{-- TBODY: Konten item untuk customer ini --}}
             <tbody>
                 @foreach ($groupRows as $item)
                     @php
                         $customerItemIndex++;
-                        $poNumber = $item->headerInfo->BSTNK ?? '-';
-                        // FIX: Menggunakan operator Null Coalescing (??) untuk menghindari error jika kolom tidak ada
-                        $outsSo = (float) ($item->PACKG ?? 0);
-                        $netPrice = (float) ($item->NETPR ?? 0); // FIX: Memastikan NETPR diset
 
-                        // Kolom SO Report harus ada di query Controller Anda
-                        $kalab = $item->KALAB ?? 0;
-                        $kalab2 = $item->KALAB2 ?? 0;
-                        $assym = $item->ASSYM ?? 0;
-                        $paint = $item->PAINT ?? 0;
-                        $menge = $item->MENGE ?? 0;
+                        $poNumber = $item->headerInfo->BSTNK ?? '-';
+
+                        $qtySo = (float) ($item->KWMENG ?? 0);
+                        $outsSo = (float) ($item->PACKG ?? 0);
+                        $whfg = (float) ($item->KALAB ?? 0);
+                        $stockPk = (float) ($item->KALAB2 ?? 0);
+
+                        // Persentase proses (0..100)
+                        $pMach = $item->PRSM ?? 0; // MACHI %
+                        $pAssy = $item->PRSA ?? 0; // ASSY  %
+                        $pPaint = $item->PRSI ?? 0; // PAINT %
+                        $pPack = $item->PRSP ?? 0; // PACKING %
+
+                        // Field dasar
+                        $vbeln = $item->VBELN ?? '-';
+                        $posnr = (int) ($item->POSNR ?? 0);
+                        $matnr = $item->MATNR ?? '-';
+                        $maktx = $item->MAKTX ?? '-';
                     @endphp
 
                     <tr class="item-row">
                         <td class="text-center">{{ $customerItemIndex }}</td>
                         <td>{{ $poNumber }}</td>
-                        <td>{{ $item->VBELN }}</td>
-                        <td class="text-center">{{ (int) $item->POSNR }}</td>
-                        <td>{{ $item->MATNR }}</td>
-                        <td class="text-left">{{ $item->MAKTX }}</td>
-                        <td class="text-right">{{ $formatNumber($item->KWMENG) }}</td>
+                        <td>{{ $vbeln }}</td>
+                        <td class="text-center">{{ $posnr }}</td>
+                        <td>{{ $matnr }}</td>
+                        <td class="text-left">{{ $maktx }}</td>
+
+                        <td class="text-right">{{ $formatNumber($qtySo) }}</td>
                         <td class="text-right">{{ $formatNumber($outsSo) }}</td>
-                        <td class="text-right">{{ $formatNumber($kalab) }}</td>
-                        <td class="text-right">{{ $formatNumber($kalab2) }}</td>
-                        <td class="text-right">{{ $formatNumber($assym) }}</td>
-                        <td class="text-right">{{ $formatNumber($paint) }}</td>
-                        <td class="text-right">{{ $formatNumber($menge) }}</td>
+                        <td class="text-right">{{ $formatNumber($whfg) }}</td>
+                        <td class="text-right">{{ $formatNumber($stockPk) }}</td>
+
+                        <td class="text-center">{{ $formatPct($pMach) }}</td>
+                        <td class="text-center">{{ $formatPct($pAssy) }}</td>
+                        <td class="text-center">{{ $formatPct($pPaint) }}</td>
+                        <td class="text-center">{{ $formatPct($pPack) }}</td>
+
                         <td class="remark-cell">{!! nl2br(e($item->remark ?? '')) !!}</td>
                     </tr>
                 @endforeach
@@ -222,12 +226,14 @@
     @empty
         <table class="group-table">
             <tbody>
+                {{-- ⬇️ Sesuaikan colspan 15 --}}
                 <tr>
-                    <td colspan="14" class="text-center item-row">Tidak ada item yang dipilih untuk diekspor.</td>
+                    <td colspan="15" class="text-center item-row">Tidak ada item yang dipilih untuk diekspor.</td>
                 </tr>
             </tbody>
         </table>
     @endforelse
+
 </body>
 
 </html>
