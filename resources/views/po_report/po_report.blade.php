@@ -593,8 +593,8 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
     {{-- =========================================================
 MODAL POP-UP UNTUK DETAIL OVERDUE
 ========================================================= --}}
-    <div class="modal fade" id="overdueDetailsModal" tabindex="-1" aria-labelledby="overdueDetailsModalLabel"
-        aria-hidden="true" data-bs-backdrop="false">
+    <div class="modal fade" id="overdueDetailsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static"
+        data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content shadow-lg" style="border-radius: 1rem;">
                 <div class="modal-header bg-danger text-white p-3"
@@ -830,6 +830,18 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             margin-left: auto;
             /* Pindahkan tombol edit/hapus ke kanan */
         }
+
+        #overdueDetailsModal .modal-content {
+            max-height: 90vh;
+            /* jangan melebihi tinggi layar */
+            display: flex;
+            flex-direction: column;
+        }
+
+        #overdueDetailsModal .modal-body {
+            overflow: auto;
+            /* tabelnya scroll di dalam modal */
+        }
     </style>
 @endpush
 
@@ -876,7 +888,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 el.classList.add('row-highlighted');
                 setTimeout(() => el.classList.remove('row-highlighted'), 6000);
                 el.style.transition = 'none';
-                setTimeout(() => el.style.transition = '', 90);
+                setTimeout(() => el.style.transition = '', 120);
             } catch (e) {
                 /* fail silently */
             }
@@ -1048,15 +1060,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                            <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                                title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                                <i class="fas fa-pencil-alt"></i>
-                                                            </button>` : ''}
+                                                                                                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                                                                    title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                                                                    <i class="fas fa-pencil-alt"></i>
+                                                                                                                </button>` : ''}
                     ${isOwner ? `
-                                                            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                                title="Hapus Catatan">
-                                                                <i class="fas fa-trash"></i>
-                                                            </button>` : ''}
+                                                                                                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                                                                    title="Hapus Catatan">
+                                                                                                                    <i class="fas fa-trash"></i>
+                                                                                                                </button>` : ''}
                 </div>
             </div>
         `;
@@ -1599,7 +1611,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
       <td class="text-center">${i+1}</td>
       ${customerCell(r)}
       <td class="text-center">${r.PO ?? '-'}</td>
-      <td class="text-center fw-bold text-primary">${r.SO ?? '-'}</td>
+      <td class="text-center fw-bold">
+      <a href="#"
+         class="js-jump-to-so"
+         data-vbeln="${r.SO ?? ''}"
+         data-kunnr="${r.KUNNR ?? ''}"
+         data-customer="${r.CUSTOMER_NAME_MODAL ?? ''}">
+        ${r.SO ?? '-'}
+      </a>
+    </td>
       <td class="text-center">${r.EDATU ?? '-'}</td>
       <td class="text-center fw-bold ${(r.OVERDUE_DAYS||0) > 0 ? 'text-danger' : 'text-success'}">${r.OVERDUE_DAYS ?? 0}</td>
     </tr>`).join('');
@@ -1775,10 +1795,18 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                         const qtyOuts = fmtNum(item.QTY_BALANCE2, 0);
                         const qtyWhfg = fmtNum(item.KALAB, 0);
                         const qtyPaking = fmtNum(item.KALAB2, 0);
+                        const soLink = `
+                        <a href="#"
+                            class="js-jump-to-so"
+                            data-vbeln="${item.VBELN}"
+                            data-kunnr="${activeCustomerKunnr || ''}"
+                            data-customer="${customerName}">
+                            ${item.VBELN}
+                        </a>`;
                         return `<tr>
                         <td class="text-center">${idx+1}</td>
                         <td class="text-center">${po}</td>
-                        <td class="text-center fw-bold text-primary">${item.VBELN}</td>
+                        <td class="text-center fw-bold">${soLink}</td>
                         <td class="text-center">${parseInt(item.POSNR,10)}</td>
                         <td>${item.MAKTX}</td>
                         <td class="text-center">${qtyPo}</td>
@@ -1962,25 +1990,33 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             const soTbody = soRow.closest('tbody');
 
             if (open) {
+                // === KETIKA T3 DITUTUP → KELUAR DARI FOCUS MODE ===
                 tgt.style.display = 'none';
                 caret?.classList.remove('rot');
+
                 soTbody.classList.remove('so-focus-mode');
                 soRow.classList.remove('is-focused');
+
                 updateT2FooterVisibility(t2tbl);
                 return;
             }
 
+            // === KETIKA T3 DIBUKA → MASUK FOCUS MODE ===
+
+            // tutup semua nest lain & hapus fokusnya
             soTbody.querySelectorAll('.yz-nest').forEach(otherNest => {
                 if (otherNest !== tgt && otherNest.style.display !== 'none') {
                     otherNest.style.display = 'none';
                     otherNest.previousElementSibling.querySelector('.yz-caret')?.classList.remove('rot');
-                    otherNest.previousElementSibling.classList.remove('is-focused');
                 }
             });
+            soTbody.querySelectorAll('.js-t2row').forEach(r => r.classList.remove('is-focused'));
 
+            // aktifkan fokus
             soTbody.classList.add('so-focus-mode');
             soRow.classList.add('is-focused');
 
+            // buka nest untuk SO ini
             tgt.style.display = '';
             caret?.classList.add('rot');
             updateT2FooterVisibility(t2tbl);
@@ -2028,6 +2064,91 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             } catch (err) {
                 box.innerHTML = `<div class="alert alert-danger m-2">Gagal memuat detail item: ${err.message}</div>`;
             }
+        }
+
+        async function jumpToSO(vbeln, kunnrHint = null, customerNameHint = null) {
+            if (!vbeln) return;
+
+            // 1) Temukan kartu customer
+            let custCard = null;
+
+            // Prioritas 1: KUNNR dari modal (paling akurat)
+            if (kunnrHint) {
+                custCard = document.querySelector(`.yz-customer-card[data-kunnr='${CSS.escape(kunnrHint)}']`);
+            }
+
+            // Prioritas 2: kalau belum ketemu dan ada nama customer dari modal
+            if (!custCard && customerNameHint) {
+                const all = [...document.querySelectorAll('.yz-customer-card')];
+                custCard = all.find(el => (el.dataset.cname || '').trim() === customerNameHint.trim()) || null;
+            }
+
+            // Prioritas 3: kalau sedang ada customer aktif (activeCustomerKunnr), pakai itu saja
+            if (!custCard) {
+                custCard = document.querySelector('.yz-customer-card.is-open') || null;
+            }
+
+            if (!custCard) {
+                // fallback berat: coba satu per satu (hindari kalau datanya besar)
+                const cards = [...document.querySelectorAll('.yz-customer-card')];
+                for (const c of cards) {
+                    c.click();
+                    const slot = document.getElementById(c.dataset.kid);
+                    let tries = 0;
+                    while (tries++ < 120 && !slot.querySelector('.js-t2row')) await wait(100);
+                    if (slot.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)) {
+                        custCard = c;
+                        break;
+                    }
+                    c.click(); // tutup lagi bila tidak ditemukan
+                    await wait(150);
+                }
+            } else if (!custCard.classList.contains('is-open')) {
+                custCard.click();
+            }
+
+            if (!custCard) {
+                alert('SO tidak ditemukan di daftar customer.');
+                return;
+            }
+
+            // 2) Pastikan T2 untuk customer sudah ter-load
+            const slot = document.getElementById(custCard.dataset.kid);
+            let tries = 0;
+            while (tries++ < 120 && !slot.querySelector('.js-t2row')) await wait(100);
+
+            // 3) Temukan baris T2 untuk VBELN tsb
+            const soRow = slot.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+            if (!soRow) {
+                alert(`SO ${vbeln} tidak ditemukan untuk customer ini.`);
+                return;
+            }
+
+            // 4) Buka T3 (item) untuk SO tsb
+            await openItemsIfNeededForSORow(soRow);
+            const soTbody = soRow.closest('tbody');
+            if (soTbody) {
+                // bersihkan fokus lama
+                soTbody.querySelectorAll('.js-t2row').forEach(r => r.classList.remove('is-focused'));
+                soTbody.classList.add('so-focus-mode');
+                soRow.classList.add('is-focused');
+
+                // tutup semua nest lain
+                soTbody.querySelectorAll('.yz-nest').forEach(n => {
+                    if (n.previousElementSibling !== soRow) {
+                        n.style.display = 'none';
+                        n.previousElementSibling.querySelector('.yz-caret')?.classList.remove('rot');
+                    }
+                });
+
+                updateT2FooterVisibility(soTbody.closest('table'));
+            }
+
+            // 5) Scroll & highlight baris T2 agar jelas
+            soRow.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
         }
 
         async function openItemsIfNeededForSORow(soRow) {
@@ -2249,6 +2370,10 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 });
             };
 
+            const m = document.getElementById('overdueDetailsModal');
+            if (m && m.parentElement !== document.body) {
+                document.body.appendChild(m);
+            }
             document.body.addEventListener('click', async (e) => {
                 const soRow = e.target.closest('.js-t2row');
                 if (!soRow) return;
@@ -2671,12 +2796,6 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
           <p class="mt-3 text-muted">Memuat detail PO...</p>
         </div>`;
 
-                modalElement.addEventListener('shown.bs.modal', () => {
-                    document.body.style.overflow = 'auto';
-                    document.body.style.paddingRight = '';
-                }, {
-                    once: true
-                });
                 const overdueDetailsModal = bootstrap.Modal.getInstance(modalElement) || new bootstrap
                     .Modal(modalElement);
                 overdueDetailsModal.show();
@@ -2702,6 +2821,27 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
                     modalSubTitle.textContent = `${modalFilterText} (${json.data.length} PO)`;
                     modalContentArea.innerHTML = renderModalTable(json.data, labelText);
+                    modalContentArea.addEventListener('click', async (e) => {
+                        const a = e.target.closest('.js-jump-to-so');
+                        if (!a) return;
+
+                        e.preventDefault();
+                        const vbeln = a.dataset.vbeln || '';
+                        const kunnr = a.dataset.kunnr || (activeCustomerKunnr || '');
+                        const cname = a.dataset.customer || '';
+
+                        // Tutup modal dulu agar transisi enak
+                        (bootstrap.Modal.getInstance(document.getElementById(
+                                'overdueDetailsModal')) ||
+                            new bootstrap.Modal(document.getElementById(
+                                'overdueDetailsModal'))).hide();
+
+                        // Tunggu sejenak agar animasi modal selesai
+                        await wait(250);
+
+                        // Lakukan lompatan ke SO dan buka T3
+                        await jumpToSO(vbeln, kunnr, cname);
+                    });
                 } catch (err) {
                     modalSubTitle.textContent = `Gagal Memuat Detail`;
                     modalContentArea.innerHTML =
@@ -2877,6 +3017,17 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     }
                 })();
             })();
+            smallQtyDetailsTable?.addEventListener('click', async (e) => {
+                const a = e.target.closest('.js-jump-to-so');
+                if (!a) return;
+                e.preventDefault();
+
+                const vbeln = a.dataset.vbeln || '';
+                const kunnr = a.dataset.kunnr || activeCustomerKunnr || '';
+                const cname = a.dataset.customer || activeCustomerName || '';
+
+                await jumpToSO(vbeln, kunnr, cname);
+            });
         });
     </script>
     <script src="{{ asset('js/po-report-remark-highlight.js') }}"></script>

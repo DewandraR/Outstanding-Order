@@ -12,6 +12,14 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class DashboardController extends Controller
 {
+    private function getSafeEdatuForUniqueItem(string $alias): string
+    {
+        return "COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST({$alias}.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST({$alias}.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+    }
+
     public function index(Request $request)
     {
         // 1) Dekripsi q (jika ada) lalu merge ke $request
@@ -108,10 +116,50 @@ class DashboardController extends Controller
         $baseQuery->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
 
         // =========================================================================
-        // Perhitungan KPI Awal (Outstanding/Overdue Value & Qty)
+        // DEDUPLIKASI ITEM (VBELN, POSNR, MATNR)
         // =========================================================================
 
-        // 1. Query untuk JUMLAH PO/SO (QTY PO Count) - Mencakup semua baris T2
+        $poAuartList = ($type === 'export') ? $auartToQuery : []; // Gunakan AUART yang difilter
+        if ($type === 'lokal') {
+            // Query untuk AUART Lokal (perlu join ke maping)
+            $poAuartList = $rawMapping->where('Deskription', 'like', '%Local%')->pluck('IV_AUART')->unique()->toArray();
+        } elseif (!$type) {
+            // Jika All Type, masukkan semua AUART
+            $poAuartList = $rawMapping->pluck('IV_AUART')->unique()->toArray();
+        }
+
+        // 1. Subquery Item Unik (VBELN, POSNR, MATNR)
+        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
+            ->select(
+                't1a.VBELN',
+                't1a.POSNR',
+                't1a.MATNR',
+                't1a.EDATU',
+                't1a.WAERK',
+                't1a.IV_WERKS_PARAM',
+                DB::raw('MAX(t1a.TOTPR) AS item_total_value'), // Gunakan MAX() untuk nilai item
+                DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
+            )
+            ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Filter Item Outstanding
+            ->when($location, fn($q, $loc) => $q->where('t1a.IV_WERKS_PARAM', $loc))
+            ->when(!empty($poAuartList), fn($q) => $q->whereIn('t1a.IV_AUART_PARAM', $poAuartList))
+            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.EDATU', 't1a.WAERK', 't1a.IV_WERKS_PARAM');
+
+
+        // 2. Query untuk NILAI (Outstanding Value) - HANYA PO yang memiliki Outstanding Qty (DARI ITEM UNIK)
+        $kpiValueQuery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t1_u"))->mergeBindings($uniqueItemsAgg)
+            ->select(
+                't1_u.IV_WERKS_PARAM as werks',
+                't1_u.WAERK as currency',
+                DB::raw('CAST(SUM(t1_u.item_total_value) AS DECIMAL(18,2)) as total_value'),
+                // Hitung Overdue Value dari item unik
+                DB::raw("CAST(SUM(CASE WHEN " . $this->getSafeEdatuForUniqueItem('t1_u') . " < CURDATE() THEN t1_u.item_total_value ELSE 0 END) AS DECIMAL(18,2)) as overdue_value")
+            )
+            ->groupBy('t1_u.IV_WERKS_PARAM', 't1_u.WAERK')
+            ->get();
+
+
+        // 3. Query untuk JUMLAH PO/SO (QTY PO Count) - Menggunakan $baseQuery T2 JOIN T1 (tanpa filter quantity)
         $kpiQtyQuery = (clone $baseQuery)
             ->selectRaw("
                 t2.IV_WERKS_PARAM as werks,
@@ -119,24 +167,10 @@ class DashboardController extends Controller
                 COUNT(DISTINCT t2.VBELN) as total_qty, 
                 COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_qty
             ")
-            ->groupBy('t2.IV_WERKS_PARAM', 't2.WAERK')
-            ->get();
-
-        // 2. Query untuk NILAI (Outstanding Value) - HANYA PO yang memiliki Outstanding Qty
-        $kpiValueQuery = (clone $baseQuery)
-            ->leftJoin(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->selectRaw("
-                t2.IV_WERKS_PARAM as werks,
-                t2.WAERK as currency,
-                CAST(SUM(t1.TOTPR) AS DECIMAL(18,2)) as total_value,
-                CAST(SUM(CASE WHEN {$safeEdatu} < CURDATE() THEN t1.TOTPR ELSE 0 END) AS DECIMAL(18,2)) as overdue_value
-            ")
-            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Filter Item Outstanding
+            // Join ke t1 untuk memastikan PO memiliki item
+            ->join('so_yppr079_t1 as t1', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
+            })
             ->groupBy('t2.IV_WERKS_PARAM', 't2.WAERK')
             ->get();
 
@@ -161,7 +195,7 @@ class DashboardController extends Controller
             'sby_idr_overdue_qty' => 0,
         ];
 
-        // Isi data KPI NILAI (Outstanding Value & Overdue Value)
+        // Isi data KPI NILAI (Outstanding Value & Overdue Value) DARI ITEM UNIK
         foreach ($kpiValueQuery as $row) {
             $loc_prefix = $row->werks === '3000' ? 'smg' : 'sby';
             $cur_suffix = strtolower($row->currency);
@@ -175,7 +209,7 @@ class DashboardController extends Controller
             $loc_prefix = $row->werks === '3000' ? 'smg' : 'sby';
             $cur_suffix = strtolower($row->currency);
 
-            // Total Outstanding Qty (Menggunakan total PO/SO dari T2 tanpa filter QTY_BALANCE2)
+            // Total Outstanding Qty (Menggunakan total PO/SO dari T2)
             $kpi["{$loc_prefix}_{$cur_suffix}_qty"] = (int) $row->total_qty;
             // Overdue Qty (Menggunakan total PO/SO dari T2 yang overdue)
             $kpi["{$loc_prefix}_{$cur_suffix}_overdue_qty"] = (int) $row->overdue_qty;
@@ -206,7 +240,7 @@ class DashboardController extends Controller
         ];
 
         // =========================================================================
-        // MODIFIKASI: QUERY GRAFIK YANG DIBAGI PER LOKASI
+        // MODIFIKASI: QUERY GRAFIK YANG DIBAGI PER LOKASI (Menggunakan Item Unik)
         // =========================================================================
 
         $locationQueries = [
@@ -214,18 +248,23 @@ class DashboardController extends Controller
             'sby' => (clone $baseQuery)->where('t2.IV_WERKS_PARAM', '2000'),
         ];
 
-        // 1. Top customers (USD) - PER LOKASI
-        foreach ($locationQueries as $prefix => $query) {
-            $chartData["top_customers_value_usd_{$prefix}"] = (clone $query)
-                ->join(
-                    'so_yppr079_t1 as t1',
-                    DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                    '=',
-                    DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+        // Gabungkan item unik dengan T2
+        $itemUniqueWithHeader = DB::table('so_yppr079_t2 as t2')
+            ->joinSub($uniqueItemsAgg, 't1_u', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1_u.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
+            });
+
+
+        // 1. Top customers (USD) - PER LOKASI (DEDUPLIKASI)
+        foreach (['smg', 'sby'] as $prefix) {
+            $query = (clone $itemUniqueWithHeader)->where('t2.IV_WERKS_PARAM', $prefix === 'smg' ? '3000' : '2000');
+            $chartData["top_customers_value_usd_{$prefix}"] = $query
+                ->select(
+                    't2.NAME1',
+                    DB::raw('SUM(t1_u.item_total_value) as total_value'),
+                    DB::raw('COUNT(DISTINCT t2.VBELN) as so_count')
                 )
-                ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
-                ->where('t2.WAERK', 'USD')
-                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Hanya outstanding item
+                ->where('t1_u.WAERK', 'USD')
                 ->groupBy('t2.NAME1')
                 ->having('total_value', '>', 0)
                 ->orderByDesc('total_value')
@@ -233,18 +272,16 @@ class DashboardController extends Controller
                 ->get();
         }
 
-        // 2. Top customers (IDR) - PER LOKASI
-        foreach ($locationQueries as $prefix => $query) {
-            $chartData["top_customers_value_idr_{$prefix}"] = (clone $query)
-                ->join(
-                    'so_yppr079_t1 as t1',
-                    DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                    '=',
-                    DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+        // 2. Top customers (IDR) - PER LOKASI (DEDUPLIKASI)
+        foreach (['smg', 'sby'] as $prefix) {
+            $query = (clone $itemUniqueWithHeader)->where('t2.IV_WERKS_PARAM', $prefix === 'smg' ? '3000' : '2000');
+            $chartData["top_customers_value_idr_{$prefix}"] = $query
+                ->select(
+                    't2.NAME1',
+                    DB::raw('SUM(t1_u.item_total_value) as total_value'),
+                    DB::raw('COUNT(DISTINCT t2.VBELN) as so_count')
                 )
-                ->select('t2.NAME1', DB::raw('SUM(t1.TOTPR) as total_value'), DB::raw('COUNT(DISTINCT t2.VBELN) as so_count'))
-                ->where('t2.WAERK', 'IDR')
-                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // Hanya outstanding item
+                ->where('t1_u.WAERK', 'IDR')
                 ->groupBy('t2.NAME1')
                 ->having('total_value', '>', 0)
                 ->orderByDesc('total_value')
@@ -255,10 +292,14 @@ class DashboardController extends Controller
         // 3. Top customers overdue - PER LOKASI (Count PO yang overdue)
         foreach ($locationQueries as $prefix => $query) {
             $chartData["top_customers_overdue_{$prefix}"] = (clone $query)
+                // Join ke t1_check (item) untuk memastikan hanya SO yang memiliki outstanding item dihitung
+                ->join('so_yppr079_t1 as t1_check', function ($j) {
+                    $j->on(DB::raw('TRIM(CAST(t1_check.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+                        ->whereRaw('CAST(t1_check.QTY_BALANCE2 AS DECIMAL(18,3)) > 0');
+                })
                 ->select(
                     't2.NAME1',
                     DB::raw('COUNT(DISTINCT t2.VBELN) as overdue_count'),
-                    // FIX: Gunakan MAX() pada kolom non-agregat untuk memuaskan ONLY_FULL_GROUP_BY
                     DB::raw("MAX(TRIM(t2.IV_WERKS_PARAM)) as locations"),
                     DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '3000' THEN t2.VBELN ELSE NULL END) as smg_count"),
                     DB::raw("COUNT(DISTINCT CASE WHEN t2.IV_WERKS_PARAM = '2000' THEN t2.VBELN ELSE NULL END) as sby_count")
@@ -278,13 +319,10 @@ class DashboardController extends Controller
                 $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
                     ->on('m.IV_AUART', '=', 't2.IV_AUART_PARAM');
             })
-            ->leftJoin(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0'); // Hanya hitung item yang outstanding
+            // Join ke item unik (t1_u) untuk agregasi nilai
+            ->joinSub($uniqueItemsAgg, 't1_u', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1_u.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
+            });
 
         $typesToFilter = null;
         if ($type === 'lokal' || $type === 'export') {
@@ -297,14 +335,20 @@ class DashboardController extends Controller
             $performanceQueryBase->whereIn(DB::raw("CONCAT(m.IV_AUART, '-', m.IV_WERKS)"), $typesToFilter);
         }
 
-        $safeEdatuPerf = $safeEdatu;
+        $safeEdatuPerf = "
+            COALESCE(
+                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'),
+                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d')
+            )";
+
         $performanceQuery = $performanceQueryBase->select(
             'm.Deskription',
             'm.IV_WERKS',
             'm.IV_AUART',
             DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
-            DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
-            DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
+            // Gunakan SUM(t1_u.item_total_value) dari item unik
+            DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
+            DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
             DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
             DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
             DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
@@ -312,14 +356,13 @@ class DashboardController extends Controller
             DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
         )
             ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-            // FIX: Tambahkan kolom m.IV_WERKS, m.IV_AUART, m.Deskription ke GROUP BY 
             ->groupBy('m.IV_WERKS', 'm.IV_AUART', 'm.Deskription')
             ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
             ->get();
 
         $chartData['so_performance_analysis'] = $performanceQuery;
 
-        // Small qty by customer - TETAP
+        // Small qty by customer - TETAP (sudah menggunakan QTY_BALANCE2)
         $smallQtyByCustomerQuery = (clone $baseQuery)
             ->join(
                 'so_yppr079_t1 as t1',
@@ -474,14 +517,29 @@ class DashboardController extends Controller
 
         // ====== PRE-AGREGASI (cepat) ======
         // Total nilai & outstanding qty per SO
-        $aggTotals = DB::table('so_yppr079_t1 as t1')
-            ->when($werks, fn($q) => $q->where('t1.IV_WERKS_PARAM', $werks))
-            ->when(!empty($auartList), fn($q) => $q->whereIn('t1.IV_AUART_PARAM', $auartList))
-            ->groupBy('t1.VBELN')
+        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
             ->select(
-                't1.VBELN',
-                DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS total_value'),
-                DB::raw('CAST(SUM(CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS outs_qty')
+                't1a.VBELN',
+                't1a.POSNR',
+                't1a.MATNR',
+                't1a.WAERK',
+                't1a.IV_WERKS_PARAM',
+                DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
+                DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
+            )
+            ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // hanya outstanding
+            ->when($werks, fn($q) => $q->where('t1a.IV_WERKS_PARAM', $werks))
+            ->when(!empty($auartList), fn($q) => $q->whereIn('t1a.IV_AUART_PARAM', $auartList))
+            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK', 't1a.IV_WERKS_PARAM');
+
+        // Total per SO dari item unik (bukan dari baris dupe)
+        $aggTotals = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t1_u"))
+            ->mergeBindings($uniqueItemsAgg)
+            ->groupBy('t1_u.VBELN')
+            ->select(
+                't1_u.VBELN',
+                DB::raw('CAST(ROUND(SUM(t1_u.item_total_value), 0) AS DECIMAL(18,0)) AS total_value'),
+                DB::raw('CAST(SUM(t1_u.item_outs_qty) AS DECIMAL(18,3)) AS outs_qty')
             );
 
         // Jumlah remark per SO (untuk badge biru)

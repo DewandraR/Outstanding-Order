@@ -16,6 +16,44 @@ use Illuminate\Support\Facades\Auth;
 class SalesOrderController extends Controller
 {
     /**
+     * Helper: Aman-kan parsing EDATU untuk subquery item unik.
+     * Mengambil EDATU dari t1 (yang merupakan subquery item unik)
+     * @param string $alias Alias tabel atau subquery yang berisi kolom EDATU.
+     */
+    private function getSafeEdatuForUniqueItem(string $alias): string
+    {
+        return "COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST({$alias}.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST({$alias}.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+    }
+
+    /**
+     * Helper: Resolusi AUART list (gabungkan Export + Replace saat konteks Export/Replace aktif)
+     */
+    private function resolveAuartListForContext(?string $auart): array
+    {
+        $rawMapping = DB::table('maping')->get();
+
+        $exportAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'export')
+                && !Str::contains(strtolower((string)$i->Deskription), 'local')
+                && !Str::contains(strtolower((string)$i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $replaceAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $list = $auart ? [$auart] : [];
+        $isExportOrReplaceActive = $auart && (in_array($auart, $exportAuartCodes) || in_array($auart, $replaceAuartCodes));
+        if ($isExportOrReplaceActive) {
+            $list = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
+        }
+        return $list ?: ($auart ? [$auart] : []);
+    }
+
+    /**
      * Redirector untuk parameter terenkripsi.
      */
     public function redirector(Request $request)
@@ -67,11 +105,8 @@ class SalesOrderController extends Controller
             ->pluck('IV_AUART')->unique()->toArray();
 
         // Tentukan list AUART yang harus dikueri: jika auart saat ini adalah Export atau Replace, gabungkan keduanya.
-        $auartList = [$auart];
-        $isExportOrReplaceActive = in_array($auart, $exportAuartCodes) || in_array($auart, $replaceAuartCodes);
-        if ($isExportOrReplaceActive) {
-            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
-        }
+        $auartList = $this->resolveAuartListForContext($auart);
+
 
         // 4) LOGIC AUTO-PILIH DEFAULT AUART (Jika hanya plant yang dikirim)
         if ($request->filled('werks') && !$request->filled('auart') && !$request->has('q')) {
@@ -145,55 +180,74 @@ class SalesOrderController extends Controller
         }
 
         if ($werks && $auart) {
-            // parser tanggal aman
-            $safeEdatu = "COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-            )";
-            $safeEdatuInner = "COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
-            )";
 
-            /** Subquery A: agregat SEMUA outstanding (qty & value) per customer, DIPISAH PER CURRENCY */
-            $allAggSubquery = DB::table('so_yppr079_t1 as t1a')
-                ->join('so_yppr079_t2 as t2a', 't2a.VBELN', '=', 't1a.VBELN')
+            // [PERBAIKAN DE-DUPLIKASI LEVEL 1]
+            // Subquery Item Unik (VBELN, POSNR, MATNR) untuk agregasi nilai dan quantity
+            $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
                 ->select(
-                    't2a.KUNNR',
-                    DB::raw('CAST(SUM(CAST(t1a.PACKG AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
+                    't1a.VBELN',
+                    't1a.KUNNR',
+                    't1a.WAERK',
+                    't1a.EDATU',
+                    DB::raw('MAX(t1a.TOTPR2) AS item_total_value'),
+                    DB::raw('MAX(t1a.PACKG) AS item_outs_qty')
                 )
                 ->where('t1a.IV_WERKS_PARAM', $werks)
                 ->whereIn('t1a.IV_AUART_PARAM', $auartList)
                 ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
-                ->groupBy('t2a.KUNNR');
+                ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
 
-            /** Subquery B: agregat hanya OVERDUE value per customer, DIPISAH PER CURRENCY */
-            $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
-                ->join('so_yppr079_t1 as t1', function ($j) {
-                    $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
+
+            /** Subquery A: agregat SEMUA outstanding (qty & value) per customer dari item unik */
+            $allAggSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+                ->select(
+                    't_u.KUNNR',
+                    DB::raw('CAST(SUM(CAST(t_u.item_outs_qty AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'IDR' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'USD' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
+                )
+                ->groupBy('t_u.KUNNR');
+
+            /** Subquery B: agregat hanya OVERDUE value per customer, DIPISAH PER CURRENCY, dari item unik */
+            $overdueValueSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+                ->select(
+                    't_u.KUNNR',
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'IDR' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'USD' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
+                )
+                ->whereRaw($this->getSafeEdatuForUniqueItem('t_u') . ' < CURDATE()')
+                ->groupBy('t_u.KUNNR');
+
+            // Subquery C: Hitung total SO dan Overdue SO count per Customer
+            $soCountAgg = DB::table('so_yppr079_t2 as t2c')
+                ->where('t2c.IV_WERKS_PARAM', $werks)
+                ->whereIn('t2c.IV_AUART_PARAM', $auartList)
+                ->whereExists(function ($q) use ($auartList, $werks) {
+                    $q->select(DB::raw(1))
+                        ->from('so_yppr079_t1 as t1_check')
+                        ->whereColumn('t1_check.VBELN', 't2c.VBELN')
+                        ->whereIn('t1_check.IV_AUART_PARAM', $auartList)
+                        ->where('t1_check.IV_WERKS_PARAM', $werks)
+                        ->where('t1_check.PACKG', '!=', 0);
                 })
                 ->select(
-                    't2_inner.KUNNR',
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR2 AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
+                    't2c.KUNNR',
+                    DB::raw('COUNT(DISTINCT t2c.VBELN) AS SO_TOTAL_COUNT'),
+                    // PERBAIKAN: Mengganti alias t2.EDATU menjadi t2c.EDATU di sini
+                    DB::raw("COUNT(DISTINCT CASE WHEN COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2c.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2c.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')) < CURDATE() THEN t2c.VBELN ELSE NULL END) AS SO_LATE_COUNT")
                 )
-                ->where('t2_inner.IV_WERKS_PARAM', $werks)
-                ->whereIn('t2_inner.IV_AUART_PARAM', $auartList)
-                ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
-                ->whereRaw("{$safeEdatuInner} < CURDATE()")
-                ->groupBy('t2_inner.KUNNR');
+                ->groupBy('t2c.KUNNR');
 
-            // Overview Customer (tabel utama)
+            // Query Utama (Level 1)
             $rows = DB::table('so_yppr079_t2 as t2')
+                ->joinSub($soCountAgg, 'agg_so', fn($j) => $j->on('t2.KUNNR', '=', 'agg_so.KUNNR'))
                 ->leftJoinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
                 ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
                 ->select(
                     't2.KUNNR',
                     DB::raw('MAX(t2.NAME1) AS NAME1'),
-                    DB::raw('COUNT(DISTINCT t2.VBELN) AS SO_TOTAL_COUNT'),
-                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT"),
+                    DB::raw('MAX(agg_so.SO_TOTAL_COUNT) AS SO_TOTAL_COUNT'),
+                    DB::raw('MAX(agg_so.SO_LATE_COUNT) AS SO_LATE_COUNT'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0) AS TOTAL_OUTS_QTY'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0) AS TOTAL_ALL_VALUE_IDR'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0) AS TOTAL_ALL_VALUE_USD'),
@@ -202,21 +256,14 @@ class SalesOrderController extends Controller
                 )
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->whereIn('t2.IV_AUART_PARAM', $auartList)
-                ->whereExists(function ($q) use ($auartList, $werks) {
-                    $q->select(DB::raw(1))
-                        ->from('so_yppr079_t1 as t1_check')
-                        ->whereColumn('t1_check.VBELN', 't2.VBELN')
-                        ->whereIn('t1_check.IV_AUART_PARAM', $auartList)
-                        ->where('t1_check.IV_WERKS_PARAM', $werks)
-                        ->where('t1_check.PACKG', '!=', 0);
-                })
                 ->whereNotNull('t2.NAME1')
                 ->where('t2.NAME1', '!=', '')
                 ->groupBy('t2.KUNNR')
                 ->orderBy('NAME1', 'asc')
                 ->get();
 
-            // Total untuk footer
+
+            // Total untuk footer (menggunakan hasil rows yang sudah diperbaiki)
             $pageTotalsAll = [
                 'USD' => $rows->sum('TOTAL_ALL_VALUE_USD'),
                 'IDR' => $rows->sum('TOTAL_ALL_VALUE_IDR'),
@@ -236,7 +283,7 @@ class SalesOrderController extends Controller
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
                 ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
                 ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-                ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count, COUNT(t1.POSNR) as item_count')
+                ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count, COUNT(DISTINCT CONCAT(t1.VBELN, "-", t1.POSNR, "-", t1.MATNR)) as item_count')
                 ->orderBy('t2.NAME1')
                 ->get();
         }
@@ -251,21 +298,22 @@ class SalesOrderController extends Controller
 
         // 7) kirim ke view
         return view('sales_order.so_report', [
-            'mapping'             => $mappingForPills,
-            'rows'                => $rows,
-            'selected'            => ['werks' => $werks, 'auart' => $auart],
-            'selectedDescription' => $selectedDescription,
-            'pageTotalsAll'       => $pageTotalsAll,
-            'pageTotalsOverdue'   => $pageTotalsOverdue,
-            'grandTotals'         => $grandTotals,
-            'highlight'           => $highlight,
-            'autoExpand'          => $autoExpand,
-            'smallQtyByCustomer'  => $smallQtyByCustomer,
+            'mapping'               => $mappingForPills,
+            'rows'                  => $rows,
+            'selected'              => ['werks' => $werks, 'auart' => $auart],
+            'selectedDescription'   => $selectedDescription,
+            'pageTotalsAll'         => $pageTotalsAll,
+            'pageTotalsOverdue'     => $pageTotalsOverdue,
+            'grandTotals'           => $grandTotals,
+            'highlight'             => $highlight,
+            'autoExpand'            => $autoExpand,
+            'smallQtyByCustomer'    => $smallQtyByCustomer,
         ]);
     }
 
     /**
      * API: Ambil daftar SO outstanding untuk 1 customer (Level 2).
+     * [PERBAIKAN DE-DUPLIKASI LEVEL 2]
      */
     public function apiGetSoByCustomer(Request $request)
     {
@@ -277,22 +325,7 @@ class SalesOrderController extends Controller
         $werks = $request->werks;
         $auart = $request->auart;
 
-        // LOGIKA PENGGABUNGAN Export + Replace
-        $rawMapping = DB::table('maping')->get();
-        $exportAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
-                && !Str::contains(strtolower($i->Deskription), 'local')
-                && !Str::contains(strtolower($i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-        $replaceAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-
-        $auartList = [$auart];
-        $isExportOrReplaceActive = in_array($auart, $exportAuartCodes) || in_array($auart, $replaceAuartCodes);
-        if ($isExportOrReplaceActive) {
-            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
-        }
+        $auartList = $this->resolveAuartListForContext($auart);
 
         // Subquery remark count per SO
         $remarksSub = DB::table('item_remarks as ir')
@@ -309,24 +342,46 @@ class SalesOrderController extends Controller
             ->select('ir.VBELN', DB::raw('COUNT(*) AS remark_count'))
             ->groupBy('ir.VBELN');
 
-        $rows = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
-            ->leftJoinSub($remarksSub, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't1.VBELN'))
+        // [BARU]: Subquery untuk mendapatkan total OUTS Qty/Value per item unik (VBELN, POSNR, MATNR)
+        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
             ->select(
-                't1.VBELN',
-                't2.EDATU',
-                't1.WAERK',
-                DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as total_value'),
-                DB::raw('SUM(CAST(t1.PACKG  AS DECIMAL(18,3))) as outs_qty'),
-                DB::raw('COUNT(DISTINCT t1.id) as item_count'),
+                't1a.VBELN',
+                't1a.POSNR',
+                't1a.MATNR',
+                't1a.EDATU',
+                DB::raw('MAX(t1a.WAERK) as WAERK'),
+                DB::raw('MAX(t1a.TOTPR2) as item_total_value'),
+                DB::raw('MAX(t1a.PACKG) as item_outs_qty')
+            )
+            ->where('t1a.IV_WERKS_PARAM', $werks)
+            ->whereIn('t1a.IV_AUART_PARAM', $auartList)
+            ->where('t1a.KUNNR', $request->kunnr)
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
+            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.EDATU');
+
+
+        // Query utama: Agregasi dari subquery item unik untuk mendapatkan total per SO
+        $rows = DB::table('so_yppr079_t2 as t2')
+            ->joinSub($uniqueItemsAgg, 'item_agg', function ($j) {
+                $j->on('item_agg.VBELN', '=', 't2.VBELN');
+            })
+            ->leftJoinSub($remarksSub, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't2.VBELN'))
+            ->select(
+                't2.VBELN',
+                DB::raw('MAX(t2.EDATU) as EDATU'), // Ambil EDATU dari t2 (untuk konsistensi)
+                DB::raw('MAX(item_agg.WAERK) as WAERK'), // Ambil WAERK dari item_agg
+                DB::raw('CAST(ROUND(SUM(CAST(item_agg.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as total_value'), // SUM dari item unik
+                DB::raw('SUM(CAST(item_agg.item_outs_qty AS DECIMAL(18,3))) as outs_qty'),                                     // SUM dari item unik
+                DB::raw('COUNT(DISTINCT CONCAT(item_agg.VBELN, "-", t2.KUNNR)) as so_count'), // Ini hanya 1 karena group by VBELN
+                DB::raw('COUNT(DISTINCT CONCAT(item_agg.VBELN, "-", item_agg.POSNR, "-", item_agg.MATNR)) as item_count'), // Hitung item unik
                 DB::raw('COALESCE(MAX(rk.remark_count),0) AS remark_count')
             )
-            ->where('t1.KUNNR', $request->kunnr)
-            ->where('t1.IV_WERKS_PARAM', $werks)
-            ->whereIn('t1.IV_AUART_PARAM', $auartList)
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            ->groupBy('t1.VBELN', 't2.EDATU', 't1.WAERK')
+            ->where('t2.KUNNR', $request->kunnr)
+            ->where('t2.IV_WERKS_PARAM', $werks)
+            ->whereIn('t2.IV_AUART_PARAM', $auartList)
+            ->groupBy('t2.VBELN', 't2.EDATU') // Grouping berdasarkan SO (VBELN)
             ->get();
+
 
         // hitung overdue & format tanggal
         $today = now()->startOfDay();
@@ -358,7 +413,7 @@ class SalesOrderController extends Controller
             $aOver = $a->Overdue > 0;
             $bOver = $b->Overdue > 0;
             if ($aOver !== $bOver) return $aOver ? -1 : 1; // overdue (+) di atas
-            return $b->Overdue <=> $a->Overdue;          // desc di dalam grup
+            return $b->Overdue <=> $a->Overdue;            // desc di dalam grup
         })->values();
 
         return response()->json(['ok' => true, 'data' => $sorted], 200);
@@ -379,22 +434,7 @@ class SalesOrderController extends Controller
         $werks = $request->werks;
         $auart = $request->auart;
 
-        // AUART list (gabungan Export+Replace bila perlu)
-        $rawMapping = DB::table('maping')->get();
-        $exportAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
-                && !Str::contains(strtolower($i->Deskription), 'local')
-                && !Str::contains(strtolower($i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-        $replaceAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-
-        $auartList = [$auart];
-        $isExportOrReplaceActive = in_array($auart, $exportAuartCodes) || in_array($auart, $replaceAuartCodes);
-        if ($isExportOrReplaceActive) {
-            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
-        }
+        $auartList = $this->resolveAuartListForContext($auart);
 
         // Subquery: jumlah remark per item
         $remarksAgg = DB::table('item_remarks as ir')
@@ -408,39 +448,42 @@ class SalesOrderController extends Controller
             ->whereIn('ir.IV_AUART_PARAM', $auartList)
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
+        // [PERBAIKAN: Gunakan MAX() pada non-grouped columns untuk mengatasi duplikasi di t1]
+        // Grouping berdasarkan VBELN, POSNR, MATNR
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
                 $j->on('ragg.VBELN', '=', 't1.VBELN')
                     ->on('ragg.POSNR', '=', 't1.POSNR');
             })
             ->select(
-                't1.id',
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.PACKG',
-                't1.KALAB2',
-                't1.DAYX',
-                't1.ASSYM',
-                't1.PAINT',
-                't1.MENGE',
-                't1.NETPR',
-                't1.TOTPR2',
-                't1.TOTPR',
-                't1.NETWR',
-                't1.WAERK',
+                DB::raw('MAX(t1.id) as id'), // Ambil satu ID
+                DB::raw('MAX(t1.MAKTX) as MAKTX'),
+                DB::raw('MAX(t1.KWMENG) as KWMENG'),
+                DB::raw('MAX(t1.PACKG) as PACKG'),
+                DB::raw('MAX(t1.KALAB2) as KALAB2'),
+                DB::raw('MAX(t1.DAYX) as DAYX'),
+                DB::raw('MAX(t1.ASSYM) as ASSYM'),
+                DB::raw('MAX(t1.PAINT) as PAINT'),
+                DB::raw('MAX(t1.MENGE) as MENGE'),
+                DB::raw('MAX(t1.NETPR) as NETPR'),
+                DB::raw('MAX(t1.TOTPR2) as TOTPR2'),
+                DB::raw('MAX(t1.TOTPR) as TOTPR'),
+                DB::raw('MAX(t1.NETWR) as NETWR'),
+                DB::raw('MAX(t1.WAERK) as WAERK'),
                 DB::raw("TRIM(LEADING '0' FROM TRIM(t1.POSNR)) as POSNR"),
                 DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_KEY"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
-                't1.IV_WERKS_PARAM as WERKS_KEY',
-                't1.IV_AUART_PARAM as AUART_KEY',
-                't1.VBELN as VBELN_KEY',
-                DB::raw('COALESCE(ragg.remark_count, 0) as remark_count'),
-                DB::raw('ragg.last_remark_at as last_remark_at')
+                DB::raw('MAX(t1.IV_WERKS_PARAM) as WERKS_KEY'),
+                DB::raw('MAX(t1.IV_AUART_PARAM) as AUART_KEY'),
+                't1.VBELN as VBELN_KEY', // Tetap sebagai VBELN_KEY
+                DB::raw('COALESCE(MAX(ragg.remark_count), 0) as remark_count'),
+                DB::raw('MAX(ragg.last_remark_at) as last_remark_at')
             )
             ->where('t1.VBELN', $request->vbeln)
             ->where('t1.IV_WERKS_PARAM', $request->werks)
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
             ->where('t1.PACKG', '!=', 0)
+            ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR') // Grouping baru: VBELN + POSNR + MATNR
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
@@ -449,7 +492,6 @@ class SalesOrderController extends Controller
 
     /**
      * Export PDF / Excel untuk item terpilih.
-     * Kolom remark digabungkan (nama user: isi) dengan GROUP_CONCAT.
      */
     public function exportData(Request $request)
     {
@@ -466,6 +508,28 @@ class SalesOrderController extends Controller
         $werks      = $validated['werks'];
         $auart      = $validated['auart'];
 
+        // Ambil VBELN & POSNR dari Item ID yang dipilih
+        $itemKeys = DB::table('so_yppr079_t1')
+            ->whereIn('id', $itemIds)
+            ->select('VBELN', 'POSNR', 'MATNR')
+            ->get();
+
+        $vbelnPosnrMatnrPairs = $itemKeys->map(function ($item) {
+            return [
+                'VBELN' => $item->VBELN,
+                'POSNR' => $item->POSNR,
+                'MATNR' => $item->MATNR,
+            ];
+        })->unique();
+
+        if ($vbelnPosnrMatnrPairs->isEmpty()) {
+            // Jika tidak ada item yang ditemukan, mungkin karena duplikasi ID, kembalikan response kosong
+            if ($exportType === 'excel') {
+                return Excel::download(new SoItemsExport(collect()), 'Outstanding_SO_Empty_' . date('Ymd_His') . ".xlsx");
+            }
+            return response()->json(['error' => 'No unique items found for export.'], 400);
+        }
+
         // Subquery agregasi remark (nama user + teks)
         $remarksConcat = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
@@ -475,38 +539,51 @@ class SalesOrderController extends Controller
                 'ir.VBELN',
                 'ir.POSNR',
                 DB::raw("
-            GROUP_CONCAT(
-                CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
-                ORDER BY ir.created_at
-                SEPARATOR '\n'
-            ) AS REMARKS
-        ")
+                GROUP_CONCAT(
+                    CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
+                    ORDER BY ir.created_at
+                    SEPARATOR '\n'
+                ) AS REMARKS
+            ")
             )
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
+        // Query utama: Ambil data item, DENGAN DEDUPLIKASI
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksConcat, 'rc', function ($j) {
                 $j->on('rc.VBELN', '=', 't1.VBELN')
                     ->on('rc.POSNR', '=', 't1.POSNR');
             })
-            ->whereIn('t1.id', $itemIds)
+            // Gunakan subquery untuk memastikan hanya item unik yang termasuk
+            ->where(function ($query) use ($vbelnPosnrMatnrPairs) {
+                foreach ($vbelnPosnrMatnrPairs as $pair) {
+                    $query->orWhere(function ($q) use ($pair) {
+                        $q->where('t1.VBELN', $pair['VBELN'])
+                            ->where('t1.POSNR', $pair['POSNR'])
+                            ->where('t1.MATNR', $pair['MATNR']);
+                    });
+                }
+            })
+            // Tambahkan MAX() untuk kolom non-grouped agar duplikasi di DB t1 teratasi
             ->select(
                 't1.VBELN',
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.PACKG',
-                't1.KALAB',
-                't1.KALAB2',
-                't1.ASSYM',
-                't1.PAINT',
-                't1.MENGE',
-                DB::raw("COALESCE(rc.REMARKS, '') AS remark") // <- gabungan remark
+                DB::raw('MAX(t1.MAKTX) as MAKTX'),
+                DB::raw('MAX(t1.KWMENG) as KWMENG'),
+                DB::raw('MAX(t1.PACKG) as PACKG'),
+                DB::raw('MAX(t1.KALAB) as KALAB'),
+                DB::raw('MAX(t1.KALAB2) as KALAB2'),
+                DB::raw('MAX(t1.ASSYM) as ASSYM'),
+                DB::raw('MAX(t1.PAINT) as PAINT'),
+                DB::raw('MAX(t1.MENGE) as MENGE'),
+                DB::raw("COALESCE(MAX(rc.REMARKS), '') AS remark")
             )
+            ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderBy('t1.VBELN', 'asc')
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
+
 
         $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName   = $locationMap[$werks] ?? $werks;
@@ -531,11 +608,11 @@ class SalesOrderController extends Controller
         }
 
         $dataForPdf = [
-            'items'            => $items,
-            'locationName'     => $locationName,
-            'werks'            => $werks,
-            'auartDescription' => $auartDesc,
-            'auart'            => $auart,
+            'items'              => $items,
+            'locationName'       => $locationName,
+            'werks'              => $werks,
+            'auartDescription'   => $auartDesc,
+            'auart'              => $auart,
         ];
         $pdf = Pdf::loadView('sales_order.so_pdf_template', $dataForPdf)
             ->setPaper('a4', 'landscape');
@@ -545,8 +622,6 @@ class SalesOrderController extends Controller
 
     /**
      * (LEGACY) Simpan / hapus remark item — dipertahankan untuk kompatibilitas.
-     * Sekarang: kalau remark != '', simpan sebagai remark BARU milik user saat ini.
-     * Jika remark == '', hapus SEMUA remark milik user saat ini untuk item tsb.
      */
     public function apiSaveRemark(Request $request)
     {
@@ -610,46 +685,42 @@ class SalesOrderController extends Controller
         $auart = $request->query('auart');
 
         // Logika Penggabungan Export/Replace
-        $rawMapping = DB::table('maping')->get();
-        $exportAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'export')
-                && !Str::contains(strtolower($i->Deskription), 'local')
-                && !Str::contains(strtolower($i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-        $replaceAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower($i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-
-        $auartList = [$auart];
-        $isExportOrReplaceActive = in_array($auart, $exportAuartCodes) || in_array($auart, $replaceAuartCodes);
-        if ($isExportOrReplaceActive) {
-            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
-        }
+        $auartList = $this->resolveAuartListForContext($auart);
 
         // Deskripsi SO Type & lokasi
         $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName   = $locationMap[$werks] ?? $werks;
         $auartDesc      = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
-        // Aman-kan parsing tanggal
+        // Aman-kan parsing tanggal untuk t2
         $safeEdatu = "COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'))";
-        $safeEdatuInner = "COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2_inner.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'))";
 
-        // Total value OVERDUE per customer
-        $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
-            ->join('so_yppr079_t1 as t1', function ($j) {
-                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
-            })
+        // [PERBAIKAN DE-DUPLIKASI LEVEL 1]
+        // Subquery Item Unik (VBELN, POSNR, MATNR) untuk agregasi nilai
+        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
             ->select(
-                't2_inner.KUNNR',
-                DB::raw('CAST(ROUND(SUM(CAST(t1.TOTPR2 AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE'),
-                DB::raw('MAX(t1.WAERK) as WAERK')
+                't1a.VBELN',
+                't1a.KUNNR',
+                't1a.WAERK',
+                't1a.EDATU',
+                DB::raw('MAX(t1a.TOTPR2) AS item_total_value')
             )
-            ->where('t2_inner.IV_WERKS_PARAM', $werks)
-            ->whereIn('t2_inner.IV_AUART_PARAM', $auartList)
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
-            ->whereRaw("{$safeEdatuInner} < CURDATE()")
-            ->groupBy('t2_inner.KUNNR');
+            ->where('t1a.IV_WERKS_PARAM', $werks)
+            ->whereIn('t1a.IV_AUART_PARAM', $auartList)
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
+
+
+        // Total value OVERDUE per customer, dari item unik
+        $overdueValueSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+            ->select(
+                't_u.KUNNR',
+                DB::raw('CAST(ROUND(SUM(CAST(t_u.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE'),
+                DB::raw('MAX(t_u.WAERK) as WAERK')
+            )
+            ->whereRaw($this->getSafeEdatuForUniqueItem('t_u') . ' < CURDATE()')
+            ->groupBy('t_u.KUNNR');
+
 
         $rows = DB::table('so_yppr079_t2 as t2')
             ->leftJoinSub($overdueValueSubquery, 'overdue_values', fn($j) => $j->on('t2.KUNNR', '=', 'overdue_values.KUNNR'))
@@ -702,6 +773,7 @@ class SalesOrderController extends Controller
 
         $auartList = $this->resolveAuartListForContext($auart);
 
+        // [PERBAIKAN DEDUPLIKASI]: Hitung item unik untuk item_count
         $rows = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
             ->where('t1.IV_WERKS_PARAM', $werks)
@@ -710,7 +782,7 @@ class SalesOrderController extends Controller
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
             ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
-            ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count')
+            ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count, COUNT(DISTINCT CONCAT(t1.VBELN, "-", t1.POSNR, "-", t1.MATNR)) as item_count')
             ->orderBy('t2.NAME1')
             ->get();
 
@@ -738,6 +810,7 @@ class SalesOrderController extends Controller
 
         $auartList = $this->resolveAuartListForContext($auart);
 
+        // [PERBAIKAN DEDUPLIKASI]: Gunakan MAX() dan Group By (VBELN, POSNR, MATNR)
         $items = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
             ->where('t2.NAME1', $customerName)
@@ -750,13 +823,14 @@ class SalesOrderController extends Controller
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR)) as SO'),
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.PACKG',
-                't1.KALAB',
-                't1.KALAB2',
-                't1.QTY_GI'
+                DB::raw('MAX(t1.MAKTX) as MAKTX'),
+                DB::raw('MAX(t1.KWMENG) as KWMENG'),
+                DB::raw('MAX(t1.PACKG) as PACKG'),
+                DB::raw('MAX(t1.KALAB) as KALAB'),
+                DB::raw('MAX(t1.KALAB2) as KALAB2'),
+                DB::raw('MAX(t1.QTY_GI) as QTY_GI')
             )
+            ->groupBy('t2.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 
         return response()->json(['ok' => true, 'data' => $items]);
@@ -778,6 +852,7 @@ class SalesOrderController extends Controller
 
         $auartList = $this->resolveAuartListForContext($auart);
 
+        // [PERBAIKAN DEDUPLIKASI]: Gunakan MAX() dan Group By (VBELN, POSNR, MATNR)
         $items = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
             ->where('t2.NAME1', $customerName)
@@ -790,13 +865,14 @@ class SalesOrderController extends Controller
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR)) AS SO'),
                 DB::raw('TRIM(LEADING "0" FROM t1.POSNR) AS POSNR'),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.PACKG',
-                't1.KALAB',
-                't1.KALAB2',
-                't1.QTY_GI'
+                DB::raw('MAX(t1.MAKTX) as MAKTX'),
+                DB::raw('MAX(t1.KWMENG) as KWMENG'),
+                DB::raw('MAX(t1.PACKG) as PACKG'),
+                DB::raw('MAX(t1.KALAB) as KALAB'),
+                DB::raw('MAX(t1.KALAB2) as KALAB2'),
+                DB::raw('MAX(t1.QTY_GI) as QTY_GI')
             )
+            ->groupBy('t2.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 
         $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
@@ -814,7 +890,7 @@ class SalesOrderController extends Controller
     }
 
     /**
-     * ====== BARU: API REMARK MULTI-USER ======
+     * ====== API REMARK MULTI-USER ======
      * List remark per item.
      */
     public function apiListItemRemarks(Request $request)
@@ -943,30 +1019,5 @@ class SalesOrderController extends Controller
             ]);
 
         return response()->json(['ok' => true, 'message' => 'Remark berhasil diubah.']);
-    }
-
-    /**
-     * Helper: Resolusi AUART list (gabungkan Export + Replace saat konteks Export/Replace aktif)
-     */
-    private function resolveAuartListForContext(?string $auart): array
-    {
-        $rawMapping = DB::table('maping')->get();
-
-        $exportAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'export')
-                && !Str::contains(strtolower((string)$i->Deskription), 'local')
-                && !Str::contains(strtolower((string)$i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-
-        $replaceAuartCodes = $rawMapping
-            ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'replace'))
-            ->pluck('IV_AUART')->unique()->toArray();
-
-        $list = $auart ? [$auart] : [];
-        $isExportOrReplaceActive = $auart && (in_array($auart, $exportAuartCodes) || in_array($auart, $replaceAuartCodes));
-        if ($isExportOrReplaceActive) {
-            $list = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
-        }
-        return $list ?: ($auart ? [$auart] : []);
     }
 }

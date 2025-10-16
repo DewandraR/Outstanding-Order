@@ -25,25 +25,16 @@ Laravel Task Scheduling
     php artisan schedule:list (melihat jadwal akan dijalankan)
 
 
-    
 Buka file log langsung
-
-cat storage/logs/yppr_sync.log
-
+  cat storage/logs/yppr_sync.log
 
 Lihat bagian akhir log (berguna kalau file sudah panjang):
-
-tail -n 50 storage/logs/yppr_sync.log
-
-
+  tail -n 50 storage/logs/yppr_sync.log
 (menampilkan 50 baris terakhir)
 
 Pantau log secara real time (mirip live console):
-
-tail -f storage/logs/yppr_sync.log
-
-
-Get-Content -Wait storage\logs\yppr_sync.log
+  tail -f storage/logs/yppr_sync.log
+  Get-Content -Wait storage\logs\yppr_sync.log
 """
 
 import os, json, decimal, datetime
@@ -56,7 +47,12 @@ from pyrfc import Connection
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from dotenv import load_dotenv
 import signal
-signal.signal(signal.SIGINT, signal.SIG_IGN)  # abaikan KeyboardInterrupt
+
+# abaikan KeyboardInterrupt agar thread pool/IO tidak membatalkan proses di tengah bulk insert
+try:
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+except Exception:
+    pass
 
 load_dotenv()  # otomatis baca .env dari working directory
 
@@ -199,11 +195,25 @@ COMMON_SO_COLS = [
     "EDATU", "WERKS", "BSTNK",
     "KWMENG", "BMENG", "VRKME", "MEINS",
     "MATNR", "MAKTX",
-    "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI", "QTY_BALANCE", "QTY_BALANCE2",
+    "KALAB", "KALAB2", "QTY_DELIVERY", "QTY_GI",
+    "QTY_BALANCE", "QTY_BALANCE2",
     "MENGX1", "MENGX2", "MENGE",
     "ASSYM", "PAINT", "PACKG",
-    "QTYS", "MACHI", "EBDIN", "MACHP", "EBDIP",
+    "QTYS", "MACHI", "EBDIN",
+    "MACHP", "EBDIP",
     "TYPE1", "TYPE2", "TYPE", "DAYX",
+
+    # --- kolom baru (harus sebelum fetched_at) ---
+    "ASSY", "PAINTM", "PACKGM",
+    "PRSM",
+    "QPROM", "QODRM", "QPROA", "QODRA",
+    "PRSA",
+    "QPROI", "QODRI",
+    "PRSI",
+    "QPROP", "QODRP",
+    "PRSP",
+    # ---------------------------------------------
+
     "fetched_at",
 ]
 SO_COL_LIST = ", ".join(COMMON_SO_COLS)
@@ -233,6 +243,17 @@ def ensure_tables():
       QTYS DECIMAL(18,3), MACHI DECIMAL(18,3), EBDIN DECIMAL(18,3),
       MACHP DECIMAL(18,3), EBDIP DECIMAL(18,3),
       TYPE1 VARCHAR(25), TYPE2 VARCHAR(25), TYPE VARCHAR(25), DAYX INT,
+
+      -- kolom baru (sebelum fetched_at)
+      ASSY   DECIMAL(18,3), PAINTM DECIMAL(18,3), PACKGM DECIMAL(18,3),
+      PRSM   DECIMAL(18,2),
+      QPROM  DECIMAL(18,3), QODRM DECIMAL(18,3), QPROA DECIMAL(18,3), QODRA DECIMAL(18,3),
+      PRSA   DECIMAL(18,2),
+      QPROI  DECIMAL(18,3), QODRI DECIMAL(18,3),
+      PRSI   DECIMAL(18,2),
+      QPROP  DECIMAL(18,3), QODRP DECIMAL(18,3),
+      PRSP   DECIMAL(18,2),
+
       fetched_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
@@ -264,6 +285,17 @@ def ensure_tables():
       QTYS DECIMAL(18,3), MACHI DECIMAL(18,3), EBDIN DECIMAL(18,3),
       MACHP DECIMAL(18,3), EBDIP DECIMAL(18,3),
       TYPE1 VARCHAR(25), TYPE2 VARCHAR(25), TYPE VARCHAR(25), DAYX INT,
+
+      -- kolom baru (sebelum fetched_at)
+      ASSY   DECIMAL(18,3), PAINTM DECIMAL(18,3), PACKGM DECIMAL(18,3),
+      PRSM   DECIMAL(18,2),
+      QPROM  DECIMAL(18,3), QODRM DECIMAL(18,3), QPROA DECIMAL(18,3), QODRA DECIMAL(18,3),
+      PRSA   DECIMAL(18,2),
+      QPROI  DECIMAL(18,3), QODRI DECIMAL(18,3),
+      PRSI   DECIMAL(18,2),
+      QPROP  DECIMAL(18,3), QODRP DECIMAL(18,3),
+      PRSP   DECIMAL(18,2),
+
       fetched_at DATETIME NOT NULL,
       UNIQUE KEY uq_t3 (IV_WERKS_PARAM, IV_AUART_PARAM, VBELN, POSNR)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -275,15 +307,21 @@ def ensure_tables():
         cur.execute(ddl2)
         cur.execute(ddl2_fix)
         cur.execute(ddl3)
+
+        # Pastikan KALAB2 ada (kompatibilitas lama)
         for _tbl in ("so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3"):
             try:
                 cur.execute(f"ALTER TABLE {_tbl} ADD COLUMN KALAB2 DECIMAL(18,3) AFTER KALAB")
             except Exception:
                 pass
+
+        # Buang index unik t1 jika ada (disamakan dengan skema awal Anda)
         try:
             cur.execute("ALTER TABLE so_yppr079_t1 DROP INDEX uq_t1")
         except Exception:
             pass
+
+        # Tambah unique key t2 (meniru skema awal)
         try:
             cur.execute("""
                 ALTER TABLE so_yppr079_t2
@@ -291,6 +329,37 @@ def ensure_tables():
             """)
         except Exception:
             pass
+
+        # Tambah kolom-kolom baru bila belum ada, dengan urutan tepat sebelum fetched_at
+        new_cols = [
+            ("ASSY",   "DECIMAL(18,3)"),
+            ("PAINTM", "DECIMAL(18,3)"),
+            ("PACKGM", "DECIMAL(18,3)"),
+            ("PRSM",   "DECIMAL(18,2)"),
+            ("QPROM",  "DECIMAL(18,3)"),
+            ("QODRM",  "DECIMAL(18,3)"),
+            ("QPROA",  "DECIMAL(18,3)"),
+            ("QODRA",  "DECIMAL(18,3)"),
+            ("PRSA",   "DECIMAL(18,2)"),
+            ("QPROI",  "DECIMAL(18,3)"),
+            ("QODRI",  "DECIMAL(18,3)"),
+            ("PRSI",   "DECIMAL(18,2)"),
+            ("QPROP",  "DECIMAL(18,3)"),
+            ("QODRP",  "DECIMAL(18,3)"),
+            ("PRSP",   "DECIMAL(18,2)"),
+        ]
+        # urutkan mulai AFTER DAYX supaya berakhir tepat sebelum fetched_at
+        for _tbl in ("so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3"):
+            after_col = "DAYX"
+            for col_name, col_type in new_cols:
+                try:
+                    cur.execute(
+                        f"ALTER TABLE {_tbl} ADD COLUMN {col_name} {col_type} AFTER {after_col}"
+                    )
+                except Exception:
+                    pass  # kolom mungkin sudah ada
+                after_col = col_name
+
         db.commit()
     finally:
         cur.close(); db.close()
@@ -315,6 +384,20 @@ def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.date
         fnum(r.get("MACHP")), fnum(r.get("EBDIP")),
         r.get("TYPE1"), r.get("TYPE2"), r.get("TYPE"),
         int(r.get("DAYX") or 0),
+
+        # --- kolom baru ---
+        fnum(r.get("ASSY")),
+        fnum(r.get("PAINTM")),
+        fnum(r.get("PACKGM")),
+        fnum(r.get("PRSM")),
+        fnum(r.get("QPROM")), fnum(r.get("QODRM")), fnum(r.get("QPROA")), fnum(r.get("QODRA")),
+        fnum(r.get("PRSA")),
+        fnum(r.get("QPROI")), fnum(r.get("QODRI")),
+        fnum(r.get("PRSI")),
+        fnum(r.get("QPROP")), fnum(r.get("QODRP")),
+        fnum(r.get("PRSP")),
+        # -------------------
+
         now,
     )
 
@@ -346,10 +429,10 @@ def _bulk_insert_so_plain(cur, table: str, params: list, batch_size: int = 1000)
 # -------------------- DDL & Buffer Logic for Z_FM_YSDR048 (Stock Sync) --------------------
 
 STOCK_COLS = [
-    "NAME1", "BSTNK", "VBELN", "POSNR", 
-    "MATNH", "MAKTXH", "MATNR", "MAKTX", 
-    "MATNRX", "IDNRK", "STOCK3", "MEINS", 
-    "STATS", "BUDAT", "PSMNG", "WEMNG", 
+    "NAME1", "BSTNK", "VBELN", "POSNR",
+    "MATNH", "MAKTXH", "MATNR", "MAKTX",
+    "MATNRX", "IDNRK", "STOCK3", "MEINS",
+    "STATS", "BUDAT", "PSMNG", "WEMNG",
     "NETPR", "TPRC", "TTIME",
 ]
 STOCK_COL_LIST = ", ".join(STOCK_COLS + ["IV_PARAM", "fetched_at"])
@@ -369,23 +452,23 @@ def ensure_stock_tables():
       fetched_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
-    
+
     table_names = list(STOCK_TABLE_MAP.values())
-    
+
     db = connect_mysql()
     cur = db.cursor()
     try:
         for name in table_names:
             ddl = base_ddl.format(table_name=name)
             cur.execute(ddl)
-        
+
         for name in table_names:
             try:
                 cur.execute(f"ALTER TABLE {name} ADD INDEX idx_vbeln (VBELN)")
                 cur.execute(f"ALTER TABLE {name} ADD INDEX idx_matnr (MATNR)")
             except Exception:
                 pass
-        
+
         db.commit()
     finally:
         cur.close(); db.close()
@@ -393,14 +476,14 @@ def ensure_stock_tables():
 def _stock_row_params(param: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     """Bangun 1 tuple parameter insert sesuai kolom STOCK_COLS."""
     posnr = str(r.get("POSNR")).zfill(4) if r.get("POSNR") is not None else None
-    
+
     return (
         r.get("NAME1"), r.get("BSTNK"), r.get("VBELN"), posnr,
         r.get("MATNH"), r.get("MAKTXH"), r.get("MATNR"), r.get("MAKTX"),
         r.get("MATNRX"), r.get("IDNRK"), fnum(r.get("STOCK3")), r.get("MEINS"),
         r.get("STATS"), fdate_yyyymmdd(r.get("BUDAT")), fnum(r.get("PSMNG")), fnum(r.get("WEMNG")),
         fnum(r.get("NETPR")), fnum(r.get("TPRC")), r.get("TTIME"),
-        param, 
+        param,
         now,
     )
 
@@ -502,7 +585,6 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         "pairs": summary, "started_at": start_ts.isoformat(), "finished_at": done_ts.isoformat(),
     }
 
-
 # -------------------- LOGIKA SYNC BARU (Z_FM_YSDR048) --------------------
 def do_sync_stock(timeout_sec: int = 3000):
     """Menjalankan Z_FM_YSDR048 3x dan menyimpan hasilnya ke tabel stock_assy, stock_ptg, stock_pkg."""
@@ -525,18 +607,18 @@ def do_sync_stock(timeout_sec: int = 3000):
         return {"ok": False, "error": f"SAP connection failed: {e}", "summary": []}
 
     sync_params = {"IV_SIAD": "X", "IV_SIPD": "X", "IV_SIPP": "X"}
-    
+
     buffers: Dict[str, List[tuple]] = {}; summary: List[Dict[str, Any]] = []
-    
+
     try:
         for param_name, param_value in sync_params.items():
             now = datetime.datetime.now()
             # 🌟 MENGGUNAKAN PEMETAAN BARU
-            table_name = STOCK_TABLE_MAP[param_name] 
+            table_name = STOCK_TABLE_MAP[param_name]
             buffers[table_name] = []
-            
+
             params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": ""}; params[param_name] = param_value
-            
+
             try:
                 print(f"[INFO] Calling RFC for {param_name}='{param_value}' -> {table_name}...", flush=True)
                 r = call_rfc_with_timeout(sap, timeout_sec, RFC_NAME_STOCK, **params)
@@ -562,10 +644,10 @@ def do_sync_stock(timeout_sec: int = 3000):
     try:
         print("Menghapus tabel stok lama (TRUNCATE)…", flush=True)
         cur.execute("SET FOREIGN_KEY_CHECKS=0")
-        
+
         for table_name in buffers.keys():
             cur.execute(f"TRUNCATE TABLE {table_name}") # Tabel yang ada di buffer akan dikosongkan
-        
+
         cur.execute("SET FOREIGN_KEY_CHECKS=1")
 
         print("Memasukkan query SQL buffered ke database…", flush=True)
@@ -574,7 +656,7 @@ def do_sync_stock(timeout_sec: int = 3000):
             inserted_count = _bulk_insert_stock_plain(cur, table_name, buffer)
             inserted_counts[table_name] = inserted_count
             print(f"[INFO] Inserted {inserted_count} rows into {table_name}", flush=True)
-        
+
         db.commit()
         print(f"[INFO] Inserted buffered rows: {inserted_counts}", flush=True)
     except Exception as e:
@@ -614,7 +696,7 @@ def sync_yppr079_http():
         response=json.dumps(to_jsonable(result), ensure_ascii=False),
         status=(200 if result.get("ok") else 500), mimetype="application/json",
     )
-    
+
 @app.route("/api/ysdr048/sync", methods=["POST"])
 def sync_ysdr048_http():
     """Endpoint HTTP untuk sinkronisasi Stock (Z_FM_YSDR048)."""
@@ -629,20 +711,19 @@ def sync_ysdr048_http():
         status=(200 if result.get("ok") else 500), mimetype="application/json",
     )
 
-
 # ---------- Main ----------
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="YPPR079/YSDR048 API/Sync")
     parser.add_argument("--serve", action="store_true", help="Jalankan server Flask")
-    
+
     parser.add_argument("--sync", action="store_true", help="Jalankan sinkronisasi SO Z_FM_YPPR079_SO (tanpa HTTP)")
     parser.add_argument("--werks", type=str, help="Filter IV_WERKS (untuk --sync)")
     parser.add_argument("--auart", nargs="+", help="Filter IV_AUART (untuk --sync)")
     parser.add_argument("--limit", type=int, help="Batas jumlah pair (untuk --sync)")
-    
+
     parser.add_argument("--sync_stock", action="store_true", help="Jalankan sinkronisasi Stock Z_FM_YSDR048 (tanpa HTTP)")
-    
+
     parser.add_argument("--timeout", type=int, default=3000, help="Timeout per panggilan RFC (detik)")
     args = parser.parse_args()
 

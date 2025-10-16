@@ -11,6 +11,19 @@ use Illuminate\Support\Str;
 
 class SODashboardController extends Controller
 {
+    /**
+     * Helper: Aman-kan parsing EDATU untuk subquery item unik.
+     * Mengambil EDATU dari t1 (yang merupakan subquery item unik)
+     * @param string $alias Alias tabel atau subquery yang berisi kolom EDATU.
+     */
+    private function getSafeEdatuForUniqueItem(string $alias): string
+    {
+        return "COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST({$alias}.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST({$alias}.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+    }
+
     public function index(Request $request)
     {
         // Dekripsi q (jika ada) lalu merge
@@ -103,9 +116,9 @@ class SODashboardController extends Controller
         return response()->json([
             'ok' => true,
             'data' => [
-                'total_item_remarks'   => $totalItemRemarks,
+                'total_item_remarks'    => $totalItemRemarks,
                 'total_so_with_remarks' => $totalSoWithRemarks,
-                'top_so'               => $bySo,
+                'top_so'                => $bySo,
             ]
         ]);
     }
@@ -152,22 +165,24 @@ class SODashboardController extends Controller
                     });
                 }
             })
+            // [PERBAIKAN DEDUPLIKASI]: Gunakan MAX() dan Group By (VBELN, POSNR, MATNR)
+            ->groupBy('ir.VBELN', 'ir.POSNR', 't1.MATNR', 'ir.IV_WERKS_PARAM', 'ir.IV_AUART_PARAM')
             ->selectRaw("
             TRIM(ir.VBELN) AS VBELN,
             TRIM(ir.POSNR) AS POSNR,
-            COALESCE(t1.MATNR,'') AS MATNR,
-            COALESCE(t1.MAKTX,'') AS MAKTX,
-            COALESCE(t1.WAERK,'') AS WAERK,
-            COALESCE(t1.TOTPR,0) AS TOTPR,
+            MAX(COALESCE(t1.MATNR,'')) AS MATNR,
+            MAX(COALESCE(t1.MAKTX,'')) AS MAKTX,
+            MAX(COALESCE(t1.WAERK,'')) AS WAERK,
+            MAX(COALESCE(t1.TOTPR,0)) AS TOTPR,
             ir.IV_WERKS_PARAM,
             ir.IV_AUART_PARAM,
-            ir.remark,
-            ir.created_at,
-            COALESCE(t2.KUNNR,'') AS KUNNR,
+            MAX(ir.remark) as remark,
+            MAX(ir.created_at) as created_at,
+            MAX(COALESCE(t2.KUNNR,'')) AS KUNNR,
             CASE
-              WHEN ir.IV_AUART_PARAM='ZRP1' THEN 'KMI Export SBY'
-              WHEN ir.IV_AUART_PARAM='ZRP2' THEN 'KMI Export SMG'
-              ELSE COALESCE(ml.Deskription, ir.IV_AUART_PARAM)
+             WHEN ir.IV_AUART_PARAM='ZRP1' THEN 'KMI Export SBY'
+             WHEN ir.IV_AUART_PARAM='ZRP2' THEN 'KMI Export SMG'
+             ELSE MAX(COALESCE(ml.Deskription, ir.IV_AUART_PARAM))
             END AS OT_NAME
         ")
             ->orderBy('ir.VBELN')
@@ -221,14 +236,26 @@ class SODashboardController extends Controller
         };
 
         // Basis data: T2 + join T1 (hanya outstanding: PACKG <> 0)
-        $base = DB::table('so_yppr079_t2 as t2')
-            ->join('so_yppr079_t1 as t1', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-            // --- PERUBAHAN DI SINI: Ganti > 0 menjadi <> 0 ---
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            // --------------------------------------------------
-            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
+        // DIBUAT DEDUP AGGREGATION SEBELUMNYA UNTUK MENGHITUNG SO COUNT
 
-        $applyTypeOrAuart($base, 't2');
+        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
+            ->select(
+                't1a.VBELN',
+                't1a.POSNR',
+                't1a.MATNR',
+                't1a.EDATU',
+                DB::raw('MAX(t1a.PACKG) AS item_outs_qty')
+            )
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
+            ->when($location, fn($q, $loc) => $q->where('t1a.IV_WERKS_PARAM', $loc))
+            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.EDATU');
+
+        $applyTypeOrAuart($uniqueItemsAgg, 't1a');
+
+
+        // Basis data: T2 JOIN item unik (untuk SO Count)
+        $base = DB::table('so_yppr079_t2 as t2')
+            ->joinSub($uniqueItemsAgg, 't1', fn($j) => $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')));
 
         // Filter status sama persis dgn donut
         if ($status === 'overdue_over_30') {
@@ -300,46 +327,64 @@ class SODashboardController extends Controller
             }
         };
 
-        $chartData = [];
-
         /* =====================================================================
-         * Logic untuk KPI Block Baru (Semarang / Surabaya)
+         * DEDUPLIKASI ITEM UNIK (KPI, DONUT, DETAIL)
          * ===================================================================== */
 
-        // Query Dasar untuk Item Outstanding (PACKG <> 0)
-        $allOutstandingItemsBase = DB::table('so_yppr079_t2 as t2')
-            ->join(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+        // Subquery Item Unik (VBELN, POSNR, MATNR)
+        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
+            ->select(
+                't1a.VBELN',
+                't1a.KUNNR',
+                't1a.IV_WERKS_PARAM',
+                't1a.IV_AUART_PARAM',
+                't1a.EDATU',
+                't1a.WAERK',
+                DB::raw('MAX(t1a.TOTPR2) AS item_total_value'),
+                DB::raw('MAX(t1a.PACKG) AS item_outs_qty')
             )
-            // --- PERUBAHAN DI SINI: Ganti > 0 menjadi <> 0 ---
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            // --------------------------------------------------
-            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
-        $applyTypeOrAuart($allOutstandingItemsBase, 't2');
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
+            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.IV_WERKS_PARAM', 't1a.IV_AUART_PARAM', 't1a.EDATU', 't1a.WAERK');
 
+        // Apply filter type/auart/location ke item unik
+        $itemUniqueFiltered = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+            ->when($location, fn($q, $loc) => $q->where('t_u.IV_WERKS_PARAM', $loc));
+        $applyTypeOrAuart($itemUniqueFiltered, 't_u');
+
+        // Gabungkan item unik dengan T2 (untuk mengambil data SO header)
+        $allOutstandingItemsBase = DB::table('so_yppr079_t2 as t2')
+            ->joinSub($itemUniqueFiltered, 't1', function ($j) {
+                // Joinkan t2.VBELN dengan item unik
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
+            });
+
+
+        /* =====================================================================
+          * Logic untuk KPI Block Baru (Semarang / Surabaya)
+          * Dihitung dari items unik (t1)
+          * ===================================================================== */
 
         // 1. Outstanding Value dan Count (Total semua item outstanding)
         $totalAgg = (clone $allOutstandingItemsBase)
-            ->groupBy('t2.IV_WERKS_PARAM', 't1.WAERK')
+            // Agregasi dilakukan berdasarkan WERKS dan CURRENCY dari item unik (t1)
+            ->groupBy('t1.IV_WERKS_PARAM', 't1.WAERK')
             ->selectRaw("
-                t2.IV_WERKS_PARAM as werks,
+                t1.IV_WERKS_PARAM as werks,
                 t1.WAERK as cur,
-                CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) AS value,
+                CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS value,
                 COUNT(DISTINCT t1.VBELN) AS so_count
             ")
             ->get();
 
         // 2. Overdue Value dan Count (Item outstanding yang EDATU < hari ini)
         $overdueAgg = (clone $allOutstandingItemsBase)
-            ->whereRaw("{$safeEdatuT2} < CURDATE()")
-            ->groupBy('t2.IV_WERKS_PARAM', 't1.WAERK')
+            // Filter EDATU menggunakan kolom EDATU dari item unik (t1)
+            ->whereRaw($this->getSafeEdatuForUniqueItem('t1') . " < CURDATE()")
+            ->groupBy('t1.IV_WERKS_PARAM', 't1.WAERK')
             ->selectRaw("
-                t2.IV_WERKS_PARAM as werks,
+                t1.IV_WERKS_PARAM as werks,
                 t1.WAERK as cur,
-                CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) AS value,
+                CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS value,
                 COUNT(DISTINCT t1.VBELN) AS so_count
             ")
             ->get();
@@ -370,8 +415,8 @@ class SODashboardController extends Controller
         }
         $chartData['kpi_new'] = $kpiNew;
         /* =====================================================================
-         * END: Logic untuk KPI Block Baru
-         * ===================================================================== */
+          * END: Logic untuk KPI Block Baru
+          * ===================================================================== */
 
 
         // Mengosongkan KPI lama karena digantikan oleh kpi_new
@@ -387,94 +432,63 @@ class SODashboardController extends Controller
         ];
 
         /* =====================================================================
-         * Donut Urgency / Aging — T2 ONLY (dengan EXISTS T1)
+         * Donut Urgency / Aging — Dihitung dari SO Header (t2) yang memiliki item unik (t1)
          * ===================================================================== */
-        $agingBase = DB::table('so_yppr079_t2 as t2')
-            ->join(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            // --- PERUBAHAN DI SINI: Ganti > 0 menjadi <> 0 ---
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            // --------------------------------------------------
-            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
-        $applyTypeOrAuart($agingBase, 't2');
+
+        // Logic Donut (SO Count): menggunakan $allOutstandingItemsBase yang sudah didefinisikan (T2 JOIN T1 DEDUP)
 
         // LOGIKA AGING ANALYSIS (DONUT)
         $chartData['aging_analysis'] = [
-            'overdue_over_30' => (clone $agingBase)
+            'overdue_over_30' => (clone $allOutstandingItemsBase)
                 ->whereRaw("DATEDIFF(CURDATE(), {$safeEdatuT2}) > 30")
                 ->distinct()->count('t2.VBELN'),
 
-            'overdue_1_30' => (clone $agingBase)
+            'overdue_1_30' => (clone $allOutstandingItemsBase)
                 ->whereRaw("DATEDIFF(CURDATE(), {$safeEdatuT2}) BETWEEN 1 AND 30")
                 ->distinct()->count('t2.VBELN'),
 
-            'due_this_week' => (clone $agingBase)
+            'due_this_week' => (clone $allOutstandingItemsBase)
                 ->whereRaw("{$safeEdatuT2} BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)")
                 ->distinct()->count('t2.VBELN'),
 
-            'on_time' => (clone $agingBase)
+            'on_time' => (clone $allOutstandingItemsBase)
                 ->whereRaw("{$safeEdatuT2} > DATE_ADD(CURDATE(), INTERVAL 7 DAY)")
                 ->distinct()->count('t2.VBELN'),
         ];
 
         /* =====================================================================
-         * Top 5 Customers (VALUE overdue) — DIHAPUS
+         * List “SO Due This Week” (tabel di UI) — Dihitung dari item unik (t1)
          * ===================================================================== */
-        // Menambahkan placeholder untuk menghindari error di Blade / JS
-        $chartData['top_customers_value_usd'] = collect([]);
-        $chartData['top_customers_value_idr'] = collect([]);
 
+        $dueThisWeekBase = DB::table('so_yppr079_t2 as t2')
+            ->joinSub($itemUniqueFiltered, 't1', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
+            })
+            ->whereRaw($this->getSafeEdatuForUniqueItem('t1') . " >= ? AND " . $this->getSafeEdatuForUniqueItem('t1') . " < ?", [$startWeek, $endWeekEx]);
 
-        /* =====================================================================
-         * List “SO Due This Week” (tabel di UI) — TOTPR2
-         * ===================================================================== */
-        $dueThisWeekBySo = DB::table('so_yppr079_t2 as t2')
-            ->join(
-                'so_yppr079_t1 as t1',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-            // --- PERUBAHAN DI SINI: Ganti > 0 menjadi <> 0 ---
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            // --------------------------------------------------
-            ->whereRaw("{$safeEdatuT2} >= ? AND {$safeEdatuT2} < ?", [$startWeek, $endWeekEx])
+        // Gunakan item_total_value dari t1 (hasil dedup)
+        $dueThisWeekBySo = (clone $dueThisWeekBase)
             ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't1.WAERK', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
             ->selectRaw("
             t2.VBELN, t2.BSTNK, t2.NAME1, t1.WAERK,
             t2.IV_WERKS_PARAM, t2.IV_AUART_PARAM,
-            CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) AS total_value,
-            DATE_FORMAT(MIN({$safeEdatuT2}), '%Y-%m-%d') AS due_date
+            CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS total_value,
+            DATE_FORMAT(MIN(" . $this->getSafeEdatuForUniqueItem('t1') . "), '%Y-%m-%d') AS due_date
         ")
-            ->orderByDesc('total_value');
-        $applyTypeOrAuart($dueThisWeekBySo, 't2');
-        $dueThisWeekBySo = $dueThisWeekBySo->get();
+            ->orderByDesc('total_value')
+            ->get();
+
 
         /* =====================================================================
-         * Customers Due This Week (agregasi dari item; HARUS match KPI)
+         * Customers Due This Week (agregasi dari item unik)
          * ===================================================================== */
-        $dueThisWeekByCustomer = DB::table('so_yppr079_t1 as t1')
-            ->join(
-                'so_yppr079_t2 as t2',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
-                '=',
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
-            )
-            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
-            // --- PERUBAHAN DI SINI: Ganti > 0 menjadi <> 0 ---
-            ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <> 0')
-            // --------------------------------------------------
-            ->whereRaw("{$safeEdatuT2} >= ? AND {$safeEdatuT2} < ?", [$startWeek, $endWeekEx])
+
+        // Gunakan item_total_value dari t1 (hasil dedup)
+        $dueThisWeekByCustomer = (clone $dueThisWeekBase)
             ->groupBy('t2.NAME1', 't1.WAERK')
-            ->selectRaw("t2.NAME1, t1.WAERK, CAST(SUM(t1.TOTPR2) AS DECIMAL(18,2)) AS total_value")
-            ->orderByDesc('total_value');
-        $applyTypeOrAuart($dueThisWeekByCustomer, 't2');
-        $dueThisWeekByCustomer = $dueThisWeekByCustomer->get();
+            ->selectRaw("t2.NAME1, t1.WAERK, CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS total_value")
+            ->orderByDesc('total_value')
+            ->get();
 
         $chartData['due_this_week'] = [
             'start' => $startWeek->toDateTimeString(),

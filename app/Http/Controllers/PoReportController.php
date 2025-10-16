@@ -137,35 +137,54 @@ class PoReportController extends Controller
         // 7) Overview Customer (tabel utama)
         $rows = collect();
         if ($show) {
-            // A) Agregat semua outstanding per customer (pisah USD & IDR)
-            $allAggSubquery = DB::table('so_yppr079_t1 as t1a')
-                ->join('so_yppr079_t2 as t2a', 't2a.VBELN', '=', 't1a.VBELN')
+            $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
                 ->select(
-                    't2a.KUNNR',
-                    DB::raw('CAST(SUM(CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'IDR' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1a.WAERK = 'USD' THEN CAST(t1a.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
+                    't1a.VBELN',
+                    't1a.POSNR',
+                    't1a.MATNR',
+                    't1a.WAERK',
+                    DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
+                    DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
                 )
+                ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
                 ->where('t1a.IV_WERKS_PARAM', $werks)
                 ->whereIn('t1a.IV_AUART_PARAM', $auartList)
-                ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
-                ->groupBy('t2a.KUNNR');
+                ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK');
 
-            // B) Agregat overdue value per customer (pisah USD & IDR)
-            $overdueValueSubquery = DB::table('so_yppr079_t2 as t2_inner')
-                ->join('so_yppr079_t1 as t1', function ($j) {
-                    $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'));
+            // 7.B) Ringkas per SO (agar cepat join ke T2/KUNNR)
+            $soAgg = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t1_u"))->mergeBindings($uniqueItemsAgg)
+                ->select(
+                    't1_u.VBELN',
+                    't1_u.WAERK',
+                    DB::raw('SUM(t1_u.item_total_value) AS so_total_value'),
+                    DB::raw('SUM(t1_u.item_outs_qty)   AS so_outs_qty')
+                )
+                ->groupBy('t1_u.VBELN', 't1_u.WAERK');
+            // A) Agregat semua outstanding per customer (pisah USD & IDR)
+            $allAggSubquery = DB::table(DB::raw("({$soAgg->toSql()}) as so_agg"))->mergeBindings($soAgg)
+                ->join('so_yppr079_t2 as t2a', function ($j) {
+                    $j->on(DB::raw('TRIM(CAST(t2a.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
                 })
+                ->groupBy('t2a.KUNNR')
+                ->select(
+                    't2a.KUNNR',
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD"),
+                    DB::raw("CAST(SUM(so_agg.so_outs_qty) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY")
+                );
+
+            // B) Total OVERDUE (anti-dupe) per customer
+            $overdueValueSubquery = DB::table(DB::raw("({$soAgg->toSql()}) as so_agg"))->mergeBindings($soAgg)
+                ->join('so_yppr079_t2 as t2_inner', function ($j) {
+                    $j->on(DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
+                })
+                ->whereRaw("{$safeEdatuInner} < CURDATE()")
+                ->groupBy('t2_inner.KUNNR')
                 ->select(
                     't2_inner.KUNNR',
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'IDR' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t1.WAERK = 'USD' THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
-                )
-                ->where('t2_inner.IV_WERKS_PARAM', $werks)
-                ->whereIn('t2_inner.IV_AUART_PARAM', $auartList)
-                ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
-                ->whereRaw("{$safeEdatuInner} < CURDATE()")
-                ->groupBy('t2_inner.KUNNR');
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
+                );
 
             // Kueri utama
             $rows = DB::table('so_yppr079_t2 as t2')
