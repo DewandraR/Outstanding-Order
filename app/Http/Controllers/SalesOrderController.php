@@ -456,15 +456,28 @@ class SalesOrderController extends Controller
                     ->on('ragg.POSNR', '=', 't1.POSNR');
             })
             ->select(
-                DB::raw('MAX(t1.id) as id'), // Ambil satu ID
+                DB::raw('MAX(t1.id) as id'),
                 DB::raw('MAX(t1.MAKTX) as MAKTX'),
                 DB::raw('MAX(t1.KWMENG) as KWMENG'),
                 DB::raw('MAX(t1.PACKG) as PACKG'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
-                DB::raw('MAX(t1.DAYX) as DAYX'),
-                DB::raw('MAX(t1.ASSYM) as ASSYM'),
-                DB::raw('MAX(t1.PAINT) as PAINT'),
-                DB::raw('MAX(t1.MENGE) as MENGE'),
+
+                // untuk MACHI tooltip
+                DB::raw('MAX(t1.MACHI)  as MACHI'),
+                DB::raw('MAX(t1.QPROM)  as QPROM'),
+
+                // ⬅️ TAMBAHKAN INI
+                DB::raw('MAX(t1.ASSYM)  as ASSYM'),
+                DB::raw('MAX(t1.QPROA)  as QPROA'),
+                DB::raw('MAX(t1.PAINTM) as PAINTM'),
+                DB::raw('MAX(t1.QPROI)  as QPROI'),
+                DB::raw('MAX(t1.PACKGM) as PACKGM'),
+                DB::raw('MAX(t1.QPROP)  as QPROP'),
+
+                DB::raw('MAX(t1.PRSM)  as PRSM'),
+                DB::raw('MAX(t1.PRSA)  as PRSA'),
+                DB::raw('MAX(t1.PRSI)  as PRSI'),
+                DB::raw('MAX(t1.PRSP)  as PRSP'),
                 DB::raw('MAX(t1.NETPR) as NETPR'),
                 DB::raw('MAX(t1.TOTPR2) as TOTPR2'),
                 DB::raw('MAX(t1.TOTPR) as TOTPR'),
@@ -475,7 +488,7 @@ class SalesOrderController extends Controller
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
                 DB::raw('MAX(t1.IV_WERKS_PARAM) as WERKS_KEY'),
                 DB::raw('MAX(t1.IV_AUART_PARAM) as AUART_KEY'),
-                't1.VBELN as VBELN_KEY', // Tetap sebagai VBELN_KEY
+                't1.VBELN as VBELN_KEY',
                 DB::raw('COALESCE(MAX(ragg.remark_count), 0) as remark_count'),
                 DB::raw('MAX(ragg.last_remark_at) as last_remark_at')
             )
@@ -483,7 +496,7 @@ class SalesOrderController extends Controller
             ->where('t1.IV_WERKS_PARAM', $request->werks)
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
             ->where('t1.PACKG', '!=', 0)
-            ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR') // Grouping baru: VBELN + POSNR + MATNR
+            ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
@@ -574,9 +587,10 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PACKG) as PACKG'),
                 DB::raw('MAX(t1.KALAB) as KALAB'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
-                DB::raw('MAX(t1.ASSYM) as ASSYM'),
-                DB::raw('MAX(t1.PAINT) as PAINT'),
-                DB::raw('MAX(t1.MENGE) as MENGE'),
+                DB::raw('MAX(t1.PRSM)  as PRSM'),   // MACHI
+                DB::raw('MAX(t1.PRSA)  as PRSA'),   // ASSY
+                DB::raw('MAX(t1.PRSI)  as PRSI'),   // PAINT
+                DB::raw('MAX(t1.PRSP)  as PRSP'),   // PACKING
                 DB::raw("COALESCE(MAX(rc.REMARKS), '') AS remark")
             )
             ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')

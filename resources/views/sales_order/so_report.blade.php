@@ -657,6 +657,87 @@
         .remark-item .act {
             margin-left: auto
         }
+
+        .yz-machi-pct {
+            cursor: help;
+            text-decoration: underline dotted;
+            white-space: nowrap;
+        }
+
+        .tooltip-cursor {
+            cursor: pointer;
+        }
+
+        .yz-machi-pct.popover-cursor {
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        /* Container Popover - Mewah */
+        .yz-lux-popover {
+            /* Lebar yang proporsional */
+            --bs-popover-max-width: 250px;
+            /* Background gelap (mewah) */
+            --bs-popover-bg: #212529;
+            /* Warna teks cerah */
+            --bs-popover-color: #f8f9fa;
+            /* Padding besar */
+            --bs-popover-padding-x: 1rem;
+            --bs-popover-padding-y: 1rem;
+            /* Border halus */
+            --bs-popover-border-color: #343a40;
+            --bs-popover-border-radius: .75rem;
+            /* Bayangan yang menawan */
+            filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.4));
+        }
+
+        /* Konten Popover */
+        .yz-popover-content-lux {
+            color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .yz-popover-content-lux h6 {
+            font-size: 0.9rem;
+            color: #ffd700;
+            /* Emas */
+            border-bottom: 1px solid #495057;
+            padding-bottom: .25rem;
+        }
+
+        /* Gaya Progress Bar di Popover */
+        .yz-popover-content-lux .progress {
+            height: 6px !important;
+            background-color: #495057;
+            border-radius: 4px;
+        }
+
+        /* Gaya Separator */
+        .yz-popover-content-lux hr {
+            border-top: 1px solid #495057;
+            opacity: 0.7;
+        }
+
+        /* Gaya Status */
+        .yz-popover-content-lux .small {
+            font-weight: 500;
+        }
+
+        /* Pastikan panah popover terlihat elegan dengan background gelap */
+        .yz-lux-popover.popover .popover-arrow::before {
+            border-color: #343a40;
+        }
+
+        .yz-lux-popover.bs-popover-auto[data-popper-placement^=top] .popover-arrow::after,
+        .yz-lux-popover.bs-popover-top .popover-arrow::after {
+            border-top-color: #212529;
+        }
+
+        .yz-lux-popover.bs-popover-auto[data-popper-placement^=bottom] .popover-arrow::after,
+        .yz-lux-popover.bs-popover-bottom .popover-arrow::after {
+            border-bottom-color: #212529;
+        }
     </style>
 @endpush
 
@@ -684,311 +765,380 @@
             const csrfToken = "{{ csrf_token() }}";
 
             /* =========================================================
-             * BOOTSTRAP STATE
+             * UTILITIES
              * ======================================================= */
-            document.addEventListener('DOMContentLoaded', () => {
-                const __root = document.getElementById('so-root');
-                const WERKS = (__root?.dataset.werks || '').trim();
-                const AUART = (__root?.dataset.auart || '').trim();
-                const VBELN_HL = (__root?.dataset.hvbeln || '').trim();
-                const KUNNR_HL = (__root?.dataset.hkunnr || '').trim();
-                const POSNR_HL = (__root?.dataset.hposnr || '').trim();
-                const AUTO = (__root?.dataset.auto || '0') === '1';
+            if (!window.CSS) window.CSS = {};
+            if (typeof window.CSS.escape !== 'function') {
+                window.CSS.escape = s => String(s).replace(/([^\w-])/g, '\\$1');
+            }
 
-                // Data Small Qty awal dari controller → Blade
-                const initialSmallQtyDataRaw = {!! json_encode($smallQtyByCustomer ?? collect()) !!};
+            // Data Small Qty awal dari controller → Blade
+            const initialSmallQtyDataRaw = {!! json_encode($smallQtyByCustomer ?? collect()) !!};
 
-                /* =========================================================
-                 * GLOBAL STATE
-                 * ======================================================= */
-                const selectedItems = new Set(); // id item terpilih (untuk export)
-                const itemsCache = new Map(); // VBELN -> array items
-                const itemIdToSO = new Map(); // itemId -> VBELN
-
-                /* =========================================================
-                 * DOM Refs
-                 * ======================================================= */
-                const exportDropdownContainer = document.getElementById('export-dropdown-container');
-                const selectedCountSpan = document.getElementById('selected-count');
-
-                // Modal remark dipindah ke body agar tidak ter-clipped
-                const remarkModalEl = document.getElementById('remarkModal');
-                if (remarkModalEl && remarkModalEl.parentElement !== document.body) {
-                    document.body.appendChild(remarkModalEl);
-                }
-                let remarkModal = bootstrap.Modal.getInstance(remarkModalEl);
-                if (!remarkModal) remarkModal = new bootstrap.Modal(remarkModalEl);
-
-                const rmSO = document.getElementById('rm-so');
-                const rmPOS = document.getElementById('rm-pos');
-                const rmList = document.getElementById('remarkThreadList');
-                const rmInput = document.getElementById('remark-input');
-                const rmAddBtn = document.getElementById('add-remark-btn');
-                const rmFeedback = document.getElementById('remark-feedback');
-                const rmCounter = document.getElementById('remark-counter');
-
-                const remarkModalState = {
-                    werks: null,
-                    auart: null,
-                    vbeln: null,
-                    posnr: null,
-                    posnrKey: null
+            const formatCurrencyGlobal = (v, c, d = 0) => {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return '';
+                const opt = {
+                    minimumFractionDigits: d,
+                    maximumFractionDigits: d
                 };
-                const MAX_REMARK = 60;
-
-                /* =========================================================
-                 * UTILITIES
-                 * ======================================================= */
-                if (!window.CSS) window.CSS = {};
-                if (typeof window.CSS.escape !== 'function') {
-                    window.CSS.escape = s => String(s).replace(/([^\w-])/g, '\\$1');
-                }
-
-                const formatCurrencyGlobal = (v, c, d = 0) => {
-                    const n = parseFloat(v);
-                    if (!Number.isFinite(n)) return '';
-                    const opt = {
-                        minimumFractionDigits: d,
-                        maximumFractionDigits: d
-                    };
-                    if (c === 'IDR') return `Rp ${n.toLocaleString('id-ID', opt)}`;
-                    if (c === 'USD') return `$${n.toLocaleString('en-US', opt)}`;
-                    return `${c} ${n.toLocaleString('id-ID', opt)}`;
-                };
-                const formatNumberGlobal = (v, d = 0) => {
-                    const n = parseFloat(v);
-                    if (!Number.isFinite(n)) return '';
-                    return n.toLocaleString('id-ID', {
-                        minimumFractionDigits: d,
-                        maximumFractionDigits: d
-                    });
-                };
-                const uniqBy = (arr, keyer) => {
-                    const seen = new Set();
-                    return (arr || []).filter(x => {
-                        const k = keyer(x);
-                        if (seen.has(k)) return false;
-                        seen.add(k);
-                        return true;
-                    });
-                };
-                const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g,
-                    '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-                const waitFor = (fn, {
-                    timeout = 12000,
-                    interval = 120
-                } = {}) => new Promise(resolve => {
-                    const start = Date.now();
-                    const t = setInterval(() => {
-                        let ok = false;
-                        try {
-                            ok = !!fn();
-                        } catch {}
-                        if (ok) {
-                            clearInterval(t);
-                            return resolve(true);
-                        }
-                        if (Date.now() - start > timeout) {
-                            clearInterval(t);
-                            return resolve(false);
-                        }
-                    }, interval);
+                if (c === 'IDR') return `Rp ${n.toLocaleString('id-ID', opt)}`;
+                if (c === 'USD') return `$${n.toLocaleString('en-US', opt)}`;
+                return `${c} ${n.toLocaleString('id-ID', opt)}`;
+            };
+            const formatNumberGlobal = (v, d = 0) => {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return '';
+                return n.toLocaleString('id-ID', {
+                    minimumFractionDigits: d,
+                    maximumFractionDigits: d
                 });
-                const scrollAndFlash = (el) => {
-                    if (!el) return;
-                    el.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'center'
-                    });
-                    el.classList.add('row-highlighted');
-                };
-
-                /* =========================================================
-                 * DATA LOADER (Level 3 / Items)
-                 * ======================================================= */
-                async function ensureItemsLoadedForSO(vbeln) {
-                    if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
-
-                    const u = new URL(apiItemsBySo, window.location.origin);
-                    u.searchParams.set('vbeln', vbeln);
-                    u.searchParams.set('werks', WERKS);
-                    u.searchParams.set('auart', AUART);
-
-                    const r = await fetch(u, {
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    });
-                    const jd = await r.json();
-                    if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
-
-                    const dedupItems = uniqBy(jd.data || [], x =>
-                        `${x.VBELN_KEY}|${x.POSNR_KEY}|${x.MATNR ?? ''}`);
-                    dedupItems.forEach(x => itemIdToSO.set(String(x.id), vbeln));
-                    itemsCache.set(vbeln, dedupItems);
-                    return dedupItems;
-                }
-
-                /* =========================================================
-                 * UI HELPERS
-                 * ======================================================= */
-                function updateExportButton() {
-                    const n = selectedItems.size;
-                    if (selectedCountSpan) selectedCountSpan.textContent = n;
-                    if (exportDropdownContainer) exportDropdownContainer.style.display = n > 0 ? 'block' :
-                        'none';
-                }
-
-                function updateSODot(vbeln) {
-                    document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
-                        .forEach(dot => {
-                            const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(
-                                id)) === vbeln);
-                            dot.style.display = anySel ? 'inline-block' : 'none';
-                        });
-                }
-
-                function updateSoRemarkFlagFromCache(vbeln) {
-                    const items = itemsCache.get(vbeln) || [];
-                    const hasAny = items.some(it => Number(it.remark_count ?? 0) > 0 || ((it.remark || '')
-                        .trim() !== ''));
-                    document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
-                        .forEach(el => {
-                            el.style.display = hasAny ? 'inline-block' : 'none';
-                            el.classList.toggle('active', hasAny);
-                        });
-                }
-
-                function recalcSoRemarkFlagFromDom(vbeln) {
-                    const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
-                        ?.nextElementSibling;
-                    let hasAny = false;
-                    if (nest) nest.querySelectorAll('.remark-count-badge').forEach(b => {
-                        if (Number(b.dataset.count || 0) > 0) hasAny = true;
-                    });
-                    document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
-                        .forEach(el => {
-                            el.style.display = hasAny ? 'inline-block' : 'none';
-                            el.classList.toggle('active', hasAny);
-                        });
-                }
-
-                function updateT2FooterVisibility(t2Table) {
-                    if (!t2Table) return;
-                    const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
-                        'none' && tr.offsetParent !== null);
-                    const tfoot = t2Table.querySelector('tfoot.t2-footer');
-                    const tbody = t2Table.querySelector('tbody');
-                    if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
-                }
-
-                function applySelectionsToRenderedItems(container) {
-                    container.querySelectorAll('.check-item').forEach(chk => {
-                        chk.checked = selectedItems.has(chk.dataset.id);
-                    });
-                }
-
-                function syncCheckAllHeader(itemBox) {
-                    const table = itemBox?.querySelector('table');
-                    if (!table) return;
-                    const hdr = table.querySelector('.check-all-items');
-                    if (!hdr) return;
-                    const all = Array.from(table.querySelectorAll('.check-item'));
-                    const allChecked = (all.length > 0 && all.every(ch => ch.checked));
-                    const anyChecked = all.some(ch => ch.checked);
-                    hdr.checked = allChecked;
-                    hdr.indeterminate = !allChecked && anyChecked;
-                }
-
-                function syncCheckAllSoHeader(tbody) {
-                    const allSOCheckboxes = Array.from(tbody.querySelectorAll('.check-so')).filter(ch => ch
-                        .closest('tr').style.display !== 'none');
-                    const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
-                    if (!selectAllSo || allSOCheckboxes.length === 0) return;
-                    const allChecked = allSOCheckboxes.every(ch => ch.checked);
-                    selectAllSo.checked = allChecked;
-                    selectAllSo.indeterminate = false;
-                }
-
-                /* =========================================================
-                 * COLLAPSE MODE (Level 2)
-                 * ======================================================= */
-                const getCollapse = (tbody) => !!(tbody && tbody.dataset && tbody.dataset.collapse === '1');
-                const setCollapse = (tbody, on) => {
-                    if (tbody && tbody.dataset) tbody.dataset.collapse = on ? '1' : '0';
-                };
-
-                async function applyCollapseViewSo(tbodyEl, on) {
-                    if (!tbodyEl) return;
-                    setCollapse(tbodyEl, on);
-
-                    const headerCaret = tbodyEl.closest('table')?.querySelector(
-                        '.js-collapse-toggle .yz-collapse-caret');
-                    if (headerCaret) headerCaret.textContent = on ? '▾' : '▸';
-
-                    tbodyEl.querySelector('.yz-empty-selected-row')?.remove();
-                    tbodyEl.classList.remove('so-focus-mode');
-                    tbodyEl.classList.toggle('collapse-mode', on);
-
-                    const soRows = tbodyEl.querySelectorAll('.js-t2row');
-
-                    if (on) {
-                        let visibleCount = 0;
-                        for (const r of soRows) {
-                            const chk = r.querySelector('.check-so');
-                            r.classList.remove('is-focused');
-                            const isT3Open = r.nextElementSibling.style.display !== 'none';
-                            if (chk?.checked) {
-                                r.style.display = '';
-                                visibleCount++;
-                                if (!isT3Open) r.click();
-                            } else {
-                                r.style.display = 'none';
-                                if (isT3Open) r.click();
-                                else {
-                                    r.nextElementSibling.style.display = 'none';
-                                    r.querySelector('.yz-caret')?.classList.remove('rot');
-                                }
-                            }
-                        }
-                        if (visibleCount === 0 && getCollapse(tbodyEl)) {
-                            await applyCollapseViewSo(tbodyEl, false);
-                            return;
-                        }
-                    } else {
-                        soRows.forEach(r => {
-                            r.style.display = '';
-                            r.classList.remove('is-focused');
-                            if (r.nextElementSibling.style.display !== 'none') {
-                                r.nextElementSibling.style.display = 'none';
-                                r.querySelector('.yz-caret')?.classList.remove('rot');
-                            }
-                        });
+            };
+            const formatPercent = (v) => {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return '';
+                return `${formatNumberGlobal(n, 0)}%`;
+            };
+            const uniqBy = (arr, keyer) => {
+                const seen = new Set();
+                return (arr || []).filter(x => {
+                    const k = keyer(x);
+                    if (seen.has(k)) return false;
+                    seen.add(k);
+                    return true;
+                });
+            };
+            const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g,
+                '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const waitFor = (fn, {
+                timeout = 12000,
+                interval = 120
+            } = {}) => new Promise(resolve => {
+                const start = Date.now();
+                const t = setInterval(() => {
+                    let ok = false;
+                    try {
+                        ok = !!fn();
+                    } catch {}
+                    if (ok) {
+                        clearInterval(t);
+                        return resolve(true);
                     }
+                    if (Date.now() - start > timeout) {
+                        clearInterval(t);
+                        return resolve(false);
+                    }
+                }, interval);
+            });
+            const scrollAndFlash = (el) => {
+                if (!el) return;
+                el.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                el.classList.add('row-highlighted');
+            };
 
-                    syncCheckAllSoHeader(tbodyEl);
-                    updateT2FooterVisibility(tbodyEl.closest('table'));
-                }
+            // Fungsi kustom untuk konten Popover yang mewah ✨
+            const makeStagePopoverContent = (stageName, grRaw, orderRaw) => {
+                const toNum = v => {
+                    const n = Number(v);
+                    return Number.isFinite(n) ? n : null;
+                };
+                const fm = toNum(grRaw);
+                const fq = toNum(orderRaw);
 
-                // Hindari toggle saat klik pada checkbox
-                document.addEventListener('click', (e) => {
-                    if (e.target.closest('.check-so') || e.target.closest('.check-all-sos')) e
-                        .stopPropagation();
-                }, true);
+                const grValue = fm !== null ? formatNumberGlobal(fm, 0) : '—';
+                const orderValue = fq !== null ? formatNumberGlobal(fq, 0) : '—';
+                const totalOrder = fq !== null && fq > 0 ? fq : 1; // Hindari pembagian dengan nol
+                const grProgress = (fm / totalOrder) * 100;
 
-                /* =========================================================
-                 * RENDERERS
-                 * ======================================================= */
+                const isCompleted = (fm !== null && fq !== null && fm >= fq && fq > 0);
+                const status = isCompleted ? 'Selesai' : (fm > 0 ? 'Sedang Diproses' : 'Belum Mulai');
+                const statusClass = isCompleted ? 'text-success' : (fm > 0 ? 'text-warning' : 'text-muted');
 
-                // LEVEL-2 (SO LIST) — VBELN menjadi link yang memaksa buka Tabel-3
-                function renderLevel2_SO(rows, kunnr) {
-                    if (!rows?.length)
-                        return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
+                const progressStyle = `width: ${Math.min(100, grProgress || 0)}%;`;
+                const progressClass = isCompleted ? 'bg-success' : (fm > 0 ? 'bg-warning' : 'bg-secondary');
 
-                    const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ??
-                        0), 0);
+                return `
+                    <div class="yz-popover-content-lux">
+                        <h6 class="mb-2 text-uppercase fw-bold text-dark">${stageName} Progress</h6>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="fw-bolder">GR / Total Order</span>
+                            <span class="fw-bolder">${grValue} / ${orderValue}</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar ${progressClass}" role="progressbar" style="${progressStyle}" aria-valuenow="${Math.min(100, grProgress || 0)}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                        <hr class="my-2">
+                        <div class="small ${statusClass}">Status: **${status}**</div>
+                    </div>
+                `;
+            };
 
-                    let html = `
+            // Fungsi untuk inisialisasi Popover yang menggantikan Tooltip
+            function attachBootstrapPopovers(container) {
+                if (!container || !window.bootstrap || !bootstrap.Popover) return;
+
+                // Dispose popover yang sudah ada
+                container.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+                    const existing = bootstrap.Popover.getInstance(el);
+                    if (existing) existing.dispose();
+
+                    // Ambil data untuk konten
+                    const stage = el.dataset.stage || 'Proses Tahap';
+                    const gr = el.dataset.gr || '';
+                    const order = el.dataset.order || '';
+
+                    // Buat Popover
+                    new bootstrap.Popover(el, {
+                        container: 'body', // Penting agar tidak terpotong
+                        html: true,
+                        trigger: 'hover', // Tampil saat kursor menempel
+                        placement: 'auto',
+                        customClass: 'yz-lux-popover', // Kelas kustom untuk styling
+                        content: makeStagePopoverContent(stage, gr, order),
+                        sanitize: false // Izinkan HTML di Popover content
+                    });
+                    // Pastikan elemen tetap ada class yz-machi-pct
+                    el.classList.remove('tooltip-cursor');
+                    el.classList.add('popover-cursor');
+                });
+            }
+
+            /* =========================================================
+             * DATA LOADER
+             * ======================================================= */
+            const itemsCache = new Map(); // VBELN -> array items
+            const itemIdToSO = new Map(); // itemId -> VBELN
+
+            async function ensureItemsLoadedForSO(vbeln, WERKS, AUART) {
+                if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
+
+                const u = new URL(apiItemsBySo, window.location.origin);
+                u.searchParams.set('vbeln', vbeln);
+                u.searchParams.set('werks', WERKS);
+                u.searchParams.set('auart', AUART);
+
+                const r = await fetch(u, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const jd = await r.json();
+                if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
+
+                const dedupItems = uniqBy(jd.data || [], x =>
+                    `${x.VBELN_KEY}|${x.POSNR_KEY}|${x.MATNR ?? ''}`);
+                dedupItems.forEach(x => itemIdToSO.set(String(x.id), vbeln));
+                itemsCache.set(vbeln, dedupItems);
+                return dedupItems;
+            }
+
+            /* =========================================================
+             * UI HELPERS
+             * ======================================================= */
+            const selectedItems = new Set(); // id item terpilih (untuk export)
+            const exportDropdownContainer = document.getElementById('export-dropdown-container');
+            const selectedCountSpan = document.getElementById('selected-count');
+
+            function updateExportButton() {
+                const n = selectedItems.size;
+                if (selectedCountSpan) selectedCountSpan.textContent = n;
+                if (exportDropdownContainer) exportDropdownContainer.style.display = n > 0 ? 'block' :
+                    'none';
+            }
+
+            function updateSODot(vbeln) {
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
+                    .forEach(dot => {
+                        const anySel = Array.from(selectedItems).some(id => itemIdToSO.get(String(
+                            id)) === vbeln);
+                        dot.style.display = anySel ? 'inline-block' : 'none';
+                    });
+            }
+
+            function recalcSoRemarkFlagFromDom(vbeln) {
+                const nest = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`)
+                    ?.nextElementSibling;
+                let hasAny = false;
+                if (nest) nest.querySelectorAll('.remark-count-badge').forEach(b => {
+                    if (Number(b.dataset.count || 0) > 0) hasAny = true;
+                });
+                document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-remark-flag`)
+                    .forEach(el => {
+                        el.style.display = hasAny ? 'inline-block' : 'none';
+                        el.classList.toggle('active', hasAny);
+                    });
+            }
+
+            function applySelectionsToRenderedItems(container) {
+                container.querySelectorAll('.check-item').forEach(chk => {
+                    chk.checked = selectedItems.has(chk.dataset.id);
+                });
+            }
+
+            function syncCheckAllHeader(itemBox) {
+                const table = itemBox?.querySelector('table');
+                if (!table) return;
+                const hdr = table.querySelector('.check-all-items');
+                if (!hdr) return;
+                const all = Array.from(table.querySelectorAll('.check-item'));
+                const allChecked = (all.length > 0 && all.every(ch => ch.checked));
+                const anyChecked = all.some(ch => ch.checked);
+                hdr.checked = allChecked;
+                hdr.indeterminate = !allChecked && anyChecked;
+            }
+
+            function syncCheckAllSoHeader(tbody) {
+                const allSOCheckboxes = Array.from(tbody.querySelectorAll('.check-so')).filter(ch => ch
+                    .closest('tr').style.display !== 'none');
+                const selectAllSo = tbody.closest('table')?.querySelector('.check-all-sos');
+                if (!selectAllSo || allSOCheckboxes.length === 0) return;
+                const allChecked = allSOCheckboxes.every(ch => ch.checked);
+                selectAllSo.checked = allChecked;
+                selectAllSo.indeterminate = false;
+            }
+
+            const getCollapse = (tbody) => !!(tbody && tbody.dataset && tbody.dataset.collapse === '1');
+            const setCollapse = (tbody, on) => {
+                if (tbody && tbody.dataset) tbody.dataset.collapse = on ? '1' : '0';
+            };
+
+            function updateT2FooterVisibility(t2Table) {
+                if (!t2Table) return;
+                const anyOpen = [...t2Table.querySelectorAll('tr.yz-nest')].some(tr => tr.style.display !==
+                    'none' && tr.offsetParent !== null);
+                const tfoot = t2Table.querySelector('tfoot.t2-footer');
+                const tbody = t2Table.querySelector('tbody');
+                if (tfoot) tfoot.style.display = (anyOpen || getCollapse(tbody)) ? 'none' : '';
+            }
+
+            /* =========================================================
+             * RENDERERS (Level 3 Item, DENGAN POPOVER BARU)
+             * ======================================================= */
+            function renderLevel3_Items(rows) {
+                if (!rows?.length)
+                    return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
+
+                let html = `
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 yz-mini">
+        <thead class="yz-header-item">
+          <tr>
+            <th style="width:40px;">
+              <input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item">
+            </th>
+            <th>Item</th>
+            <th>Material FG</th>
+            <th>Desc FG</th>
+            <th>Qty SO</th>
+            <th>Outs. SO</th>
+            <th>Stock Packing</th>
+            <th>MACHI</th>
+            <th>ASSY</th>
+            <th>PAINT</th>
+            <th>PACKING</th>
+            <th>Net Price</th>
+            <th>Outs. Packg Value</th>
+            <th>Remark</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+                rows.forEach(r => {
+                    const isChecked = selectedItems.has(String(r.id));
+                    const countRemarks = Number(r.remark_count ?? ((r.remark && r.remark.trim() !==
+                        '') ? 1 : 0));
+
+                    html += `
+      <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
+          data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
+          data-vbeln="${r.VBELN_KEY}" data-posnr="${r.POSNR}" data-posnr-key="${r.POSNR_KEY}">
+        <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
+        <td>${r.POSNR ?? ''}</td>
+        <td>${r.MATNR ?? ''}</td>
+        <td>${r.MAKTX ?? ''}</td>
+        <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
+        <td>${formatNumberGlobal(r.PACKG, 0)}</td>
+        <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
+    <td>
+      <span
+        class="yz-machi-pct"
+        data-bs-toggle="popover"
+        data-bs-placement="top"
+        data-stage="Machining" 
+        data-gr="${r.MACHI ?? ''}" 
+        data-order="${r.QPROM ?? ''}"
+        title="Progress Stage: Machining">
+        ${formatPercent(r.PRSM)}
+      </span>
+    </td>
+    <td>
+      <span
+        class="yz-machi-pct"
+        data-bs-toggle="popover"
+        data-bs-placement="top"
+        data-stage="Assembly" 
+        data-gr="${r.ASSYM ?? ''}" 
+        data-order="${r.QPROA ?? ''}"
+        title="Progress Stage: Assembly">
+        ${formatPercent(r.PRSA)}
+      </span>
+    </td>
+    <td>
+      <span
+        class="yz-machi-pct"
+        data-bs-toggle="popover"
+        data-bs-placement="top"
+        data-stage="Paint" 
+        data-gr="${r.PAINTM ?? ''}" 
+        data-order="${r.QPROI ?? ''}"
+        title="Progress Stage: Paint">
+        ${formatPercent(r.PRSI)}
+      </span>
+    </td>
+    <td>
+      <span
+        class="yz-machi-pct"
+        data-bs-toggle="popover"
+        data-bs-placement="top"
+        data-stage="Packing" 
+        data-gr="${r.PACKGM ?? ''}" 
+        data-order="${r.QPROP ?? ''}"
+        title="Progress Stage: Packing">
+        ${formatPercent(r.PRSP)}
+      </span>
+    </td>
+        <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
+        <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
+        <td class="text-center">
+          <i class="fas fa-comments remark-icon"
+            title="Lihat/tambah catatan"
+            data-werks="${r.WERKS_KEY}"
+            data-auart="${r.AUART_KEY}"
+            data-vbeln="${r.VBELN_KEY}"
+            data-posnr="${r.POSNR}"
+            data-posnr-key="${r.POSNR_KEY}"></i>
+          <span class="remark-count-badge badge rounded-pill bg-primary ms-1"
+                data-count="${countRemarks}"
+                style="display:${countRemarks>0 ? 'inline-block':'none'};">${countRemarks}</span>
+        </td>
+      </tr>`;
+                });
+
+                html += `</tbody></table></div>`;
+                return html;
+            }
+
+            function renderLevel2_SO(rows, kunnr) {
+                if (!rows?.length)
+                    return `<div class="p-3 text-muted">Tidak ada data Outstanding SO untuk customer ini.</div>`;
+
+                const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ??
+                    0), 0);
+
+                let html = `
             <table class="table table-sm mb-0 yz-mini">
               <thead class="yz-header-so">
                 <tr>
@@ -1010,31 +1160,31 @@
               </thead>
               <tbody>`;
 
-                    const rowsSorted = [...rows].sort((a, b) => {
-                        const oa = Number(a.Overdue || 0),
-                            ob = Number(b.Overdue || 0);
-                        if (oa > 0 && ob <= 0) return -1;
-                        if (oa <= 0 && ob > 0) return 1;
-                        return ob - oa;
-                    });
+                const rowsSorted = [...rows].sort((a, b) => {
+                    const oa = Number(a.Overdue || 0),
+                        ob = Number(b.Overdue || 0);
+                    if (oa > 0 && ob <= 0) return -1;
+                    if (oa <= 0 && ob > 0) return 1;
+                    return ob - oa;
+                });
 
-                    rowsSorted.forEach((r, i) => {
-                        const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
-                        const overdueDays = Number(r.Overdue || 0);
-                        const hasRemark = Number(r.remark_count || 0) > 0;
-                        const outsQty = (typeof r.outs_qty !== 'undefined') ? r.outs_qty : (r
-                            .OUTS_QTY ?? 0);
-                        const displayValue = formatCurrencyGlobal(r.total_value, r.WAERK);
+                rowsSorted.forEach((r, i) => {
+                    const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
+                    const overdueDays = Number(r.Overdue || 0);
+                    const hasRemark = Number(r.remark_count || 0) > 0;
+                    const outsQty = (typeof r.outs_qty !== 'undefined') ? r.outs_qty : (r
+                        .OUTS_QTY ?? 0);
+                    const displayValue = formatCurrencyGlobal(r.total_value, r.WAERK);
 
-                        let overdueBadge = '';
-                        if (overdueDays > 0) overdueBadge =
-                            `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
-                        else if (overdueDays < 0) overdueBadge =
-                            `<span class="overdue-badge-bubble bubble-track" title="${Math.abs(overdueDays)} hari tersisa">-${Math.abs(overdueDays)} DAYS LEFT</span>`;
-                        else overdueBadge =
-                            `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
+                    let overdueBadge = '';
+                    if (overdueDays > 0) overdueBadge =
+                        `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
+                    else if (overdueDays < 0) overdueBadge =
+                        `<span class="overdue-badge-bubble bubble-track" title="${Math.abs(overdueDays)} hari tersisa">-${Math.abs(overdueDays)} DAYS LEFT</span>`;
+                    else overdueBadge =
+                        `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
 
-                        html += `
+                    html += `
               <tr class="yz-row js-t2row" data-vbeln="${r.VBELN}" data-tgt="${rid}">
                 <td class="text-center">
                   <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}" onclick="event.stopPropagation()">
@@ -1062,9 +1212,9 @@
                   </div>
                 </td>
               </tr>`;
-                    });
+                });
 
-                    html += `
+                html += `
               </tbody>
               <tfoot class="t2-footer">
                 <tr class="table-light yz-t2-total-outs" style="background-color:#e9ecef;">
@@ -1074,71 +1224,113 @@
                 </tr>
               </tfoot>
             </table>`;
-                    return html;
+                return html;
+            }
+
+            /* =========================================================
+             * MAIN LOGIC
+             * ======================================================= */
+
+            document.addEventListener('DOMContentLoaded', () => {
+                const __root = document.getElementById('so-root');
+                const WERKS = (__root?.dataset.werks || '').trim();
+                const AUART = (__root?.dataset.auart || '').trim();
+                const VBELN_HL = (__root?.dataset.hvbeln || '').trim();
+                const KUNNR_HL = (__root?.dataset.hkunnr || '').trim();
+                const POSNR_HL = (__root?.dataset.hposnr || '').trim();
+                const AUTO = (__root?.dataset.auto || '0') === '1';
+
+                // DOM Refs untuk Remark Modal
+                const remarkModalEl = document.getElementById('remarkModal');
+                if (remarkModalEl && remarkModalEl.parentElement !== document.body) {
+                    document.body.appendChild(remarkModalEl);
+                }
+                let remarkModal = bootstrap.Modal.getInstance(remarkModalEl);
+                if (!remarkModal) remarkModal = new bootstrap.Modal(remarkModalEl);
+
+                const rmSO = document.getElementById('rm-so');
+                const rmPOS = document.getElementById('rm-pos');
+                const rmList = document.getElementById('remarkThreadList');
+                const rmInput = document.getElementById('remark-input');
+                const rmAddBtn = document.getElementById('add-remark-btn');
+                const rmFeedback = document.getElementById('remark-feedback');
+                const rmCounter = document.getElementById('remark-counter');
+
+                const remarkModalState = {
+                    werks: null,
+                    auart: null,
+                    vbeln: null,
+                    posnr: null,
+                    posnrKey: null
+                };
+                const MAX_REMARK = 60;
+
+                function updateRmCounter() {
+                    if (!rmInput || !rmCounter) return;
+                    const n = (rmInput.value || '').length;
+                    rmCounter.textContent = `${n}/${MAX_REMARK}`;
+                }
+                rmInput?.addEventListener('input', updateRmCounter);
+
+                // Fungsi utama untuk memuat remark
+                async function loadRemarkThread() {
+                    if (!rmList) return;
+                    rmList.innerHTML = `
+                <div class="text-muted small d-flex align-items-center">
+                  <div class="spinner-border spinner-border-sm me-2"></div>Memuat catatan...
+                </div>`;
+
+                    const u = new URL(apiListItemRemarks, window.location.origin);
+                    u.searchParams.set('werks', remarkModalState.werks);
+                    u.searchParams.set('auart', remarkModalState.auart);
+                    u.searchParams.set('vbeln', remarkModalState.vbeln);
+                    u.searchParams.set('posnr', remarkModalState.posnrKey);
+
+                    try {
+                        const r = await fetch(u, {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        });
+                        const js = await r.json();
+                        if (!js.ok) throw new Error(js.message || 'Gagal memuat catatan.');
+
+                        rmList.innerHTML = js.data.length ? '' :
+                            `<div class="text-muted">Belum ada catatan.</div>`;
+                        js.data.forEach(it => {
+                            const item = document.createElement('div');
+                            item.className = 'remark-item' + (it.is_owner ? ' own' : '');
+                            item.innerHTML = `
+                    <div class="body flex-grow-1">
+                      <div class="meta"><strong>${escapeHtml(it.user_name || 'User')}</strong> • <span>${escapeHtml(it.created_at || '')}</span></div>
+                      <div class="text">${escapeHtml(it.remark || '')}</div>
+                    </div>
+                    <div class="act d-flex gap-1 align-items-center">
+                      ${it.is_owner ? `<button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark" data-id="${it.id}" data-remark="${escapeHtml(it.remark || '')}" title="Edit Catatan"><i class="fas fa-pencil-alt"></i></button>` : ''}
+                      ${it.is_owner ? `<button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark" data-id="${it.id}" title="Hapus Catatan"><i class="fas fa-trash"></i></button>` : ''}
+                    </div>`;
+                            rmList.appendChild(item);
+                        });
+
+                        // update badge count di T3
+                        const rowSel =
+                            `tr[data-werks='${remarkModalState.werks}'][data-auart='${remarkModalState.auart}'][data-vbeln='${remarkModalState.vbeln}'][data-posnr-key='${remarkModalState.posnrKey}']`;
+                        const rowEl = document.querySelector(rowSel);
+                        const badge = rowEl?.querySelector('.remark-count-badge');
+                        if (badge) {
+                            const c = js.data.length;
+                            badge.dataset.count = String(c);
+                            badge.textContent = String(c);
+                            badge.style.display = c > 0 ? 'inline-block' : 'none';
+                        }
+                        recalcSoRemarkFlagFromDom(remarkModalState.vbeln);
+
+                    } catch (err) {
+                        rmList.innerHTML = `<div class="text-danger">${escapeHtml(err.message)}</div>`;
+                    }
                 }
 
-                // LEVEL-3 (ITEMS)
-                function renderLevel3_Items(rows) {
-                    if (!rows?.length)
-                        return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
-
-                    let html = `
-            <div class="table-responsive">
-              <table class="table table-sm table-hover mb-0 yz-mini">
-                <thead class="yz-header-item">
-                  <tr>
-                    <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-                    <th>Item</th><th>Material FG</th><th>Desc FG</th>
-                    <th>Qty SO</th><th>Outs. SO</th><th>Stock Packing</th>
-                    <th>GR ASSY</th><th>GR PAINT</th><th>GR PKG</th>
-                    <th>Net Price</th><th>Outs. Packg Value</th><th>Remark</th>
-                  </tr>
-                </thead>
-                <tbody>`;
-
-                    rows.forEach(r => {
-                        const isChecked = selectedItems.has(String(r.id));
-                        const countRemarks = Number(r.remark_count ?? ((r.remark && r.remark.trim() !==
-                            '') ? 1 : 0));
-
-                        html += `
-              <tr id="item-${r.VBELN_KEY}-${r.POSNR_KEY}"
-                  data-item-id="${r.id}" data-werks="${r.WERKS_KEY}" data-auart="${r.AUART_KEY}"
-                  data-vbeln="${r.VBELN_KEY}" data-posnr="${r.POSNR}" data-posnr-key="${r.POSNR_KEY}">
-                <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
-                <td>${r.POSNR ?? ''}</td>
-                <td>${r.MATNR ?? ''}</td>
-                <td>${r.MAKTX ?? ''}</td>
-                <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
-                <td>${formatNumberGlobal(r.PACKG, 0)}</td>
-                <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
-                <td>${formatNumberGlobal(r.ASSYM, 0)}</td>
-                <td>${formatNumberGlobal(r.PAINT, 0)}</td>
-                <td>${formatNumberGlobal(r.MENGE, 0)}</td>
-                <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
-                <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
-                <td class="text-center">
-                  <i class="fas fa-comments remark-icon"
-                    title="Lihat/tambah catatan"
-                    data-werks="${r.WERKS_KEY}"
-                    data-auart="${r.AUART_KEY}"
-                    data-vbeln="${r.VBELN_KEY}"
-                    data-posnr="${r.POSNR}"
-                    data-posnr-key="${r.POSNR_KEY}"></i>
-                  <span class="remark-count-badge badge rounded-pill bg-primary ms-1"
-                        data-count="${countRemarks}"
-                        style="display:${countRemarks>0 ? 'inline-block':'none'};">${countRemarks}</span>
-                </td>
-              </tr>`;
-                    });
-
-                    html += `</tbody></table></div>`;
-                    return html;
-                }
-
-                /* =========================================================
-                 * LEVEL-1 (Customer card) → load Level-2 (SO list)
-                 * ======================================================= */
+                // Event Listener Customer Card Level-1
                 document.querySelectorAll('.yz-customer-card').forEach(row => {
                     row.addEventListener('click', async () => {
                         const kunnr = row.dataset.kunnr;
@@ -1161,7 +1353,6 @@
                                     otherSlot.style.display = 'none';
                                     r.querySelector('.kunnr-caret')?.classList.remove(
                                         'rot');
-
                                     const otherWrap = otherSlot?.querySelector(
                                         '.yz-nest-wrap');
                                     otherWrap?.querySelectorAll('.js-t2row').forEach(
@@ -1186,15 +1377,15 @@
                             wasOpen);
                         slot.style.display = wasOpen ? 'none' : 'block';
 
-                        // 3) Focus mode + integrasi Small Qty
+                        // 3) Handle Small Qty
                         const smallQtySection = document.getElementById(
                             'small-qty-section');
                         const smallQtyDetailsContainer = document.getElementById(
                             'smallQtyDetailsContainer');
-                        const smallQtyChartContainer = document.getElementById(
-                            'chartSmallQtyByCustomer')?.closest('.chart-container');
                         const chartCanvas = document.getElementById(
                             'chartSmallQtyByCustomer');
+                        const smallQtyChartContainer = chartCanvas?.closest(
+                            '.chart-container');
 
                         if (!wasOpen) {
                             customerListContainer.classList.add('customer-focus-mode');
@@ -1204,10 +1395,11 @@
 
                             const hasSmallQtyData = (Array.isArray(initialSmallQtyDataRaw) ?
                                     initialSmallQtyDataRaw : [])
-                                .some(item => item.NAME1 === cname);
-                            if (hasSmallQtyData) {
-                                if (window.showSmallQtyDetails) await window
-                                    .showSmallQtyDetails(cname, WERKS);
+                                .some(item => (item.NAME1 || '').trim() === (cname || '')
+                                    .trim());
+
+                            if (hasSmallQtyData && window.showSmallQtyDetails) {
+                                await window.showSmallQtyDetails(cname, WERKS);
                             } else {
                                 if (smallQtySection) smallQtySection.style.display = 'none';
                                 if (smallQtyDetailsContainer) smallQtyDetailsContainer.style
@@ -1265,6 +1457,7 @@
                             updateT2FooterVisibility(soTable);
                             if (soTbody) syncCheckAllSoHeader(soTbody);
 
+                            // Tambahkan event listener untuk SO Row (Level-2)
                             wrap.querySelectorAll('.js-t2row').forEach(soRow => {
                                 const soVbeln = soRow.dataset.vbeln;
                                 updateSODot(soVbeln);
@@ -1318,6 +1511,9 @@
                                         applySelectionsToRenderedItems(
                                             box);
                                         syncCheckAllHeader(box);
+                                        attachBootstrapPopovers(
+                                            box
+                                            ); // PENTING: Panggil Popover
                                         return;
                                     }
 
@@ -1328,15 +1524,16 @@
                                     try {
                                         const items =
                                             await ensureItemsLoadedForSO(
-                                                vbeln);
+                                                vbeln, WERKS, AUART);
                                         box.innerHTML =
                                             renderLevel3_Items(items);
                                         applySelectionsToRenderedItems(
                                             box);
                                         syncCheckAllHeader(box);
+                                        attachBootstrapPopovers(
+                                            box
+                                            ); // PENTING: Panggil Popover
                                         itemTr.dataset.loaded = '1';
-                                        updateSoRemarkFlagFromCache(
-                                            vbeln);
                                     } catch (e) {
                                         console.error(
                                             'Items load error:', e);
@@ -1354,9 +1551,7 @@
                     });
                 });
 
-                /* =========================================================
-                 * CHANGE events (checkbox behaviors)
-                 * ======================================================= */
+                // Event Listener Checkboxes (LENGKAP)
                 document.body.addEventListener('change', async (e) => {
                     // single item (T3)
                     if (e.target.classList.contains('check-item')) {
@@ -1385,7 +1580,7 @@
                         const soTbody = soRow?.closest('tbody');
                         const itemNest = soRow?.nextElementSibling;
 
-                        const items = await ensureItemsLoadedForSO(vbeln);
+                        const items = await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
                         items.forEach(it => {
                             if (isChecked) selectedItems.add(String(it.id));
                             else selectedItems.delete(String(it.id));
@@ -1442,7 +1637,7 @@
                         for (const chk of allSO) {
                             chk.checked = e.target.checked;
                             const vbeln = chk.dataset.vbeln;
-                            const items = await ensureItemsLoadedForSO(vbeln);
+                            const items = await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
                             if (e.target.checked) items.forEach(it => selectedItems.add(String(it
                                 .id)));
                             else {
@@ -1473,7 +1668,58 @@
                     }
                 });
 
-                // Toggle Collapse Mode (T2 header button)
+                // Toggle Collapse Mode (T2 header button) - (LENGKAP)
+                async function applyCollapseViewSo(tbodyEl, on) {
+                    if (!tbodyEl) return;
+                    setCollapse(tbodyEl, on);
+
+                    const headerCaret = tbodyEl.closest('table')?.querySelector(
+                        '.js-collapse-toggle .yz-collapse-caret');
+                    if (headerCaret) headerCaret.textContent = on ? '▾' : '▸';
+
+                    tbodyEl.querySelector('.yz-empty-selected-row')?.remove();
+                    tbodyEl.classList.remove('so-focus-mode');
+                    tbodyEl.classList.toggle('collapse-mode', on);
+
+                    const soRows = tbodyEl.querySelectorAll('.js-t2row');
+
+                    if (on) {
+                        let visibleCount = 0;
+                        for (const r of soRows) {
+                            const chk = r.querySelector('.check-so');
+                            const isT3Open = r.nextElementSibling.style.display !== 'none';
+                            if (chk?.checked) {
+                                r.style.display = '';
+                                visibleCount++;
+                                if (!isT3Open) r.click();
+                            } else {
+                                r.style.display = 'none';
+                                if (isT3Open) r.click();
+                                else {
+                                    r.nextElementSibling.style.display = 'none';
+                                    r.querySelector('.yz-caret')?.classList.remove('rot');
+                                }
+                            }
+                        }
+                        if (visibleCount === 0 && getCollapse(tbodyEl)) {
+                            await applyCollapseViewSo(tbodyEl, false);
+                            return;
+                        }
+                    } else {
+                        soRows.forEach(r => {
+                            r.style.display = '';
+                            r.classList.remove('is-focused');
+                            if (r.nextElementSibling.style.display !== 'none') {
+                                r.nextElementSibling.style.display = 'none';
+                                r.querySelector('.yz-caret')?.classList.remove('rot');
+                            }
+                        });
+                    }
+
+                    syncCheckAllSoHeader(tbodyEl);
+                    updateT2FooterVisibility(tbodyEl.closest('table'));
+                }
+
                 document.body.addEventListener('click', async (e) => {
                     const toggleBtn = e.target.closest('.js-collapse-toggle');
                     if (!toggleBtn) return;
@@ -1482,9 +1728,7 @@
                     if (soTbody) await applyCollapseViewSo(soTbody, !getCollapse(soTbody));
                 });
 
-                /* =========================================================
-                 * EXPORT (selected items)
-                 * ======================================================= */
+                // Event Listener Export Button (LENGKAP)
                 if (exportDropdownContainer) {
                     exportDropdownContainer.addEventListener('click', (e) => {
                         const opt = e.target.closest('.export-option');
@@ -1518,17 +1762,7 @@
                     });
                 }
 
-                /* =========================================================
-                 * REMARK THREAD (multi-remark)
-                 * ======================================================= */
-                function updateRmCounter() {
-                    if (!rmInput || !rmCounter) return;
-                    const n = (rmInput.value || '').length;
-                    rmCounter.textContent = `${n}/${MAX_REMARK}`;
-                }
-                rmInput?.addEventListener('input', updateRmCounter);
-
-                // open remark modal via icon di T3
+                // Event Listener Remark Modal (LENGKAP)
                 document.body.addEventListener('click', async (e) => {
                     const icon = e.target.closest('.remark-icon');
                     if (!icon) return;
@@ -1547,70 +1781,12 @@
                     updateRmCounter();
                     if (rmFeedback) rmFeedback.textContent = '';
 
-                    // pastikan form tambah nampak
                     const addForm = rmAddBtn?.closest('.mb-2');
                     if (addForm) addForm.style.display = '';
 
                     remarkModal.show();
                     await loadRemarkThread();
                 });
-
-                async function loadRemarkThread() {
-                    if (!rmList) return;
-                    rmList.innerHTML = `
-            <div class="text-muted small d-flex align-items-center">
-              <div class="spinner-border spinner-border-sm me-2"></div>Memuat catatan...
-            </div>`;
-
-                    const u = new URL(apiListItemRemarks, window.location.origin);
-                    u.searchParams.set('werks', remarkModalState.werks);
-                    u.searchParams.set('auart', remarkModalState.auart);
-                    u.searchParams.set('vbeln', remarkModalState.vbeln);
-                    u.searchParams.set('posnr', remarkModalState.posnrKey);
-
-                    try {
-                        const r = await fetch(u, {
-                            headers: {
-                                'Accept': 'application/json'
-                            }
-                        });
-                        const js = await r.json();
-                        if (!js.ok) throw new Error(js.message || 'Gagal memuat catatan.');
-
-                        rmList.innerHTML = js.data.length ? '' :
-                            `<div class="text-muted">Belum ada catatan.</div>`;
-                        js.data.forEach(it => {
-                            const item = document.createElement('div');
-                            item.className = 'remark-item' + (it.is_owner ? ' own' : '');
-                            item.innerHTML = `
-                <div class="body flex-grow-1">
-                  <div class="meta"><strong>${escapeHtml(it.user_name || 'User')}</strong> • <span>${escapeHtml(it.created_at || '')}</span></div>
-                  <div class="text">${escapeHtml(it.remark || '')}</div>
-                </div>
-                <div class="act d-flex gap-1 align-items-center">
-                  ${it.is_owner ? `<button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark" data-id="${it.id}" data-remark="${escapeHtml(it.remark || '')}" title="Edit Catatan"><i class="fas fa-pencil-alt"></i></button>` : ''}
-                  ${it.is_owner ? `<button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark" data-id="${it.id}" title="Hapus Catatan"><i class="fas fa-trash"></i></button>` : ''}
-                </div>`;
-                            rmList.appendChild(item);
-                        });
-
-                        // update badge count di T3
-                        const rowSel =
-                            `tr[data-werks='${remarkModalState.werks}'][data-auart='${remarkModalState.auart}'][data-vbeln='${remarkModalState.vbeln}'][data-posnr-key='${remarkModalState.posnrKey}']`;
-                        const rowEl = document.querySelector(rowSel);
-                        const badge = rowEl?.querySelector('.remark-count-badge');
-                        if (badge) {
-                            const c = js.data.length;
-                            badge.dataset.count = String(c);
-                            badge.textContent = String(c);
-                            badge.style.display = c > 0 ? 'inline-block' : 'none';
-                        }
-                        recalcSoRemarkFlagFromDom(remarkModalState.vbeln);
-
-                    } catch (err) {
-                        rmList.innerHTML = `<div class="text-danger">${escapeHtml(err.message)}</div>`;
-                    }
-                }
 
                 rmAddBtn?.addEventListener('click', async () => {
                     const text = (rmInput?.value || '').trim();
@@ -1670,7 +1846,6 @@
                     }
                 });
 
-                // Edit/Delete remark dalam modal
                 rmList?.addEventListener('click', async (e) => {
                     // Delete
                     const delBtn = e.target.closest('.btn-delete-remark');
@@ -1717,8 +1892,8 @@
                         remarkTextEl.innerHTML =
                             `<textarea class="form-control" rows="2" maxlength="60" id="edit-remark-${id}">${currentRemark}</textarea>`;
                         actionEl.innerHTML = `
-              <button type="button" class="btn btn-success btn-sm btn-save-edit" data-id="${id}">Save</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-edit">Cancel</button>`;
+                <button type="button" class="btn btn-success btn-sm btn-save-edit" data-id="${id}">Save</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-edit">Cancel</button>`;
                         document.getElementById(`edit-remark-${id}`)?.focus();
                         return;
                     }
@@ -1780,10 +1955,10 @@
                 });
 
                 /* =========================================================
-                 * NAVIGATE to SO (global) + Link Delegation
+                 * NAVIGATE to SO (full logic)
                  * ======================================================= */
                 window.navigateToSO = async function(vbeln, customerName = '', posnr = '') {
-                    const forceOpen = (posnr === '__OPEN__'); // sentinel untuk paksa buka Tabel-3
+                    const forceOpen = (posnr === '__OPEN__');
                     const POSNR6 = (!forceOpen && posnr) ? String(posnr).replace(/\D/g, '').padStart(6,
                         '0') : '';
 
@@ -1885,7 +2060,6 @@
                     if (!link) return;
                     e.preventDefault();
 
-                    // Fast path: bila link ada di baris Tabel-2 yang sudah tampil, buka Tabel-3 di tempat
                     const t2row = link.closest('.js-t2row');
                     if (t2row) {
                         const nest = t2row.nextElementSibling;
@@ -1894,7 +2068,6 @@
                         return;
                     }
 
-                    // Global path: buka kartu customer & paksa buka Tabel-3
                     const forceOpen = link.dataset.openItems === '1';
                     await window.navigateToSO(
                         (link.dataset.vbeln || '').trim(),
@@ -1904,7 +2077,7 @@
                 });
 
                 /* =========================================================
-                 * SMALL QTY (Chart + Details + Export)
+                 * SMALL QTY (Chart + Details + Export) - LENGKAP
                  * ======================================================= */
                 const smallQtyDetailsContainer = document.getElementById('smallQtyDetailsContainer');
                 const smallQtyDetailsTable = document.getElementById('smallQtyDetailsTable');
@@ -1917,36 +2090,22 @@
                 const smallQtyChartContainer = chartCanvas?.closest('.chart-container');
                 let smallQtyChartInstance = null;
 
-                const formatNumberChart = (v) => {
-                    const n = parseFloat(v);
-                    if (!Number.isFinite(n)) return '';
-                    return n.toLocaleString('id-ID', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0
-                    });
-                };
-
                 async function showSmallQtyDetails(customerName, werks) {
-                    const locationMap = {
-                        '2000': 'Surabaya',
-                        '3000': 'Semarang'
-                    };
-                    const locationName = locationMap[werks] ?? werks;
-                    const currentAuart = (document.getElementById('so-root')?.dataset.auart || '').trim();
+                    const root = document.getElementById('so-root');
+                    const currentAuart = (root?.dataset.auart || '').trim();
 
                     if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
-
+                    if (smallQtySection) smallQtySection.style.display = '';
                     smallQtyDetailsTitle.textContent = `Detail Item Outstanding (≤5) untuk ${customerName}`;
                     smallQtyMeta.textContent = '';
                     exportSmallQtyPdfBtn.disabled = true;
 
                     smallQtyDetailsTable.innerHTML = `
-            <div class="d-flex justify-content-center align-items-center p-5">
-              <div class="spinner-border text-primary" role="status"></div>
-              <span class="ms-3 text-muted">Memuat data...</span>
-            </div>`;
+        <div class="d-flex justify-content-center align-items-center p-5">
+          <div class="spinner-border text-primary" role="status"></div>
+          <span class="ms-3 text-muted">Memuat data...</span>
+        </div>`;
                     smallQtyDetailsContainer.style.display = 'block';
-                    if (smallQtySection) smallQtySection.style.display = '';
 
                     try {
                         const apiUrl = new URL(apiSmallQtyDetails, window.location.origin);
@@ -1954,66 +2113,82 @@
                         apiUrl.searchParams.append('werks', werks);
                         apiUrl.searchParams.append('auart', currentAuart);
 
-                        const response = await fetch(apiUrl, {
+                        const resp = await fetch(apiUrl, {
                             headers: {
                                 'Accept': 'application/json'
                             }
                         });
-                        const result = await response.json();
+                        const result = await resp.json();
 
-                        const rows = uniqBy(result.data || [], r => `${r.SO}|${r.POSNR}|${r.MATNR ?? ''}`);
-
-                        if (result.ok && rows.length > 0) {
-                            const uniqSO = new Set(rows.map(r => (r.SO || '').toString().trim()).filter(
-                                Boolean));
-                            exportSmallQtyPdfBtn.disabled = false;
-
-                            if (exportForm) exportForm.querySelector('#exp_customerName').value =
-                                customerName;
-
-                            rows.sort((a, b) => parseFloat(a.PACKG) - parseFloat(b.PACKG));
-
-                            const headers = `<tr>
-                <th style="width:5%;" class="text-center">No.</th>
-                <th class="text-center">SO</th>
-                <th class="text-center">Item</th>
-                <th>Description</th>
-                <th class="text-end">Shipped</th>
-                <th class="text-end">Qty SO</th>
-                <th class="text-end">Outs. SO (≤5)</th>
-                <th class="text-end">WHFG</th>
-                <th class="text-end">Stock Packing</th>
-              </tr>`;
-
-                            const body = rows.map((it, idx) => {
-                                return `<tr>
-                  <td class="text-center">${idx+1}</td>
-                  <td class="text-center"><a href="#" class="js-open-so" data-vbeln="${it.SO}" data-cname="${customerName}" data-open-items="1">${it.SO}</a></td>
-                  <td class="text-center">${it.POSNR}</td>
-                  <td>${it.MAKTX}</td>
-                  <td class="text-end">${formatNumberChart(it.QTY_GI)}</td>
-                  <td class="text-end">${formatNumberChart(it.KWMENG)}</td>
-                  <td class="text-end fw-bold text-danger">${formatNumberChart(it.PACKG)}</td>
-                  <td class="text-end">${formatNumberChart(it.KALAB)}</td>
-                  <td class="text-end">${formatNumberChart(it.KALAB2)}</td>
-                </tr>`;
-                            }).join('');
-
-                            smallQtyDetailsTable.innerHTML = `
-                <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
-                  <table class="table table-striped table-hover table-sm align-middle">
-                    <thead class="table-light">${headers}</thead>
-                    <tbody>${body}</tbody>
-                  </table>
-                </div>`;
-                        } else {
+                        const rows = Array.isArray(result.data) ? result.data : [];
+                        if (!result.ok || rows.length === 0) {
                             smallQtyMeta.textContent = '';
                             exportSmallQtyPdfBtn.disabled = true;
                             smallQtyDetailsTable.innerHTML =
                                 `<div class="text-center p-5 text-muted">Data item Small Quantity (Outs. SO &le; 5) tidak ditemukan untuk customer ini.</div>`;
+                            return;
                         }
-                    } catch (error) {
-                        console.error('Gagal mengambil data detail Small Qty:', error);
+
+                        const uniqSO = new Set(rows.map(r => String(r.SO || '').trim()).filter(Boolean));
+                        smallQtyMeta.textContent =
+                            `(SO: ${uniqSO.size.toLocaleString('id-ID')} • Item: ${rows.length.toLocaleString('id-ID')})`;
+                        exportSmallQtyPdfBtn.disabled = false;
+                        if (exportForm) exportForm.querySelector('#exp_customerName').value = customerName;
+
+                        rows.sort((a, b) => (parseFloat(a.PACKG ?? 0) - parseFloat(b.PACKG ?? 0)));
+
+                        const headers = `
+            <tr>
+              <th style="width:5%;" class="text-center">No.</th>
+              <th class="text-center">SO</th>
+              <th class="text-center">Item</th>
+              <th>Description</th>
+              <th class="text-end">Shipped</th>
+              <th class="text-end">Qty SO</th>
+              <th class="text-end">Outs. SO (≤5)</th>
+              <th class="text-end">WHFG</th>
+              <th class="text-end">Stock Packing</th>
+            </tr>`;
+
+                        const body = rows.map((it, idx) => {
+                            const so = String(it.SO || '').trim();
+                            const pos = String(it.POSNR || '').replace(/\D/g, '').padStart(6, '0');
+
+                            return `
+              <tr class="js-sq-row"
+                  style="cursor:pointer;"
+                  data-vbeln="${so}"
+                  data-posnr-key="${pos}"
+                  data-cname="${customerName}">
+                <td class="text-center">${idx + 1}</td>
+                <td class="text-center fw-bold">
+                  <a href="#"
+                     class="js-open-so text-decoration-none"
+                     data-vbeln="${so}"
+                     data-cname="${customerName}"
+                     data-posnr="${pos}"
+                     data-open-items="1">${so}</a>
+                </td>
+                <td class="text-center">${it.POSNR ?? ''}</td>
+                <td>${it.MAKTX ?? ''}</td>
+                <td class="text-end">${formatNumberGlobal(it.QTY_GI)}</td>
+                <td class="text-end">${formatNumberGlobal(it.KWMENG)}</td>
+                <td class="text-end fw-bold text-danger">${formatNumberGlobal(it.PACKG)}</td>
+                <td class="text-end">${formatNumberGlobal(it.KALAB)}</td>
+                <td class="text-end">${formatNumberGlobal(it.KALAB2)}</td>
+              </tr>`;
+                        }).join('');
+
+                        smallQtyDetailsTable.innerHTML = `
+            <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
+              <table class="table table-striped table-hover table-sm align-middle">
+                <thead class="table-light">${headers}</thead>
+                <tbody>${body}</tbody>
+              </table>
+            </div>`;
+
+                    } catch (err) {
+                        console.error('Gagal mengambil data detail Small Qty:', err);
                         smallQtyMeta.textContent = '';
                         exportSmallQtyPdfBtn.disabled = true;
                         smallQtyDetailsTable.innerHTML =
@@ -2023,28 +2198,31 @@
 
                 function renderSmallQtyChart(dataToRender, werks) {
                     const ctxSmallQty = document.getElementById('chartSmallQtyByCustomer');
-                    const plantLabel = (werks === '3000') ? 'Semarang' : 'Surabaya';
+                    const plantCode = (werks === '3000') ? 'Semarang' : 'Surabaya';
                     const barColor = (werks === '3000') ? '#198754' : '#ffc107';
 
                     const customerMap = new Map();
                     const totalItemCountMap = new Map();
-                    (Array.isArray(dataToRender) ? dataToRender : []).forEach(item => {
+                    dataToRender.forEach(item => {
                         const name = (item.NAME1 || '').trim();
                         if (!name) return;
+
                         const currentCount = customerMap.get(name) || 0;
-                        customerMap.set(name, currentCount + parseInt(item.so_count || 0, 10));
+                        customerMap.set(name, currentCount + parseInt(item.so_count, 10));
+
                         const currentItemCount = totalItemCountMap.get(name) || 0;
-                        totalItemCountMap.set(name, currentItemCount + parseInt(item.item_count || 0,
-                            10));
+                        totalItemCountMap.set(name, currentItemCount + parseInt(item.item_count, 10));
                     });
 
-                    const sorted = [...customerMap.entries()].sort((a, b) => b[1] - a[1]);
-                    const labels = sorted.map(i => i[0]);
-                    const soCounts = sorted.map(i => i[1]);
-                    const totalSoCount = soCounts.reduce((s, c) => s + c, 0);
+                    const sortedCustomers = [...customerMap.entries()].sort((a, b) => b[1] - a[1]);
+                    const labels = sortedCustomers.map(item => item[0]);
+                    const soCounts = sortedCustomers.map(item => item[1]);
+                    const totalSoCount = soCounts.reduce((sum, count) => sum + count, 0);
+                    const totalItemCount = dataToRender.reduce((sum, item) => sum + parseInt(item.item_count,
+                        10), 0);
 
-                    const noDataEl = ctxSmallQty?.closest('.chart-container')?.querySelector('.yz-nodata');
-                    if (!ctxSmallQty || (dataToRender.length === 0) || totalSoCount === 0) {
+                    const noDataEl = ctxSmallQty?.closest('.chart-container').querySelector('.yz-nodata');
+                    if (!ctxSmallQty || dataToRender.length === 0 || totalSoCount === 0) {
                         if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
                         if (chartCanvas) chartCanvas.style.display = 'none';
                         if (noDataEl) noDataEl.style.display = 'block';
@@ -2057,8 +2235,10 @@
                     }
 
                     const dynamicHeight = Math.max(200, Math.min(50 * labels.length, 600));
-                    if (chartCanvas) chartCanvas.closest('.chart-container').style.height = dynamicHeight +
-                        'px';
+                    if (chartCanvas) {
+                        chartCanvas.closest('.chart-container').style.height = dynamicHeight + 'px';
+                    }
+
                     if (smallQtyChartInstance) smallQtyChartInstance.destroy();
 
                     smallQtyChartInstance = new Chart(ctxSmallQty, {
@@ -2066,7 +2246,7 @@
                         data: {
                             labels,
                             datasets: [{
-                                label: plantLabel,
+                                label: plantCode,
                                 data: soCounts,
                                 backgroundColor: barColor
                             }]
@@ -2084,7 +2264,9 @@
                                         text: 'Sales Order (With Outs. Item Qty ≤ 5)'
                                     },
                                     ticks: {
-                                        callback: (v) => (Math.floor(v) === v) ? v : ''
+                                        callback: (value) => {
+                                            if (Math.floor(value) === value) return value;
+                                        }
                                     }
                                 },
                                 y: {
@@ -2103,18 +2285,19 @@
                             },
                             onClick: async (event, elements) => {
                                 if (elements.length === 0) return;
-                                const bar = elements[0];
-                                const customerName = labels[bar.index];
-                                await showSmallQtyDetails(customerName, WERKS);
+                                const barElement = elements[0];
+                                const customerName = labels[barElement.index];
+                                await showSmallQtyDetails(customerName, werks);
                             }
                         }
                     });
                     window.smallQtyChartInstance = smallQtyChartInstance;
                 }
 
-                // expose fungsi Small Qty
+                // Expose fungsi Small Qty (harus ada di global scope)
                 window.showSmallQtyDetails = showSmallQtyDetails;
                 window.renderSmallQtyChart = renderSmallQtyChart;
+
 
                 // Init chart (awal halaman)
                 if (document.getElementById('chartSmallQtyByCustomer')) {
@@ -2127,28 +2310,45 @@
                     }
                 }
 
-                // Close details table
+                // DELEGASI KLIK ROW Small Qty
+                if (!window.__sqRowDelegationBound) {
+                    document.addEventListener('click', (e) => {
+                        const tr = e.target.closest('#smallQtyDetailsTable tr.js-sq-row');
+                        if (!tr) return;
+
+                        if (e.target.closest(
+                                'a, button, .form-check-input, .form-select, .form-control')) return;
+
+                        e.preventDefault();
+                        const vbeln = (tr.dataset.vbeln || '').trim();
+                        const cname = (tr.dataset.cname || '').trim();
+                        const posnr = (tr.dataset.posnrKey || '')
+                            .trim();
+
+                        if (window.navigateToSO && vbeln) {
+                            window.navigateToSO(vbeln, cname, posnr);
+                        }
+                    });
+                    window.__sqRowDelegationBound = true;
+                }
+
+                // Export Small Qty PDF
+                document.getElementById('exportSmallQtyPdf')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    document.getElementById('smallQtyExportForm')?.submit();
+                });
+
+                // Close Small Qty Details
                 document.getElementById('closeDetailsTable')?.addEventListener('click', () => {
-                    if (smallQtyDetailsContainer) smallQtyDetailsContainer.style.display = 'none';
+                    document.getElementById('smallQtyDetailsContainer').style.display = 'none';
                     if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
                     if (initialSmallQtyDataRaw && initialSmallQtyDataRaw.length > 0) {
                         renderSmallQtyChart(initialSmallQtyDataRaw, WERKS);
                     }
                 });
 
-                // Export Small Qty PDF
-                const expForm = document.getElementById('smallQtyExportForm');
-                const expBtn = document.getElementById('exportSmallQtyPdf');
-                if (expBtn && expForm) {
-                    expBtn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        expForm.action = exportSmallQtyPdfUrl;
-                        expForm.submit();
-                    });
-                }
-
                 /* =========================================================
-                 * AUTO-EXPAND dari root highlight (kunnr/vbeln/posnr)
+                 * AUTO-EXPAND dari root highlight (full logic)
                  * ======================================================= */
                 (async function autoExpandFromRoot() {
                     const VBELN = VBELN_HL,
@@ -2271,7 +2471,6 @@
         })(); // IIFE
     </script>
 @endpush
-
 @push('scripts')
     <script>
         // Data harus dikirim dari Controller ke Blade (SO Report Controller sudah mengirim data ini)
@@ -2299,105 +2498,6 @@
                 maximumFractionDigits: 0
             });
         };
-
-        // Dibuat global agar bisa dipanggil dari event listener Level-1 di script block sebelumnya
-        async function showSmallQtyDetails(customerName, werks) {
-            const locationMap = {
-                '2000': 'Surabaya',
-                '3000': 'Semarang'
-            };
-            const locationName = locationMap[werks] ?? werks;
-            const root = document.getElementById('so-root');
-            const currentAuart = (root.dataset.auart || '').trim();
-
-            if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
-
-            smallQtyDetailsTitle.textContent =
-                `Detail Item Outstanding (≤5) untuk ${customerName}`;
-            smallQtyMeta.textContent = '';
-            exportSmallQtyPdfBtn.disabled = true;
-            smallQtyDetailsTable.innerHTML =
-                `<div class="d-flex justify-content-center align-items-center p-5">
-                    <div class="spinner-border text-primary" role="status"></div>
-                    <span class="ms-3 text-muted">Memuat data...</span>
-                </div>`;
-            smallQtyDetailsContainer.style.display = 'block';
-
-            if (smallQtySection) smallQtySection.style.display = '';
-
-            try {
-                const apiUrl = new URL("{{ route('so.api.small_qty_details') }}", window.location.origin);
-                apiUrl.searchParams.append('customerName', customerName);
-                apiUrl.searchParams.append('werks', werks);
-                apiUrl.searchParams.append('auart', currentAuart);
-
-                const response = await fetch(apiUrl);
-                const result = await response.json();
-
-                if (result.ok && result.data.length > 0) {
-                    const uniqSO = new Set(result.data.map(r => (r.SO || '').toString().trim()).filter(
-                        Boolean));
-                    const totalSO = uniqSO.size;
-                    const totalItem = result.data.length;
-                    exportSmallQtyPdfBtn.disabled = false;
-
-                    if (exportForm) {
-                        exportForm.querySelector('#exp_customerName').value = customerName;
-                    }
-
-                    result.data.sort((a, b) => parseFloat(a.PACKG) - parseFloat(b.PACKG));
-
-                    const tableHeaders = `<tr>
-                        <th style="width:5%;" class="text-center">No.</th>
-                        <th class="text-center">SO</th>
-                        <th class="text-center">Item</th>
-                        <th>Description</th>
-                        <th class="text-end">Qty SO</th>
-                        <th class="text-end">Outs. SO (≤5)</th>
-                        <th class="text-end">WHFG</th>
-                        <th class="text-end">Stock Packing</th>
-                        </tr>`;
-
-                    let tableBodyHtml = result.data.map((item, idx) => {
-                        const qtySo = formatNumberChart(item.KWMENG);
-                        const qtyOuts = formatNumberChart(item.PACKG);
-                        const kalab = formatNumberChart(item.KALAB);
-                        const kalab2 = formatNumberChart(item.KALAB2);
-                        return `<tr>
-                        <td class="text-center">${idx+1}</td>
-                        <td class="text-center">${item.SO}</td>
-                        <td class="text-center">${item.POSNR}</td>
-                        <td>${item.MAKTX}</td>
-                        <td class="text-end">${qtySo}</td>
-                        <td class="text-end fw-bold text-danger">${qtyOuts}</td>
-                        <td class="text-end">${kalab}</td>  {{-- <<< BARU >>> --}}
-                        <td class="text-end">${kalab2}</td>
-                        </tr>`;
-                    }).join('');
-
-                    const tableHtml = `
-                        <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
-                            <table class="table table-striped table-hover table-sm align-middle">
-                                <thead class="table-light">${tableHeaders}</thead>
-                                <tbody>${tableBodyHtml}</tbody>
-                            </table>
-                        </div>`;
-                    smallQtyDetailsTable.innerHTML = tableHtml;
-                } else {
-                    smallQtyMeta.textContent = '';
-                    exportSmallQtyPdfBtn.disabled = true;
-                    smallQtyDetailsTable.innerHTML =
-                        `<div class="text-center p-5 text-muted">Data item Small Quantity (Outs. SO <=5) tidak ditemukan untuk customer ini.</div>`;
-                }
-            } catch (error) {
-                console.error('Gagal mengambil data detail Small Qty:', error);
-                smallQtyMeta.textContent = '';
-                exportSmallQtyPdfBtn.disabled = true;
-                smallQtyDetailsTable.innerHTML =
-                    `<div class="text-center p-5 text-danger">Terjadi kesalahan saat memuat data.</div>`;
-            }
-        }
-
         // Fungsi ini dikembalikan ke global scope agar bisa dipanggil dari event listener Level-1
         function renderSmallQtyChart(dataToRender, werks) {
             const ctxSmallQty = document.getElementById('chartSmallQtyByCustomer');

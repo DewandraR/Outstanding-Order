@@ -1060,15 +1060,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                                                                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                                                                                    title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                                                                                    <i class="fas fa-pencil-alt"></i>
-                                                                                                                </button>` : ''}
+                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                                                                                            title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                                                                                            <i class="fas fa-pencil-alt"></i>
+                                                                                                                                        </button>` : ''}
                     ${isOwner ? `
-                                                                                                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                                                                                    title="Hapus Catatan">
-                                                                                                                    <i class="fas fa-trash"></i>
-                                                                                                                </button>` : ''}
+                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                                                                                            title="Hapus Catatan">
+                                                                                                                                            <i class="fas fa-trash"></i>
+                                                                                                                                        </button>` : ''}
                 </div>
             </div>
         `;
@@ -1737,21 +1737,25 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             const currentAuart = (root.dataset.auart || '').trim();
             const exportType = currentAuart.toLowerCase().includes('export') ? 'export' : 'lokal';
 
+            // Sembunyikan chart, tampilkan kartu detail
             if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
             if (smallQtyChartTitle) {
                 smallQtyChartTitle.style.display = 'none';
-                if (smallQtyChartTitle.nextElementSibling.tagName === 'HR') smallQtyChartTitle.nextElementSibling.style
-                    .display = 'none';
+                const hr = smallQtyChartTitle.nextElementSibling;
+                if (hr && hr.tagName === 'HR') hr.style.display = 'none';
             }
 
             smallQtyDetailsTitle.textContent = `Detail Item Outstanding (≤5) untuk ${customerName}`;
             smallQtyMeta.textContent = '';
             exportSmallQtyPdfBtn.disabled = true;
-            smallQtyDetailsTable.innerHTML = `<div class="d-flex justify-content-center align-items-center p-5">
-                <div class="spinner-border text-primary" role="status"></div>
-                <span class="ms-3 text-muted">Memuat data...</span></div>`;
+            smallQtyDetailsTable.innerHTML = `
+        <div class="d-flex justify-content-center align-items-center p-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <span class="ms-3 text-muted">Memuat data...</span>
+        </div>`;
             smallQtyDetailsContainer.style.display = 'block';
 
+            // Panggil API
             const apiUrl = new URL("{{ route('dashboard.api.smallQtyDetails') }}", window.location.origin);
             apiUrl.searchParams.append('customerName', customerName);
             apiUrl.searchParams.append('locationName', locationName);
@@ -1761,82 +1765,120 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 const response = await fetch(apiUrl);
                 const result = await response.json();
 
-                if (result.ok && result.data.length > 0) {
-                    const uniqPO = new Set(result.data.map(r => (r.BSTNK || r.PO || '').toString().trim()).filter(
-                        Boolean));
+                if (result.ok && Array.isArray(result.data) && result.data.length > 0) {
+                    // Ringkasan & Form Export
+                    const uniqPO = new Set(
+                        result.data
+                        .map(r => (r.BSTNK || r.PO || '').toString().trim())
+                        .filter(Boolean)
+                    );
                     const totalPO = uniqPO.size;
                     const totalItem = result.data.length;
+
+                    smallQtyMeta.textContent = `(PO: ${fmtNum(totalPO)} • Item: ${fmtNum(totalItem)})`;
                     exportSmallQtyPdfBtn.disabled = false;
 
-                    document.getElementById('exp_customerName').value = customerName;
-                    document.getElementById('exp_locationName').value = locationName;
-                    document.getElementById('exp_type').value = exportType;
-                    document.getElementById('exp_auart').value = currentAuart;
+                    const fC = document.getElementById('exp_customerName');
+                    const fL = document.getElementById('exp_locationName');
+                    const fT = document.getElementById('exp_type');
+                    const fA = document.getElementById('exp_auart');
+                    if (fC) fC.value = customerName;
+                    if (fL) fL.value = locationName;
+                    if (fT) fT.value = exportType;
+                    if (fA) fA.value = currentAuart;
 
-                    result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2) - parseFloat(b.QTY_BALANCE2));
+                    // Urutkan (opsional: by Outstanding ascending)
+                    result.data.sort((a, b) => parseFloat(a.QTY_BALANCE2 ?? 0) - parseFloat(b.QTY_BALANCE2 ?? 0));
 
-                    const tableHeaders = `<tr>
-                        <th style="width:5%;" class="text-center">No.</th>
-                        <th class="text-center">PO</th>
-                        <th class="text-center">SO</th>
-                        <th class="text-center">Item</th>
-                        <th>Desc FG</th>
-                        <th class="text-center">Qty PO</th>
-                        <th class="text-center">Shipped</th>
-                        <th class="text-center">Outstanding</th>
-                        <th class="text-center">WHFG</th>
-                        <th class="text-center">Packing Stock</th>
-                        </tr>`;
+                    // Header tabel (kolom terakhir diubah jadi "Unit")
+                    const tableHeaders = `
+                <tr>
+                    <th style="width:5%;" class="text-center">No.</th>
+                    <th class="text-center">PO</th>
+                    <th class="text-center">SO</th>
+                    <th class="text-center">Item</th>
+                    <th>Desc FG</th>
+                    <th class="text-center">Qty PO</th>
+                    <th class="text-center">Shipped</th>
+                    <th class="text-center">Outstanding</th>
+                    <th class="text-center">WHFG</th>
+                    <th class="text-center">Unit</th>
+                </tr>`;
 
+                    // Body tabel (row clickable + data-posnr-db 6 digit)
                     let tableBodyHtml = result.data.map((item, idx) => {
                         const po = item.BSTNK || item.PO || '-';
-                        const qtyPo = fmtNum(item.KWMENG, 0);
-                        const qtyShp = fmtNum(item.QTY_GI, 0);
-                        const qtyOuts = fmtNum(item.QTY_BALANCE2, 0);
-                        const qtyWhfg = fmtNum(item.KALAB, 0);
-                        const qtyPaking = fmtNum(item.KALAB2, 0);
+
+                        const qtyPoRaw = parseFloat(item.KWMENG ?? 0);
+                        const qtyShpRaw = parseFloat(item.QTY_GI ?? 0);
+                        const outsRaw = parseFloat(item.QTY_BALANCE2 ?? 0);
+                        const whfgRaw = parseFloat(item.KALAB ?? 0);
+                        const unitRaw = outsRaw - whfgRaw; // ====> Unit = Outstanding - WHFG
+
+                        const qtyPo = fmtNum(qtyPoRaw, 0);
+                        const qtyShp = fmtNum(qtyShpRaw, 0);
+                        const qtyOuts = fmtNum(outsRaw, 0);
+                        const qtyWhfg = fmtNum(whfgRaw, 0);
+                        const qtyUnit = fmtNum(unitRaw, 0);
+
+                        const posnrDb = String(item.POSNR_DB ?? item.POSNR ?? '')
+                            .replace(/\D/g, '')
+                            .padStart(6, '0');
+
                         const soLink = `
-                        <a href="#"
-                            class="js-jump-to-so"
-                            data-vbeln="${item.VBELN}"
-                            data-kunnr="${activeCustomerKunnr || ''}"
-                            data-customer="${customerName}">
-                            ${item.VBELN}
-                        </a>`;
-                        return `<tr>
-                        <td class="text-center">${idx+1}</td>
+                    <a href="#"
+                       class="js-jump-to-so text-decoration-none"
+                       data-vbeln="${item.VBELN}"
+                       data-kunnr="${activeCustomerKunnr || ''}"
+                       data-customer="${customerName}">
+                        ${item.VBELN}
+                    </a>`;
+
+                        return `
+                    <tr class="js-sq-row"
+                        style="cursor:pointer;"
+                        data-vbeln="${item.VBELN}"
+                        data-posnr-db="${posnrDb}"
+                        data-kunnr="${activeCustomerKunnr || ''}"
+                        data-customer="${customerName}">
+                        <td class="text-center">${idx + 1}</td>
                         <td class="text-center">${po}</td>
                         <td class="text-center fw-bold">${soLink}</td>
-                        <td class="text-center">${parseInt(item.POSNR,10)}</td>
-                        <td>${item.MAKTX}</td>
+                        <td class="text-center">${parseInt(item.POSNR, 10)}</td>
+                        <td>${item.MAKTX ?? ''}</td>
                         <td class="text-center">${qtyPo}</td>
                         <td class="text-center">${qtyShp}</td>
                         <td class="text-center fw-bold text-danger">${qtyOuts}</td>
                         <td class="text-center">${qtyWhfg}</td>
-                        <td class="text-center">${qtyPaking}</td>
-                        </tr>`;
+                        <td class="text-center">${qtyUnit}</td>
+                    </tr>`;
                     }).join('');
 
                     const tableHtml = `
-                        <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
-                            <table class="table table-striped table-hover table-sm align-middle">
-                                <thead class="table-light">${tableHeaders}</thead>
-                                <tbody>${tableBodyHtml}</tbody>
-                            </table>
-                        </div>`;
+                <div class="table-responsive yz-scrollable-table-container" style="max-height: 400px;">
+                    <table class="table table-striped table-hover table-sm align-middle">
+                        <thead class="table-light">${tableHeaders}</thead>
+                        <tbody>${tableBodyHtml}</tbody>
+                    </table>
+                </div>`;
+
                     smallQtyDetailsTable.innerHTML = tableHtml;
                 } else {
                     smallQtyMeta.textContent = '';
                     exportSmallQtyPdfBtn.disabled = true;
                     smallQtyDetailsTable.innerHTML =
-                        `<div class="text-center p-5 text-muted">Data item Small Quantity (<=5) tidak ditemukan untuk customer ini.</div>`;
+                        `<div class="text-center p-5 text-muted">
+                    Data item Small Quantity (≤5) tidak ditemukan untuk customer ini.
+                  </div>`;
                 }
             } catch (error) {
                 console.error('Gagal mengambil data detail Small Qty:', error);
                 smallQtyMeta.textContent = '';
                 exportSmallQtyPdfBtn.disabled = true;
                 smallQtyDetailsTable.innerHTML =
-                    `<div class="text-center p-5 text-danger">Terjadi kesalahan saat memuat data.</div>`;
+                    `<div class="text-center p-5 text-danger">
+                Terjadi kesalahan saat memuat data.
+             </div>`;
             }
         }
 
@@ -2149,6 +2191,40 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 behavior: 'smooth',
                 block: 'center'
             });
+        }
+
+        async function jumpToSOItem(vbeln, posnrDb, kunnrHint = null, customerNameHint = null) {
+            if (!vbeln) return;
+
+            // buka customer, T2, dan fokus ke SO
+            await jumpToSO(vbeln, kunnrHint, customerNameHint);
+
+            // pastikan T3 terbuka & item ada
+            const soRow = document.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+            if (!soRow) return;
+
+            await openItemsIfNeededForSORow(soRow);
+
+            // cari row item (T3) berdasarkan POSNR_DB
+            let tries = 0,
+                t3row = null;
+            while (tries++ < 120) {
+                const nest = soRow.nextElementSibling;
+                t3row = nest?.querySelector(`tr[data-posnr-db='${CSS.escape(posnrDb)}']`);
+                if (t3row) break;
+                await wait(80);
+            }
+
+            if (t3row) {
+                t3row.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                scrollAndFlash(t3row); // gunakan highlight yang sudah ada
+            } else {
+                // fallback: highlight baris SO jika item tidak ketemu
+                scrollAndFlash(soRow);
+            }
         }
 
         async function openItemsIfNeededForSORow(soRow) {
@@ -3018,15 +3094,18 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 })();
             })();
             smallQtyDetailsTable?.addEventListener('click', async (e) => {
-                const a = e.target.closest('.js-jump-to-so');
-                if (!a) return;
+                const row = e.target.closest('tr.js-sq-row');
+                if (!row) return;
+
                 e.preventDefault();
 
-                const vbeln = a.dataset.vbeln || '';
-                const kunnr = a.dataset.kunnr || activeCustomerKunnr || '';
-                const cname = a.dataset.customer || activeCustomerName || '';
+                const vbeln = row.dataset.vbeln || e.target.closest('.js-jump-to-so')?.dataset.vbeln ||
+                    '';
+                const posnrDb = row.dataset.posnrDb || '';
+                const kunnr = row.dataset.kunnr || activeCustomerKunnr || '';
+                const cname = row.dataset.customer || activeCustomerName || '';
 
-                await jumpToSO(vbeln, kunnr, cname);
+                await jumpToSOItem(vbeln, posnrDb, kunnr, cname);
             });
         });
     </script>

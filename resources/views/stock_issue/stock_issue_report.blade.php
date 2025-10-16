@@ -5,9 +5,8 @@
 @section('content')
 
     @php
-        // Tambahkan import Crypt di sini untuk memastikan fungsinya tersedia di Blade
         use Illuminate\Support\Facades\Crypt;
-        use Illuminate\Support\Str; // Tambahkan untuk Str::slug
+        use Illuminate\Support\Str;
 
         // 1. Helper Functions (Dipertahankan)
         $fmtNumber = fn($n, $d = 0) => number_format((float) $n, $d, ',', '.');
@@ -15,8 +14,6 @@
             $n = (float) $value;
             return '$' . number_format($n, 0, '.', ',');
         };
-
-        // 🚨 BARU: Helper untuk mengubah UoM
         $formatUom = fn($uom) => strtoupper(trim($uom)) === 'ST' ? 'PC' : $uom;
 
         // 2. LOGIKA BARU UNTUK GROUPING (TABEL 1)
@@ -31,19 +28,25 @@
         $totalStockQty = $stockData->sum('STOCK3');
         $totalValue = $stockData->sum('TPRC');
 
-        // Data konfigurasi Nav Pills (Dipertahankan)
+        // Data konfigurasi Nav Pills (DIPERBARUI)
         $pills = [
             'assy' => ['label' => 'Level ASSY', 'param' => 'assy', 'werks' => $werks],
-            'ptg' => ['label' => 'Level PTG', 'param' => 'ptg', 'werks' => $werks],
+            'ptg' => ['label' => 'Level PTG', 'param' => 'ptg', 'werks' => $werks, 'sub_level' => 'wood'], // Tambahkan default sub_level
             'pkg' => ['label' => 'Level PKG', 'param' => 'pkg', 'werks' => $werks],
         ];
 
-        // Fungsi helper untuk membuat rute terenkripsi (Diperbaiki di jawaban sebelumnya)
-        // ASUMSI: Route untuk halaman ini bernama 'stock.issue'
+        // 🌟 FUNGSI HELPER BARU UNTUK SUB-NAVIGASI PTG
+        $ptg_sub_pills = [
+            'wood' => ['label' => 'Wood', 'param' => 'ptg', 'sub_level' => 'wood', 'werks' => $werks],
+            'metal' => ['label' => 'Metal', 'param' => 'ptg', 'sub_level' => 'metal', 'werks' => $werks],
+        ];
+
+        // Fungsi helper untuk membuat rute terenkripsi (DIPERBARUI UNTUK SUB_LEVEL)
         $createEncryptedRoute = function ($params) use ($werks) {
             $q_params = [
                 'werks' => $werks ?? '3000',
                 'level' => $params['param'],
+                'sub_level' => $params['sub_level'] ?? null, // <-- BARU: Sertakan sub_level
             ];
             return route('stock.issue', ['q' => Crypt::encrypt($q_params)]);
         };
@@ -73,9 +76,43 @@
     <div class="header-container">
         <h1 class="title">{{ $title }}</h1>
         <p class="subtitle">Daftar item Stock Issue level **{{ strtoupper($level) }}** di lokasi Semarang.</p>
-        <span class="total-items-badge">
-            <i class="fas fa-boxes me-2"></i> Total Items: {{ $stockData->count() }}
-        </span>
+
+        {{-- =========================================================
+        NAV BAR SUB-LEVEL PTG (WOOD/METAL) - HANYA MUNCUL JIKA LEVEL = PTG
+        ========================================================= --}}
+        @if (strtolower($level) == 'ptg')
+            {{-- MENGHAPUS CARD WRAPPER & PADDING UNTUK SUB-NAV --}}
+            <div class="sub-nav-container mt-3 mb-2"> {{-- Container baru untuk Flex --}}
+                <ul class="nav nav-pills sub-pills-issue p-1 flex-wrap me-3">
+                    @foreach ($ptg_sub_pills as $key => $pill)
+                        @php
+                            // Tentukan apakah sub-level aktif. Jika $sub_level null/kosong, defaultnya adalah 'wood'
+                            $current_sub_level = strtolower($sub_level) ?: 'wood';
+                            $isActive = $current_sub_level == $key;
+                        @endphp
+                        <li class="nav-item me-2">
+                            <a class="nav-link sub-pill-level {{ $isActive ? 'active' : '' }}"
+                                href="{{ $createEncryptedRoute($pill) }}">
+                                {{ $pill['label'] }}
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
+                {{-- Total Items dipindahkan di sini, di samping sub-nav --}}
+                <span class="total-items-badge">
+                    <i class="fas fa-boxes me-2"></i> Total Items: {{ $stockData->count() }}
+                </span>
+            </div>
+        @else
+            {{-- Total Items tetap di tempatnya jika bukan PTG --}}
+            <span class="total-items-badge">
+                <i class="fas fa-boxes me-2"></i> Total Items: {{ $stockData->count() }}
+            </span>
+        @endif
+        {{-- =========================================================
+        END: NAV BAR SUB-LEVEL PTG
+        ========================================================= --}}
+
     </div>
 
     @if ($stockData->isEmpty())
@@ -240,8 +277,14 @@
             --level-blue-light: #e0e7ff;
             /* Latar Belakang Sangat Lembut */
             --level-shadow: rgba(79, 70, 229, 0.4);
+
+            /* Warna kustom untuk Sub-Level PTG (misal: Hijau/Coklat) */
+            --sub-level-green: #059669;
+            /* Hijau Emerald */
+            --sub-level-green-light: #d1fae5;
         }
 
+        /* --- Gaya Navigasi Utama (Level ASSY, PTG, PKG) --- */
         .nav-pills .nav-link.pill-level {
             /* Gaya Dasar: Mirip tombol yang terangkat (Elevated) */
             background: #fff;
@@ -301,6 +344,54 @@
         .nav-pills.pills-issue.p-1 {
             padding: 0 !important;
         }
+
+        /* --- Gaya Navigasi Sub-Level (Wood, Metal) --- */
+        /* Hapus card wrapper, gunakan flexbox untuk menata sub-nav dan total-items */
+        .sub-nav-container {
+            display: flex;
+            align-items: center;
+            /* Sejajarkan vertikal */
+            margin-bottom: 1.5rem;
+            /* Tambahkan ruang di bawah container ini */
+        }
+
+        .sub-pills-issue {
+            padding: 0 !important;
+            /* Hapus padding dari ul ini */
+            background-color: transparent !important;
+            /* Pastikan tidak ada latar belakang */
+        }
+
+        .nav-pills .nav-link.sub-pill-level {
+            background: #fff;
+            color: #334155;
+            /* Teks abu-abu gelap */
+            border: 1px solid #cbd5e1;
+            font-weight: 500;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease-in-out;
+            padding: 0.4rem 1rem;
+            box-shadow: none;
+            font-size: 0.9rem;
+        }
+
+        .nav-pills .nav-link.sub-pill-level:hover {
+            background: #f1f5f9;
+        }
+
+        .nav-pills .nav-link.sub-pill-level.active {
+            background: var(--sub-level-green);
+            color: #fff;
+            border-color: var(--sub-level-green);
+            box-shadow: 0 2px 4px rgba(5, 150, 105, 0.3);
+        }
+
+        /* Sesuaikan posisi total-items-badge ketika berada di samping sub-nav */
+        .sub-nav-container .total-items-badge {
+            margin-top: 0;
+            /* Pastikan tidak ada margin-top yang tidak diinginkan */
+        }
+
 
         /* ========================================================= */
         /* END: NAVIGASI LEVEL ESTETIK */
@@ -373,7 +464,6 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             // Ambil semua data stok mentah yang dikirim dari controller
-            // 🚨 PENTING: Jika $stockData kosong (misalnya karena error di controller), pastikan ia adalah array/objek kosong
             const stockData = @json($stockData);
 
             // Kelompokkan data stok berdasarkan nama pelanggan

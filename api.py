@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-API/CLI untuk memanggil Z_FM_YPPR079_SO dan menyimpan T_DATA1/2/3 ke MySQL.
+API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 ke MySQL.
 
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
   python api.py --sync --werks 2000
-  python api.py --sync                # semua pair di tabel `maping`
+  python api.py --sync             # semua pair di tabel `maping`
 
-  UNTUK STOCK
+  UNTUK STOCK (SEKARANG TERMASUK IV_SIPM KE stock_ptg_m)
   python api.py --sync_stock
   python api.py --sync_stock --timeout 3000
 
@@ -69,14 +69,15 @@ DB_CFG = {
     "password": os.environ.get("DB_PASS", ""),
     "database": os.environ.get("DB_NAME", "outstanding_yppr"),
 }
-RFC_NAME_SO    = "Z_FM_YPPR079_SO"
+RFC_NAME_SO     = "Z_FM_YPPR079_SO"
 RFC_NAME_STOCK = "Z_FM_YSDR048"
 
-# 🌟 PEMETAAN BARU UNTUK SYNC STOCK
+# 🌟 PEMETAAN BARU UNTUK SYNC STOCK (DITAMBAH IV_SIPM)
 STOCK_TABLE_MAP = {
     "IV_SIAD": "stock_assy",
     "IV_SIPD": "stock_ptg",
     "IV_SIPP": "stock_pkg",
+    "IV_SIPM": "stock_ptg_m", # <-- PENAMBAHAN
 }
 
 app = Flask(__name__)
@@ -141,7 +142,7 @@ def fdate_yyyymmdd(s):
 
 def call_rfc_with_timeout(conn: Connection, seconds: int, fm: str, **params) -> Dict[str, Any]:
     # Kirim CHAR/NUMC sebagai string
-    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP"):
+    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP", "IV_SIPM"): # <-- IV_SIPM ditambahkan
         if key in params and params[key] is not None:
             params[key] = str(params[key])
     with ThreadPoolExecutor(max_workers=1) as ex:
@@ -439,7 +440,7 @@ STOCK_COL_LIST = ", ".join(STOCK_COLS + ["IV_PARAM", "fetched_at"])
 STOCK_PLACEHOLDERS = ", ".join(["%s"] * (len(STOCK_COLS) + 2))
 
 def ensure_stock_tables():
-    """Memastikan tabel untuk Z_FM_YSDR048 ada dengan nama baru (stock_assy, stock_ptg, stock_pkg)."""
+    """Memastikan tabel untuk Z_FM_YSDR048 ada (termasuk stock_ptg_m)."""
     base_ddl = """
     CREATE TABLE IF NOT EXISTS {table_name} (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -453,7 +454,7 @@ def ensure_stock_tables():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
 
-    table_names = list(STOCK_TABLE_MAP.values())
+    table_names = list(STOCK_TABLE_MAP.values()) # Mengambil semua nama tabel yang mungkin
 
     db = connect_mysql()
     cur = db.cursor()
@@ -587,7 +588,7 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
 
 # -------------------- LOGIKA SYNC BARU (Z_FM_YSDR048) --------------------
 def do_sync_stock(timeout_sec: int = 3000):
-    """Menjalankan Z_FM_YSDR048 3x dan menyimpan hasilnya ke tabel stock_assy, stock_ptg, stock_pkg."""
+    """Menjalankan Z_FM_YSDR048 4x dan menyimpan hasilnya ke tabel stock_assy, stock_ptg, stock_pkg, dan stock_ptg_m."""
     ensure_stock_tables()
 
     username, password = get_sap_credentials_from_env()
@@ -606,7 +607,8 @@ def do_sync_stock(timeout_sec: int = 3000):
         print(f"[ERROR] SAP connection failed: {e}", flush=True)
         return {"ok": False, "error": f"SAP connection failed: {e}", "summary": []}
 
-    sync_params = {"IV_SIAD": "X", "IV_SIPD": "X", "IV_SIPP": "X"}
+    # 🌟 PARAMETER SYNC DIPERBARUI (IV_SIPM Ditambahkan)
+    sync_params = {"IV_SIAD": "X", "IV_SIPD": "X", "IV_SIPP": "X", "IV_SIPM": "X"}
 
     buffers: Dict[str, List[tuple]] = {}; summary: List[Dict[str, Any]] = []
 
@@ -617,7 +619,9 @@ def do_sync_stock(timeout_sec: int = 3000):
             table_name = STOCK_TABLE_MAP[param_name]
             buffers[table_name] = []
 
-            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": ""}; params[param_name] = param_value
+            # Memastikan hanya 1 param yang 'X' untuk setiap panggilan
+            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": "", "IV_SIPM": ""} # <-- IV_SIPM Ditambahkan
+            params[param_name] = param_value
 
             try:
                 print(f"[INFO] Calling RFC for {param_name}='{param_value}' -> {table_name}...", flush=True)
