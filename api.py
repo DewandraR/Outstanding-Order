@@ -2,6 +2,11 @@
 """
 API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 (+ T_DATA4) ke MySQL.
 
+Konfigurasi ini sudah diubah sesuai **OPSI A (PURE INSERT, TANPA DEDUPE)**:
+- Tabel so_yppr079_t4 **TIDAK** lagi memiliki UNIQUE KEY
+- Proses insert T4 menggunakan **insert biasa** (bukan upsert)
+- Tambahan log verifikasi jumlah riil setelah commit
+
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
   python api.py --sync --werks 2000
@@ -174,7 +179,7 @@ def _sap_call_no_decimal_trap(conn: Connection, fm: str, **params):
 
 def call_rfc_with_timeout(conn: Connection, seconds: int, fm: str, **params) -> Dict[str, Any]:
     # Kirim CHAR/NUMC sebagai string
-    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP", "IV_SIPM"):  # <-- IV_SIPM ditambahkan
+    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP", "IV_SIPM"):
         if key in params and params[key] is not None:
             params[key] = str(params[key])
     with ThreadPoolExecutor(max_workers=1) as ex:
@@ -267,6 +272,10 @@ T4_COL_LIST = ", ".join(T4_COLS)
 T4_PLACEHOLDERS = ", ".join(["%s"] * len(T4_COLS))
 _T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "fetched_at"]
 T4_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _T4_NON_KEY_UPDATE])
+
+# ==================== PERUBAHAN OPSI A DIMULAI DI SINI ====================
+# - T4 tanpa UNIQUE KEY
+# - Insert T4 pakai insert biasa (bukan upsert)
 
 def ensure_tables():
     """Memastikan tabel untuk Z_FM_YPPR079_SO ada."""
@@ -407,7 +416,7 @@ def ensure_tables():
                     pass  # kolom mungkin sudah ada
                 after_col = col_name
 
-        # -------------------- DDL untuk T4 --------------------
+        # -------------------- DDL untuk T4 (TANPA UNIQUE) --------------------
         ddl4 = """
         CREATE TABLE IF NOT EXISTS so_yppr079_t4 (
           id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -420,15 +429,28 @@ def ensure_tables():
           PRSN  DECIMAL(18,2),
           KDAUF VARCHAR(20),
           KDPOS VARCHAR(10),
-          fetched_at DATETIME NOT NULL,
-          UNIQUE KEY uq_t4 (IV_WERKS_PARAM, IV_AUART_PARAM, KDAUF, KDPOS, MATNR)
+          fetched_at DATETIME NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
         cur.execute(ddl4)
 
+        # Pastikan index unik lama di-drop bila masih ada
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 DROP INDEX uq_t4")
+        except Exception:
+            pass
+
+        # Index non-unik opsional untuk performa query
+        try:
+            cur.execute("CREATE INDEX idx_t4_orderpos ON so_yppr079_t4 (KDAUF, KDPOS, MATNR)")
+        except Exception:
+            pass
+
         db.commit()
     finally:
         cur.close(); db.close()
+
+# ==================== PERUBAHAN OPSI A SELESAI ====================
 
 def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     """Bangun 1 tuple parameter insert sesuai kolom COMMON_SO_COLS."""
@@ -482,7 +504,7 @@ def _bulk_insert_so_upsert(cur, table: str, params: list, batch_size: int = 1000
     return total
 
 def _bulk_insert_so_plain(cur, table: str, params: list, batch_size: int = 1000):
-    """Bulk insert tanpa upsert (dipakai untuk T1 setelah TRUNCATE)."""
+    """Bulk insert tanpa upsert (dipakai untuk T1/T4 setelah TRUNCATE)."""
     if not params: return 0
     sql = f"INSERT INTO {table} ({SO_COL_LIST}) VALUES ({SO_PLACEHOLDERS})"
     total = 0
@@ -493,6 +515,7 @@ def _bulk_insert_so_plain(cur, table: str, params: list, batch_size: int = 1000)
     return total
 
 # -------------------- Helper untuk T_DATA4 --------------------
+
 def _so_t4_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     """Bangun 1 tuple parameter insert untuk T4_COLS (SO detail ringkas)."""
     kdauf = r.get("KDAUF")
@@ -507,7 +530,7 @@ def _so_t4_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.d
     )
 
 def _bulk_insert_t4_upsert(cur, table: str, params: list, batch_size: int = 1000):
-    """Bulk insert untuk T4 dengan ON DUPLICATE KEY UPDATE."""
+    """(TIDAK DIGUNAKAN DI OPSI A) Bulk insert untuk T4 dengan ON DUPLICATE KEY UPDATE."""
     if not params: return 0
     sql = (
         f"INSERT INTO {table} ({T4_COL_LIST}) VALUES ({T4_PLACEHOLDERS}) "
@@ -567,6 +590,7 @@ def ensure_stock_tables():
     finally:
         cur.close(); db.close()
 
+
 def _stock_row_params(param: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     """Bangun 1 tuple parameter insert sesuai kolom STOCK_COLS."""
     posnr = str(r.get("POSNR")).zfill(4) if r.get("POSNR") is not None else None
@@ -593,6 +617,7 @@ def _bulk_insert_stock_plain(cur, table: str, params: list, batch_size: int = 10
     return total
 
 # -------------------- LOGIKA SYNC LAMA (Z_FM_YPPR079_SO) --------------------
+
 def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, timeout_sec: int = 3000):
     """Logika sinkronisasi untuk Z_FM_YPPR079_SO (T_DATA1/2/3/4)."""
     ensure_tables()
@@ -672,9 +697,24 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         inserted_t1 = _bulk_insert_so_plain(cur, "so_yppr079_t1", t1_buf)
         inserted_t2 = _bulk_insert_so_upsert(cur, "so_yppr079_t2", t2_buf)
         inserted_t3 = _bulk_insert_so_upsert(cur, "so_yppr079_t3", t3_buf)
-        inserted_t4 = _bulk_insert_t4_upsert(cur, "so_yppr079_t4", t4_buf)
+        # ==================== PERUBAHAN OPSI A: insert biasa untuk T4 ====================
+        # inserted_t4 = _bulk_insert_t4_upsert(cur, "so_yppr079_t4", t4_buf)  # (lama)
+        inserted_t4 = 0
+        if t4_buf:
+            # T4 punya skema kolom sendiri → gunakan list kolom dan placeholder T4, bukan SO_COL_LIST
+            sql_t4 = f"INSERT INTO so_yppr079_t4 ({T4_COL_LIST}) VALUES ({T4_PLACEHOLDERS})"
+            for i in range(0, len(t4_buf), 1000):
+                chunk = t4_buf[i:i+1000]
+                cur.executemany(sql_t4, chunk)
+                inserted_t4 += len(chunk)
+        # =============================================================================
         db.commit()
+
+        # Verifikasi jumlah riil di tabel (khusus T4)
+        cur.execute("SELECT COUNT(*) FROM so_yppr079_t4")
+        real_t4 = cur.fetchone()[0]
         print(f"[INFO] Inserted buffered rows: t1={inserted_t1} t2={inserted_t2} t3={inserted_t3} t4={inserted_t4}", flush=True)
+        print(f"[INFO] Actually in table t4={real_t4} rows (buffer={len(t4_buf)})", flush=True)
     except Exception as e:
         db.rollback(); print(f"[ERROR] Gagal menulis buffered data: {e}", flush=True)
         return {"ok": False, "error": f"DB insert failed: {e}", "summary": summary}
@@ -693,6 +733,7 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
     }
 
 # -------------------- LOGIKA SYNC BARU (Z_FM_YSDR048) --------------------
+
 def do_sync_stock(timeout_sec: int = 3000):
     """Menjalankan Z_FM_YSDR048 4x dan menyimpan hasilnya ke tabel stock_assy, stock_ptg, stock_pkg, dan stock_ptg_m."""
     ensure_stock_tables()
@@ -726,7 +767,7 @@ def do_sync_stock(timeout_sec: int = 3000):
             buffers[table_name] = []
 
             # Memastikan hanya 1 param yang 'X' untuk setiap panggilan
-            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": "", "IV_SIPM": ""}  # <-- IV_SIPM Ditambahkan
+            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": "", "IV_SIPM": ""}
             params[param_name] = param_value
 
             try:
