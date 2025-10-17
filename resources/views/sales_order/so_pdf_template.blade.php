@@ -114,12 +114,15 @@
         $formatNumber = function ($n, $d = 0) {
             return number_format((float) $n, $d, ',', '.');
         };
-        // Tampilkan GR qty dengan 3 desimal (misal: 1,920)
+        $formatNumber = function ($n, $d = 0) {
+            return number_format((float) $n, $d, ',', '.');
+        };
+        // untuk GR qty (contoh 1.920)
         $formatQty = function ($n) {
             return number_format((float) $n, 0, ',', '.');
         };
 
-        // Grouping per customer (headerInfo dibuat di controller)
+        // Grouping per customer
         $itemsGrouped = collect($items)->groupBy('headerInfo.NAME1');
     @endphp
 
@@ -139,7 +142,7 @@
             <thead class="customer-header-group">
                 {{-- 1) Judul Customer --}}
                 <tr class="customer-header-row">
-                    {{-- Total kolom = 15 --}}
+                    {{-- ⬇️ Total kolom sekarang 15, jadi colspan=15 --}}
                     <td colspan="15">
                         Customer: {{ $currentCustomer }}
                     </td>
@@ -158,7 +161,7 @@
                     <th style="width: 4%;">WHFG</th>
                     <th style="width: 5%;">Stock Packg.</th>
 
-                    {{-- Kolom GR per proses (qty, bukan %) --}}
+                    {{-- ⬇️ Kolom persentase proses (baru) --}}
                     <th style="width: 4%;">MACHI GR</th>
                     <th style="width: 4%;">ASSY GR</th>
                     <th style="width: 4%;">PAINT GR</th>
@@ -180,10 +183,10 @@
                         $whfg = (float) ($item->KALAB ?? 0);
                         $stockPk = (float) ($item->KALAB2 ?? 0);
 
-                        // GR qty by process (bukan persen)
+                        // Persentase proses (0..100)
                         $grMach = (float) ($item->MACHI ?? 0);
                         $grAssy = (float) ($item->ASSYM ?? 0);
-                        $grPaint = (float) ($item->PAINTM ?? 0);
+                        $grPaint = (float) ($item->PAINTM ?? 0); // perbaikan typo PPAINTM → PAINTM
                         $grPack = (float) ($item->PACKGM ?? 0);
 
                         // Field dasar
@@ -201,16 +204,15 @@
                         <td>{{ $matnr }}</td>
                         <td class="text-left">{{ $maktx }}</td>
 
-                        <td class="text-right">{{ $formatNumber($qtySo) }}</td>
-                        <td class="text-right">{{ $formatNumber($outsSo) }}</td>
-                        <td class="text-right">{{ $formatNumber($whfg) }}</td>
-                        <td class="text-right">{{ $formatNumber($stockPk) }}</td>
+                        <td class="text-center">{{ $formatNumber($qtySo) }}</td>
+                        <td class="text-center">{{ $formatNumber($outsSo) }}</td>
+                        <td class="text-center">{{ $formatNumber($whfg) }}</td>
+                        <td class="text-center">{{ $formatNumber($stockPk) }}</td>
 
-                        {{-- Tampilkan GR qty dengan 3 desimal --}}
-                        <td class="text-right">{{ $formatQty($grMach) }}</td>
-                        <td class="text-right">{{ $formatQty($grAssy) }}</td>
-                        <td class="text-right">{{ $formatQty($grPaint) }}</td>
-                        <td class="text-right">{{ $formatQty($grPack) }}</td>
+                        <td class="text-center">{{ $formatQty($grMach) }}</td>
+                        <td class="text-center">{{ $formatQty($grAssy) }}</td>
+                        <td class="text-center">{{ $formatQty($grPaint) }}</td>
+                        <td class="text-center">{{ $formatQty($grPack) }}</td>
 
                         <td class="remark-cell">{!! nl2br(e($item->remark ?? '')) !!}</td>
                     </tr>
@@ -220,6 +222,7 @@
     @empty
         <table class="group-table">
             <tbody>
+                {{-- ⬇️ Sesuaikan colspan 15 --}}
                 <tr>
                     <td colspan="15" class="text-center item-row">Tidak ada item yang dipilih untuk diekspor.</td>
                 </tr>
