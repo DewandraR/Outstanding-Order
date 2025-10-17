@@ -767,9 +767,23 @@
                     maximumFractionDigits: d
                 });
             };
+            const formatMachiPercent = (v) => {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n) || n === 0) return '0%';
+
+                // Nilai Machi dibagi 100 (contoh: 10000 -> 100)
+                const corrected = n / 100;
+
+                // Menggunakan 2 desimal (sesuai contoh 3263 -> 32.63)
+                return `${formatNumberGlobal(corrected, 0)}%`;
+            };
+
+            // --- Fungsi Asli untuk ASSY, PAINT, PACKING (tidak dibagi 100) ---
             const formatPercent = (v) => {
                 const n = parseFloat(v);
                 if (!Number.isFinite(n)) return '';
+
+                // Menggunakan 0 desimal (sesuai aslinya)
                 return `${formatNumberGlobal(n, 0)}%`;
             };
             const uniqBy = (arr, keyer) => {
@@ -812,6 +826,12 @@
                 el.classList.add('row-highlighted');
             };
 
+            const scrollAndFlashTemp = (el, ms = 4500) => {
+                scrollAndFlash(el);
+                // hilangkan kelas setelah animasi selesai (+ sedikit margin)
+                setTimeout(() => el.classList.remove('row-highlighted'), ms);
+            };
+
             // Fungsi kustom untuk konten Popover yang mewah ✨
             const makeStagePopoverContent = (stageName, grRaw, orderRaw) => {
                 const toNum = v => {
@@ -844,7 +864,7 @@
                             <div class="progress-bar ${progressClass}" role="progressbar" style="${progressStyle}" aria-valuenow="${Math.min(100, grProgress || 0)}" aria-valuemin="0" aria-valuemax="100"></div>
                         </div>
                         <hr class="my-2">
-                        <div class="small ${statusClass}">Status: **${status}**</div>
+                        <div class="small ${statusClass}">Status: <strong>${status}</strong></div>
                     </div>
                 `;
             };
@@ -1044,7 +1064,7 @@
         data-gr="${r.MACHI ?? ''}" 
         data-order="${r.QPROM ?? ''}"
         title="Progress Stage: Machining">
-        ${formatPercent(r.PRSM)}
+        ${formatMachiPercent(r.PRSM)}
       </span>
     </td>
     <td>
@@ -1758,6 +1778,7 @@
                     if (!icon) return;
 
                     const row = icon.closest('tr');
+                    scrollAndFlashTemp(row, 4500);
                     remarkModalState.werks = row.dataset.werks;
                     remarkModalState.auart = row.dataset.auart;
                     remarkModalState.vbeln = row.dataset.vbeln;
@@ -2017,7 +2038,7 @@
                             soRow.classList.remove('row-highlighted');
                             if (POSNR6 && itemsBox) {
                                 const tr = findItemRow(itemsBox, vbeln, POSNR6);
-                                if (tr) scrollAndFlash(tr);
+                                if (tr) scrollAndFlashTemp(tr, 4500);
                             }
                             return;
                         }
@@ -2426,7 +2447,7 @@
                         if (POSNR6 && itemsBox) {
                             const itemTr = findItemRow(itemsBox, VBELN, POSNR6);
                             if (itemTr) scrollAndFlash(itemTr);
-                            soRow.classList.remove('row-highlighted');
+                            if (itemTr) scrollAndFlashTemp(itemTr, 4500);
                         }
                         return;
                     }
@@ -2459,181 +2480,5 @@
 
             }); // DOMContentLoaded
         })(); // IIFE
-    </script>
-@endpush
-@push('scripts')
-    <script>
-        // Data harus dikirim dari Controller ke Blade (SO Report Controller sudah mengirim data ini)
-        const initialSmallQtyDataRaw = {!! json_encode($smallQtyByCustomer ?? collect()) !!};
-
-        /* ====================== SMALL QTY CHART LOGIC ====================== */
-        let smallQtyChartInstance = null;
-        const smallQtyDetailsContainer = document.getElementById('smallQtyDetailsContainer');
-        const smallQtyDetailsTable = document.getElementById('smallQtyDetailsTable');
-        const smallQtyDetailsTitle = document.getElementById('smallQtyDetailsTitle');
-        const smallQtyMeta = document.getElementById('smallQtyMeta');
-        const exportSmallQtyPdfBtn = document.getElementById('exportSmallQtyPdf');
-        const exportForm = document.getElementById('smallQtyExportForm');
-        const smallQtySection = document.getElementById('small-qty-section');
-        const smallQtyChartTitle = document.getElementById('small-qty-chart-title');
-        const smallQtyTotalItem = document.getElementById('small-qty-total-item');
-        const chartCanvas = document.getElementById('chartSmallQtyByCustomer');
-        const smallQtyChartContainer = chartCanvas?.closest('.chart-container');
-
-        const formatNumberChart = (v) => {
-            const n = parseFloat(v);
-            if (!Number.isFinite(n)) return '';
-            return n.toLocaleString('id-ID', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0
-            });
-        };
-        // Fungsi ini dikembalikan ke global scope agar bisa dipanggil dari event listener Level-1
-        function renderSmallQtyChart(dataToRender, werks) {
-            const ctxSmallQty = document.getElementById('chartSmallQtyByCustomer');
-            const plantCode = (werks === '3000') ? 'Semarang' : 'Surabaya';
-
-            const barColor = (werks === '3000') ? '#198754' : '#ffc107';
-
-            const customerMap = new Map();
-            const totalItemCountMap = new Map(); // Map untuk total item (hanya untuk footer kecil)
-            dataToRender.forEach(item => {
-                const name = (item.NAME1 || '').trim();
-                if (!name) return;
-
-                // MODIFIKASI: Gunakan 'so_count' dari Controller
-                const currentCount = customerMap.get(name) || 0;
-                customerMap.set(name, currentCount + parseInt(item.so_count, 10)); // MENGHITUNG SO
-
-                // Tetap hitung total ITEM untuk keterangan di judul
-                const currentItemCount = totalItemCountMap.get(name) || 0;
-                totalItemCountMap.set(name, currentItemCount + parseInt(item.item_count, 10)); // MENGHITUNG ITEM
-            });
-
-            const sortedCustomers = [...customerMap.entries()].sort((a, b) => b[1] - a[1]);
-            const labels = sortedCustomers.map(item => item[0]);
-
-            // MODIFIKASI: Ambil itemCounts dari SO Count
-            const soCounts = sortedCustomers.map(item => item[1]);
-
-            // Total SO Count Keseluruhan (untuk chart)
-            const totalSoCount = soCounts.reduce((sum, count) => sum + count, 0);
-
-            // Total ITEM Count Keseluruhan (untuk label judul)
-            const totalItemCount = dataToRender.reduce((sum, item) => sum + parseInt(item.item_count, 10), 0);
-
-            const noDataEl = ctxSmallQty?.closest('.chart-container').querySelector('.yz-nodata');
-            if (!ctxSmallQty || dataToRender.length === 0 || totalSoCount === 0) { // Pengecekan menggunakan totalSoCount
-                if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
-                if (chartCanvas) chartCanvas.style.display = 'none';
-                if (noDataEl) noDataEl.style.display = 'block';
-                if (smallQtyDetailsContainer) smallQtyDetailsContainer.style.display = 'none';
-                if (smallQtyChartInstance) smallQtyChartInstance.destroy();
-                return;
-            } else {
-                if (chartCanvas) chartCanvas.style.display = 'block';
-                if (noDataEl) noDataEl.style.display = 'none';
-            }
-
-
-            // Set height
-            const dynamicHeight = Math.max(200, Math.min(50 * labels.length, 600));
-            if (chartCanvas) {
-                chartCanvas.closest('.chart-container').style.height = dynamicHeight + 'px';
-            }
-
-            if (smallQtyChartInstance) smallQtyChartInstance.destroy();
-
-            smallQtyChartInstance = new Chart(ctxSmallQty, {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [{
-                        label: plantCode,
-                        // MODIFIKASI: Menggunakan soCounts
-                        data: soCounts,
-                        backgroundColor: barColor
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            stacked: false,
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                // MODIFIKASI LABEL: Menampilkan "SO"
-                                text: 'Sales Order (With Outs. Item Qty ≤ 5)'
-                            },
-                            ticks: {
-                                callback: (value) => {
-                                    if (Math.floor(value) === value) return value;
-                                }
-                            }
-                        },
-                        y: {
-                            stacked: false
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: true
-                        },
-                        tooltip: {
-                            callbacks: {
-                                // MODIFIKASI TOOLTIP: Menampilkan "SO"
-                                label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.x} SO`
-                            }
-                        }
-                    },
-                    onClick: async (event, elements) => {
-                        if (elements.length === 0) return;
-                        const barElement = elements[0];
-                        const customerName = labels[barElement.index];
-                        await showSmallQtyDetails(customerName, werks);
-                    }
-                }
-            });
-            window.smallQtyChartInstance = smallQtyChartInstance;
-        }
-
-        window.showSmallQtyDetails = showSmallQtyDetails;
-        window.renderSmallQtyChart = renderSmallQtyChart;
-
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const root = document.getElementById('so-root');
-            const WERKS = (root?.dataset.werks || '').trim();
-
-            if (chartCanvas) {
-                if (initialSmallQtyDataRaw && initialSmallQtyDataRaw.length > 0) {
-                    renderSmallQtyChart(initialSmallQtyDataRaw, WERKS);
-                } else {
-                    if (smallQtySection) smallQtySection.style.display = 'none';
-                    if (smallQtyDetailsContainer) smallQtyDetailsContainer.style.display = 'none';
-                }
-            }
-
-            const closeButton = document.getElementById('closeDetailsTable');
-            closeButton?.addEventListener('click', () => {
-                document.getElementById('smallQtyDetailsContainer').style.display = 'none';
-                if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'block';
-                if (initialSmallQtyDataRaw && initialSmallQtyDataRaw.length > 0) {
-                    renderSmallQtyChart(initialSmallQtyDataRaw, WERKS);
-                }
-            });
-
-            const exportForm = document.getElementById('smallQtyExportForm');
-            const exportSmallQtyPdfBtn = document.getElementById('exportSmallQtyPdf');
-            if (exportSmallQtyPdfBtn && exportForm) {
-                exportSmallQtyPdfBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    exportForm.submit();
-                });
-            }
-        });
     </script>
 @endpush

@@ -95,11 +95,6 @@
         .text-right {
             text-align: right;
         }
-
-        /* Supaya remark muat */
-        .remark-cell {
-            white-space: pre-line;
-        }
     </style>
 </head>
 
