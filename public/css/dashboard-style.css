@@ -773,6 +773,21 @@ thead th {
     border-bottom-right-radius: 0.375rem;
 }
 
+.js-t2row.so-visited {
+    /* Warna abu-abu yang lebih terlihat untuk menandai baris yang sudah dibuka */
+    background-color: #e9ecef !important; /* Warna abu-abu yang jelas */
+}
+
+/* Pastikan efek hover tetap terlihat sedikit berbeda dari visited */
+.table-hover tbody .js-t2row.so-visited:hover > td {
+    background-color: #e2e6ea !important; /* Sedikit lebih gelap saat di-hover */
+}
+
+/* Penting: Pastikan semua sel (td) dalam baris yang visited mewarisi warna abu-abu */
+.js-t2row.so-visited > td {
+    background-color: #e9ecef !important;
+}
+
 @keyframes pulse-highlight {
     0% {
         background-color: #dbeafe;

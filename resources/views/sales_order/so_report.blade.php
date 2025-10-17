@@ -202,20 +202,6 @@
                                                 class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
                                                 {{ number_format($totalOverdueSO, 0, ',', '.') }}</div>
                                             <div class="metric-label text-end">Overdue SO</div>
-
-                                            {{-- Progress Bar --}}
-                                            @if ($totalSO > 0)
-                                                <div class="progress mt-1 mx-auto"
-                                                    style="height: 5px; width: 60px; max-width: 100%;">
-                                                    <div class="progress-bar {{ $overdueColor }}" role="progressbar"
-                                                        style="width: {{ $overdueRatio }}%"
-                                                        aria-valuenow="{{ $overdueRatio }}" aria-valuemin="0"
-                                                        aria-valuemax="100"></div>
-                                                </div>
-                                            @else
-                                                <div style="height: 5px;"></div>
-                                            @endif
-
                                         </div>
 
                                         {{-- Outstanding Value --}}
@@ -278,19 +264,6 @@
                                         {{ number_format($totalOverdueSOTotal, 0, ',', '.') }}
                                     </div>
                                     <div class="text-end">Total Overdue SO</div>
-
-                                    {{-- Progress Bar --}}
-                                    @if ($totalSOTotal > 0)
-                                        <div class="progress mt-1 mx-auto"
-                                            style="height: 5px; width: 60px; max-width: 100%;">
-                                            <div class="progress-bar {{ $globalOverdueColor }}" role="progressbar"
-                                                style="width: {{ $globalOverdueRatio }}%"
-                                                aria-valuenow="{{ $globalOverdueRatio }}" aria-valuemin="0"
-                                                aria-valuemax="100"></div>
-                                        </div>
-                                    @else
-                                        <div style="height: 5px;"></div>
-                                    @endif
                                 </div>
 
                                 {{-- Total Outs. Value --}}

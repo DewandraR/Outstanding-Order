@@ -567,7 +567,6 @@ class SalesOrderController extends Controller
                 $j->on('rc.VBELN', '=', 't1.VBELN')
                     ->on('rc.POSNR', '=', 't1.POSNR');
             })
-            // Gunakan subquery untuk memastikan hanya item unik yang termasuk
             ->where(function ($query) use ($vbelnPosnrMatnrPairs) {
                 foreach ($vbelnPosnrMatnrPairs as $pair) {
                     $query->orWhere(function ($q) use ($pair) {
@@ -577,20 +576,25 @@ class SalesOrderController extends Controller
                     });
                 }
             })
-            // Tambahkan MAX() untuk kolom non-grouped agar duplikasi di DB t1 teratasi
             ->select(
                 't1.VBELN',
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
-                DB::raw('MAX(t1.MAKTX) as MAKTX'),
+
+                // data item
+                DB::raw('MAX(t1.MAKTX)  as MAKTX'),
                 DB::raw('MAX(t1.KWMENG) as KWMENG'),
-                DB::raw('MAX(t1.PACKG) as PACKG'),
-                DB::raw('MAX(t1.KALAB) as KALAB'),
+                DB::raw('MAX(t1.PACKG)  as PACKG'),
+                DB::raw('MAX(t1.KALAB)  as KALAB'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
-                DB::raw('MAX(t1.PRSM)  as PRSM'),   // MACHI
-                DB::raw('MAX(t1.PRSA)  as PRSA'),   // ASSY
-                DB::raw('MAX(t1.PRSI)  as PRSI'),   // PAINT
-                DB::raw('MAX(t1.PRSP)  as PRSP'),   // PACKING
+
+                // ⬇️ kolom GR by process (bukan persentase)
+                DB::raw('MAX(t1.MACHI)  as MACHI'),
+                DB::raw('MAX(t1.ASSYM)  as ASSYM'),
+                DB::raw('MAX(t1.PAINTM) as PAINTM'),
+                DB::raw('MAX(t1.PACKGM) as PACKGM'),
+
+                // remark gabungan
                 DB::raw("COALESCE(MAX(rc.REMARKS), '') AS remark")
             )
             ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')

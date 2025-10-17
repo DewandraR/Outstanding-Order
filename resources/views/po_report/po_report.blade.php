@@ -259,20 +259,6 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                                 class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
                                                 {{ number_format($totalOverduePO, 0, ',', '.') }}</div>
                                             <div class="metric-label text-end">Overdue PO</div>
-
-                                            {{-- Progress Bar --}}
-                                            @if ($totalPO > 0)
-                                                <div class="progress mt-1 mx-auto"
-                                                    style="height: 5px; width: 60px; max-width: 100%;">
-                                                    <div class="progress-bar {{ $overdueColor }}" role="progressbar"
-                                                        style="width: {{ $overdueRatio }}%"
-                                                        aria-valuenow="{{ $overdueRatio }}" aria-valuemin="0"
-                                                        aria-valuemax="100"></div>
-                                                </div>
-                                            @else
-                                                <div style="height: 5px;"></div>
-                                            @endif
-
                                         </div>
 
                                         {{-- Outstanding Value --}}
@@ -335,22 +321,6 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                         {{ number_format($totalOverdueSO, 0, ',', '.') }}
                                     </div>
                                     <div class="text-end">Total Overdue PO</div>
-
-                                    {{-- Progress Bar --}}
-                                    @php
-                                        $globalRatio = $totalSO > 0 ? ($totalOverdueSO / $totalSO) * 100 : 0;
-                                        $globalColor = $totalOverdueSO > 0 ? 'bg-danger' : 'bg-success';
-                                    @endphp
-                                    @if ($totalSO > 0)
-                                        <div class="progress mt-1 mx-auto"
-                                            style="height: 5px; width: 60px; max-width: 100%;">
-                                            <div class="progress-bar {{ $globalColor }}" role="progressbar"
-                                                style="width: {{ $globalRatio }}%" aria-valuenow="{{ $globalRatio }}"
-                                                aria-valuemin="0" aria-valuemax="100"></div>
-                                        </div>
-                                    @else
-                                        <div style="height: 5px;"></div>
-                                    @endif
                                 </div>
 
                                 {{-- Total Outs. Value --}}
