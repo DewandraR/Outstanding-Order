@@ -399,7 +399,7 @@
                         Machining Lines
                         <small class="text-muted d-block">
                             SO <span id="machi-so"></span> • Item <span id="machi-pos"></span>
-                            • <span id="machi-desc" style="max-width:60vw;"></span>
+                            • <br><span id="machi-desc" style="max-width:60vw;"></span>
                         </small>
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
@@ -421,6 +421,10 @@
 @push('styles')
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
+        /* =========================================================
+             * GLOBAL ELEMENT STYLES
+             * ======================================================= */
+
         .remark-icon {
             cursor: pointer;
             color: #6c757d;
@@ -429,16 +433,6 @@
 
         .remark-icon:hover {
             color: #0d6efd
-        }
-
-        .remark-dot {
-            height: 8px;
-            width: 8px;
-            background: #0d6efd;
-            border-radius: 50%;
-            display: inline-block;
-            margin-left: 5px;
-            vertical-align: middle
         }
 
         .so-selected-dot {
@@ -482,98 +476,47 @@
             display: inline-block;
             transition: transform .18s ease;
             user-select: none;
-            /* Tambahkan margin-left untuk mengatur posisi */
             margin-left: 5px;
             vertical-align: middle;
             line-height: 1;
-        }
-
-        /* Gaya baru untuk caret di Tabel 2 */
-        .yz-t2-vbeln-wrap {
-            display: flex;
-            align-items: center;
         }
 
         .yz-caret.rot {
             transform: rotate(90deg)
         }
 
-        /* Mengatur focus mode untuk Card-Row Level 1 */
-        .customer-focus-mode .yz-customer-card:not(.is-focused) {
-            display: none !important;
+        /* Tweak tampilan progress bar popover (hover di Machining/Assembly/etc.) */
+        .yz-machi-pct {
+            cursor: pointer;
+            text-decoration: underline dotted;
+            white-space: nowrap;
+            font-weight: bold;
+            /* Dipertahankan dari popover-cursor sebelumnya */
         }
 
-        /* Menyembunyikan total global saat detail customer dibuka */
-        .customer-focus-mode~.yz-global-total-card {
-            display: none;
-        }
-
-        /* Tambahan CSS agar metrik sejajar atas-bawah */
+        /* Tambahan CSS agar metrik sejajar atas-bawah (Tabel Level 1/2) */
         #metric-columns,
         #footer-metric-columns {
-            /* Pastikan elemen ini memegang lebar yang sama dan kolomnya terstruktur */
             width: 100%;
             justify-content: flex-end;
-            /* Dorong ke kanan */
         }
 
-        #footer-metric-columns .metric-box {
-            /* Hapus border vertikal di footer agar terlihat lebih bersih */
-            border-left: none !important;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-        }
-
-        /* Atur metrik boxes agar selalu sejajar vertikal */
         .yz-customer-card #metric-columns>.metric-box,
         #footer-metric-columns>div {
-            /* Hilangkan gap yang diatur d-flex gap-4 */
             margin-left: 2rem !important;
             margin-right: 2rem !important;
         }
 
-        /* Metrik box pertama harus lurus dengan container */
-        .yz-customer-card #metric-columns>.metric-box:first-child {
+        /* Mengatasi kasus kolom pertama */
+        .yz-customer-card #metric-columns>.metric-box:first-child,
+        #footer-metric-columns>div:first-child {
             margin-left: 0 !important;
             padding-left: 0 !important;
         }
 
-        /* Metrik box pertama di footer harus lurus dengan container */
-        #footer-metric-columns>div:first-child {
-            margin-left: 0 !important;
-        }
-
-        /* Atur alignment teks di dalam metric box untuk memastikan angka sejajar kanan */
         .metric-box .metric-value,
         .metric-box .metric-label {
             text-align: right !important;
-        }
-
-        /* Perbaikan: Atur progress bar agar tetap di tengah horizontal di dalam metric-box */
-        .metric-box .progress {
-            margin: 4px auto 0 !important;
-            /* Mengatur ulang margin yang mungkin terpengaruh oleh alignment text-end */
-        }
-
-        .so-focus-mode .js-t2row {
-            display: none;
-        }
-
-        .so-focus-mode .js-t2row.is-focused {
-            display: table-row;
-        }
-
-
-        /* MODIFIKASI: Menghilangkan highlight baris merah penuh yang lama */
-        .yz-row-highlight-negative>td,
-        .yz-row-highlight-negative td {
-            background-color: transparent !important;
-        }
-
-        .table-hover tbody tr.yz-row-highlight-negative:hover>td,
-        .table-hover tbody tr.yz-row-highlight-negative:hover td {
-            background-color: #f8f9fa !important;
-            /* Kembali ke hover abu-abu normal */
         }
 
         /* Gaya kustom untuk bubble Overdue/On Track */
@@ -584,162 +527,190 @@
             color: #fff;
             text-align: center;
             border-radius: 1rem;
-            /* Bentuk bubble/pill */
             white-space: nowrap;
         }
 
         .bubble-late {
             background-color: #c53030;
-            /* Merah gelap/Bordeaux */
         }
 
         .bubble-track {
             background-color: #38a3a5;
-            /* Hijau Teal */
         }
 
         .bubble-today {
             background-color: #b7791f;
-            /* Kuning Gelap/Coklat */
             color: #fff;
         }
 
-        /* Tambahkan style untuk tombol collapse header Tabel 2 */
-        .yz-header-so .js-collapse-toggle {
-            line-height: 1;
-            padding: 2px 8px;
+        /* =========================================================
+             * MACHINING MODAL STYLES (Dioptimalkan & Final)
+             * ======================================================= */
+
+        /* 1. Mengurangi Lebar Modal Utama & Responsivitas */
+        #machiningModal .modal-dialog {
+            max-width: 550px;
+            /* Lebar maksimum yang lebih ringkas */
+            margin: 1.75rem auto;
         }
 
-        .yz-header-so .yz-collapse-caret {
-            display: inline-block;
-            transition: transform .18s ease
+        #machiningModal .modal-content {
+            border-radius: .75rem;
         }
 
-        .yz-header-so .yz-collapse-caret.rot {
-            transform: rotate(90deg)
+        #machiningModal .modal-header {
+            background: linear-gradient(90deg, #f8f9fa, #fff);
+            border-bottom: 1px solid #dee2e6;
+            border-top-left-radius: .75rem;
+            border-top-right-radius: .75rem;
         }
 
-        .remark-thread-list {
-            max-height: 360px;
-            overflow: auto;
-            border: 1px solid #eee;
-            border-radius: .5rem;
-            padding: .75rem;
-            background: #fafafa
+        #machiningModal .modal-body {
+            padding: 1rem 1.25rem;
+            /* Padding horizontal yang ringkas */
         }
 
-        .remark-item {
-            display: flex;
-            gap: .6rem;
-            padding: .5rem .6rem;
-            border-radius: .5rem;
+        .machi-container {
+            padding: 0;
+            /* Hapus padding container karena sudah di handle modal-body */
+        }
+
+        /* Mengatur tampilan MATNR */
+        .machi-matnr-display {
+            font-size: 1.25rem;
+            /* Membuat MATNR besar */
+            color: #0d6efd;
+            font-weight: 700;
+        }
+
+        .machi-number-small {
+            font-size: 0.8rem;
+            /* Membuat urutan item kecil di bawah MATNR */
+        }
+
+        /* Card untuk setiap baris Machining */
+        .machi-line-card {
             background: #fff;
-            border: 1px solid #f0f0f0;
-            margin-bottom: .5rem
+            border: 1px solid #e0e0e0;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            transition: all 0.2s ease-in-out;
         }
 
-        .remark-item.own {
-            border-color: #d1e7dd;
-            background: #f8fff9
+        .machi-line-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+            transform: translateY(-2px);
+            border-color: #0d6efd;
         }
 
-        .remark-item .meta {
-            font-size: .8rem;
-            color: #6c757d
+        .machi-header {
+            border-bottom: 1px dashed #f0f0f0;
+            padding-bottom: 0.75rem;
+            margin-bottom: 0.75rem !important;
         }
 
-        .remark-item .text {
-            white-space: pre-wrap
-        }
-
-        .remark-item .act {
-            margin-left: auto
-        }
-
-        .yz-machi-pct {
-            cursor: help;
-            text-decoration: underline dotted;
-            white-space: nowrap;
-        }
-
-        .tooltip-cursor {
-            cursor: pointer;
-        }
-
-        .yz-machi-pct.popover-cursor {
-            cursor: pointer;
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        /* Container Popover - Mewah */
-        .yz-lux-popover {
-            /* Lebar yang proporsional */
-            --bs-popover-max-width: 250px;
-            /* Background gelap (mewah) */
-            --bs-popover-bg: #212529;
-            /* Warna teks cerah */
-            --bs-popover-color: #f8f9fa;
-            /* Padding besar */
-            --bs-popover-padding-x: 1rem;
-            --bs-popover-padding-y: 1rem;
-            /* Border halus */
-            --bs-popover-border-color: #343a40;
-            --bs-popover-border-radius: .75rem;
-            /* Bayangan yang menawan */
-            filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.4));
-        }
-
-        /* Konten Popover */
-        .yz-popover-content-lux {
-            color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        .yz-popover-content-lux h6 {
-            font-size: 0.9rem;
-            color: #ffd700;
-            /* Emas */
-            border-bottom: 1px solid #495057;
-            padding-bottom: .25rem;
-        }
-
-        /* Gaya Progress Bar di Popover */
-        .yz-popover-content-lux .progress {
-            height: 6px !important;
-            background-color: #495057;
-            border-radius: 4px;
-        }
-
-        /* Gaya Separator */
-        .yz-popover-content-lux hr {
-            border-top: 1px solid #495057;
-            opacity: 0.7;
-        }
-
-        /* Gaya Status */
-        .yz-popover-content-lux .small {
+        .machi-description {
+            font-size: 1rem;
+            color: #343a40;
             font-weight: 500;
         }
 
-        /* Pastikan panah popover terlihat elegan dengan background gelap */
-        .yz-lux-popover.popover .popover-arrow::before {
-            border-color: #343a40;
+        .machi-metrics {
+            padding: 0 0.5rem;
+            border: 1px solid #f8f9fa;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
         }
 
-        .yz-lux-popover.bs-popover-auto[data-popper-placement^=top] .popover-arrow::after,
-        .yz-lux-popover.bs-popover-top .popover-arrow::after {
-            border-top-color: #212529;
+        .machi-metrics .metric-label {
+            text-align: center;
+            color: #6c757d !important;
+            font-size: 0.75rem !important;
+            white-space: nowrap;
         }
 
-        .yz-lux-popover.bs-popover-auto[data-popper-placement^=bottom] .popover-arrow::after,
-        .yz-lux-popover.bs-popover-bottom .popover-arrow::after {
-            border-bottom-color: #212529;
+        .machi-metrics .metric-value {
+            font-size: 1.1rem;
+            text-align: center !important;
         }
 
-        .yz-machi-pct.js-open-machining {
-            cursor: pointer;
-            text-decoration: underline;
+        .machi-progress {
+            border-radius: 4px;
+            background-color: #e9ecef;
+        }
+
+        .machi-progress .progress-bar {
+            border-radius: 4px;
+            transition: width 0.6s ease;
+        }
+
+        /* Total Card di bawah */
+        .machi-total-card {
+            background: #e9f5ff;
+            border: 1px solid #cce5ff;
+            border-radius: 0.75rem;
+            padding: 1rem;
+        }
+
+        .machi-total-card .text-primary {
+            color: #0d6efd !important;
+            font-size: 1.25rem;
+        }
+
+        .machi-total-card .text-success {
+            color: #198754 !important;
+            font-size: 1.25rem;
+        }
+
+        /* 2. Media Query untuk Tampilan Ponsel (Max-width 480px) */
+        @media (max-width: 576px) {
+            #machiningModal .modal-dialog {
+                max-width: 95%;
+                /* Tetap 95% di mobile */
+                margin: 0.5rem auto;
+            }
+
+            @media (max-width: 480px) {
+                .machi-metrics .col-4 {
+                    flex: 0 0 100%;
+                    max-width: 100%;
+                    margin-bottom: 0.75rem;
+                }
+
+                .machi-metrics .metric-label,
+                .machi-metrics .metric-value {
+                    text-align: left !important;
+                }
+
+                .machi-metrics .col-4:last-child {
+                    margin-bottom: 0;
+                }
+
+                .machi-header {
+                    flex-direction: column;
+                    align-items: flex-start !important;
+                }
+
+                .machi-status-badge {
+                    margin-top: 0.5rem;
+                }
+
+                .machi-total-card {
+                    flex-direction: column;
+                    align-items: flex-start !important;
+                }
+
+                .machi-total-card .d-flex.gap-4 {
+                    flex-direction: column;
+                    width: 100%;
+                    margin-top: 0.75rem;
+                }
+
+                .machi-total-card .d-flex.gap-4>div {
+                    text-align: left !important;
+                    width: 100%;
+                }
+            }
         }
     </style>
 @endpush
@@ -2409,47 +2380,77 @@
 
                 function renderMachiningModal(rows) {
                     if (!rows || rows.length === 0) {
-                        return `<div class="text-muted">Tidak ada data di tahap Machining.</div>`;
+                        return `<div class="text-center text-muted p-5 bg-light rounded-3">
+            <i class="fas fa-tools fa-3x mb-3 text-secondary"></i>
+            <h5 class="fw-bold">Tidak Ada Langkah Machining</h5>
+            <p class="mb-0">Data langkah-langkah Machining Lines tidak ditemukan untuk item ini.</p>
+        </div>`;
                     }
+
                     let tPS = 0,
                         tWE = 0;
                     rows.forEach(r => {
                         tPS += Number(r.PSMNG || 0);
                         tWE += Number(r.WEMNG || 0);
                     });
-                    const body = rows.map((r, i) => `
-          <tr>
-            <td class="text-center">${i+1}</td>
-            <td>${escapeHtml(r.MATNR ?? '')}</td>
-            <td>${escapeHtml(r.MAKTX ?? '')}</td>
-            <td class="text-end">${formatNumberGlobal(r.PSMNG,0)}</td>
-            <td class="text-end">${formatNumberGlobal(r.WEMNG,0)}</td>
-            <td class="text-end">${formatNumberGlobal(r.PRSN,0)}%</td>
-          </tr>`).join('');
+
+                    const bodyHtml = rows.map((r, i) => {
+                        const prsn = Number(r.PRSN || 0);
+                        const progressPct = Math.min(100, Math.max(0, prsn));
+                        const progressClass = progressPct === 100 ? 'bg-success' : (progressPct > 0 ?
+                            'bg-info' : 'bg-secondary');
+                        const desc = escapeHtml(r.MAKTX ?? '—');
+                        const matnr = escapeHtml(r.MATNR ?? '—');
+
+                        return `
+            <div class="machi-line-card shadow-sm mb-3">
+                <div class="machi-header d-flex justify-content-between align-items-center mb-2">
+                    <div class="machi-title-group">
+                        <div class="machi-matnr-display fw-bold text-primary">${matnr}</div>
+                    </div>
+                    <div class="machi-status-badge badge rounded-pill ${progressPct === 100 ? 'bg-success' : 'bg-primary'}">${progressPct}% Complete</div>
+                </div>
+                <div class="machi-description mb-3">${desc}</div>
+                <div class="machi-metrics row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="metric-label small text-muted">Order</div>
+                        <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.PSMNG, 0)}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="metric-label small text-muted">GR</div>
+                        <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.WEMNG, 0)}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="metric-label small text-muted">Progress</div>
+                        <div class="metric-value fw-bold text-end ${progressPct === 100 ? 'text-success' : 'text-primary'}">${progressPct}%</div>
+                    </div>
+                </div>
+                <div class="progress machi-progress" style="height: 6px;">
+                    <div class="progress-bar ${progressClass}" role="progressbar" style="width: ${progressPct}%;" 
+                         aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+            </div>`;
+                    }).join('');
+
                     return `
-          <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead>
-                <tr class="text-muted">
-                  <th style="width:52px;" class="text-center">#</th>
-                  <th>MATNR</th>
-                  <th>MAKTX</th>
-                  <th class="text-end">PSMNG</th>
-                  <th class="text-end">WEMNG</th>
-                  <th class="text-end">PRSN</th>
-                </tr>
-              </thead>
-              <tbody>${body}</tbody>
-              <tfoot>
-                <tr class="table-light">
-                  <th colspan="3" class="text-end">TOTAL</th>
-                  <th class="text-end">${formatNumberGlobal(tPS,0)}</th>
-                  <th class="text-end">${formatNumberGlobal(tWE,0)}</th>
-                  <th></th>
-                </tr>
-              </tfoot>
-            </table>
-          </div>`;
+        <div class="machi-container">
+            ${bodyHtml}
+            <div class="machi-total-card p-3 mt-4 border-top">
+                <div class="d-flex justify-content-between align-items-center fw-bold">
+                    <div class="fs-5 text-dark">TOTAL KUANTITAS</div>
+                    <div class="d-flex gap-4">
+                        <div class="text-end">
+                            <div class="small text-muted">Total PSMNG</div>
+                            <div class="text-primary">${formatNumberGlobal(tPS, 0)}</div>
+                        </div>
+                        <div class="text-end">
+                            <div class="small text-muted">Total WEMNG</div>
+                            <div class="text-success">${formatNumberGlobal(tWE, 0)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
                 }
 
                 async function openMachiningModal(fromRowEl) {
