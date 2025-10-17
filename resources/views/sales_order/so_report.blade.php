@@ -2440,11 +2440,11 @@
                     <div class="fs-5 text-dark">TOTAL KUANTITAS</div>
                     <div class="d-flex gap-4">
                         <div class="text-end">
-                            <div class="small text-muted">Total PSMNG</div>
+                            <div class="small text-muted">Total Order</div>
                             <div class="text-primary">${formatNumberGlobal(tPS, 0)}</div>
                         </div>
                         <div class="text-end">
-                            <div class="small text-muted">Total WEMNG</div>
+                            <div class="small text-muted">Total GR</div>
                             <div class="text-success">${formatNumberGlobal(tWE, 0)}</div>
                         </div>
                     </div>
