@@ -181,6 +181,8 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	// Hapus satu remark (hanya pemilik)
 	Route::delete('/api/so/item-remarks/{id}', [SalesOrderController::class, 'apiDeleteItemRemark'])->name('so.api.item_remarks.delete');
 	Route::put('/so/api/item-remarks/{id}', [SalesOrderController::class, 'apiUpdateItemRemark'])->name('so.api.item_remarks.update');
+	Route::get('/so/api/machining-lines', [SalesOrderController::class, 'apiMachiningLines'])
+		->name('so.api.machining_lines');
 
 	/*
     |------------------------ Stock report & dashboard ------------------

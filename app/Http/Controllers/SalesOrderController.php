@@ -1038,4 +1038,40 @@ class SalesOrderController extends Controller
 
         return response()->json(['ok' => true, 'message' => 'Remark berhasil diubah.']);
     }
+    public function apiMachiningLines(Request $request)
+    {
+        $validated = $request->validate([
+            'werks' => 'required|string',
+            'auart' => 'required|string',
+            'vbeln' => 'required|string', // KDAUF
+            'posnr' => 'required|string', // KDPOS (boleh raw, nanti dipad)
+        ]);
+
+        $werks = $validated['werks'];
+        $auart = $validated['auart'];
+        $vbeln = trim((string)$validated['vbeln']);
+        // pastikan 6 digit (sama seperti POSNR_KEY di Tabel-3)
+        $posnrKey = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
+
+        // Hormati logika export/replace yang kamu pakai di tempat lain
+        $auartList = $this->resolveAuartListForContext($auart);
+
+        // Ambil baris dari t4 dgn match KDAUF (VBELN) & KDPOS (POSNR 6 digit)
+        $rows = DB::table('so_yppr079_t4 as t4')
+            ->where('t4.IV_WERKS_PARAM', $werks)
+            ->whereIn('t4.IV_AUART_PARAM', $auartList)
+            ->whereRaw('TRIM(CAST(t4.KDAUF AS CHAR)) = ?', [$vbeln])
+            ->whereRaw('LPAD(TRIM(CAST(t4.KDPOS AS CHAR)), 6, "0") = ?', [$posnrKey])
+            ->select(
+                DB::raw("CASE WHEN t4.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t4.MATNR) ELSE t4.MATNR END AS MATNR"),
+                't4.MAKTX',
+                DB::raw('CAST(t4.PSMNG AS DECIMAL(18,3)) AS PSMNG'),
+                DB::raw('CAST(t4.WEMNG AS DECIMAL(18,3)) AS WEMNG'),
+                DB::raw('CAST(t4.PRSN  AS DECIMAL(18,3)) AS PRSN')
+            )
+            ->orderBy('t4.MATNR')
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows], 200);
+    }
 }

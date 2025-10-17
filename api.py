@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 ke MySQL.
+API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 (+ T_DATA4) ke MySQL.
 
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
@@ -10,7 +10,6 @@ Mode CLI (tanpa HTTP):
   UNTUK STOCK (SEKARANG TERMASUK IV_SIPM KE stock_ptg_m)
   python api.py --sync_stock
   python api.py --sync_stock --timeout 3000
-
 
 Mode server (opsional):
   python api.py --serve
@@ -24,7 +23,6 @@ Laravel Task Scheduling
 
     php artisan schedule:list (melihat jadwal akan dijalankan)
 
-
 Buka file log langsung
   cat storage/logs/yppr_sync.log
 
@@ -37,7 +35,7 @@ Pantau log secara real time (mirip live console):
   Get-Content -Wait storage\logs\yppr_sync.log
 """
 
-import os, json, decimal, datetime
+import os, json, decimal, datetime, math
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -70,14 +68,14 @@ DB_CFG = {
     "database": os.environ.get("DB_NAME", "outstanding_yppr"),
 }
 RFC_NAME_SO     = "Z_FM_YPPR079_SO"
-RFC_NAME_STOCK = "Z_FM_YSDR048"
+RFC_NAME_STOCK  = "Z_FM_YSDR048"
 
 # 🌟 PEMETAAN BARU UNTUK SYNC STOCK (DITAMBAH IV_SIPM)
 STOCK_TABLE_MAP = {
     "IV_SIAD": "stock_assy",
     "IV_SIPD": "stock_ptg",
     "IV_SIPP": "stock_pkg",
-    "IV_SIPM": "stock_ptg_m", # <-- PENAMBAHAN
+    "IV_SIPM": "stock_ptg_m",  # <-- PENAMBAHAN
 }
 
 app = Flask(__name__)
@@ -125,10 +123,37 @@ def to_jsonable(obj: Any) -> Any:
     return str(obj)
 
 def fnum(x):
+    """Konversi 'angka' ke float yang aman untuk kolom DECIMAL.
+    - Non-finite (NaN/Inf) -> None
+    - String dengan koma desimal -> normalisasi
+    - decimal.Decimal -> cek is_finite()
+    """
     try:
-        if x in ("", None): return None
-        return float(x)
-    except:
+        if x in ("", None):
+            return None
+        # Jika Decimal
+        if isinstance(x, decimal.Decimal):
+            if not x.is_finite():  # NaN/Inf
+                return None
+            return float(x)
+        # Jika string
+        if isinstance(x, str):
+            sx = x.strip()
+            if sx.lower() in ("nan", "+nan", "-nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"):
+                return None
+            # normalisasi koma -> titik bila perlu
+            if sx.count(",") == 1 and sx.count(".") == 0:
+                sx = sx.replace(",", ".")
+            val = float(sx)
+            return val if math.isfinite(val) else None
+        # Jika numerik biasa
+        if isinstance(x, (int, float)):
+            val = float(x)
+            return val if math.isfinite(val) else None
+        # Fallback coba-coba
+        val = float(x)
+        return val if math.isfinite(val) else None
+    except Exception:
         return None
 
 def fdate_yyyymmdd(s):
@@ -140,13 +165,20 @@ def fdate_yyyymmdd(s):
         pass
     return None
 
+def _sap_call_no_decimal_trap(conn: Connection, fm: str, **params):
+    """Panggil RFC sambil mematikan trap InvalidOperation di context decimal thread ini."""
+    ctx = decimal.getcontext()
+    # Pastikan NaN/Inf dari SAP tidak raise saat dibentuk Decimal oleh pyrfc
+    ctx.traps[decimal.InvalidOperation] = False
+    return conn.call(fm, **params)
+
 def call_rfc_with_timeout(conn: Connection, seconds: int, fm: str, **params) -> Dict[str, Any]:
     # Kirim CHAR/NUMC sebagai string
-    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP", "IV_SIPM"): # <-- IV_SIPM ditambahkan
+    for key in ("IV_WERKS", "IV_AUART", "IV_SIAD", "IV_SIPD", "IV_SIPP", "IV_SIPM"):  # <-- IV_SIPM ditambahkan
         if key in params and params[key] is not None:
             params[key] = str(params[key])
     with ThreadPoolExecutor(max_workers=1) as ex:
-        fut = ex.submit(conn.call, fm, **params)
+        fut = ex.submit(_sap_call_no_decimal_trap, conn, fm, **params)
         try:
             return fut.result(timeout=seconds)
         except FuturesTimeout:
@@ -221,6 +253,20 @@ SO_COL_LIST = ", ".join(COMMON_SO_COLS)
 SO_PLACEHOLDERS = ", ".join(["%s"] * len(COMMON_SO_COLS))
 _SO_NON_KEY_UPDATE = [c for c in COMMON_SO_COLS if c not in ("IV_WERKS_PARAM","IV_AUART_PARAM","VBELN","POSNR")]
 _SO_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _SO_NON_KEY_UPDATE])
+
+# -------------------- Kolom & helper untuk T_DATA4 (SO Detail ringkas) --------------------
+# HANYA menyimpan field: MATNR, MAKTX, PSMNG, WEMNG, PRSN, KDAUF, KDPOS (+ kunci & fetched_at)
+T4_COLS = [
+    "IV_WERKS_PARAM", "IV_AUART_PARAM",
+    "MATNR", "MAKTX",
+    "PSMNG", "WEMNG", "PRSN",
+    "KDAUF", "KDPOS",
+    "fetched_at",
+]
+T4_COL_LIST = ", ".join(T4_COLS)
+T4_PLACEHOLDERS = ", ".join(["%s"] * len(T4_COLS))
+_T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "fetched_at"]
+T4_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _T4_NON_KEY_UPDATE])
 
 def ensure_tables():
     """Memastikan tabel untuk Z_FM_YPPR079_SO ada."""
@@ -361,6 +407,25 @@ def ensure_tables():
                     pass  # kolom mungkin sudah ada
                 after_col = col_name
 
+        # -------------------- DDL untuk T4 --------------------
+        ddl4 = """
+        CREATE TABLE IF NOT EXISTS so_yppr079_t4 (
+          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+          IV_WERKS_PARAM VARCHAR(10) NOT NULL,
+          IV_AUART_PARAM VARCHAR(10) NOT NULL,
+          MATNR VARCHAR(40),
+          MAKTX VARCHAR(200),
+          PSMNG DECIMAL(18,3),
+          WEMNG DECIMAL(18,3),
+          PRSN  DECIMAL(18,2),
+          KDAUF VARCHAR(20),
+          KDPOS VARCHAR(10),
+          fetched_at DATETIME NOT NULL,
+          UNIQUE KEY uq_t4 (IV_WERKS_PARAM, IV_AUART_PARAM, KDAUF, KDPOS, MATNR)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        cur.execute(ddl4)
+
         db.commit()
     finally:
         cur.close(); db.close()
@@ -427,6 +492,34 @@ def _bulk_insert_so_plain(cur, table: str, params: list, batch_size: int = 1000)
         total += len(chunk)
     return total
 
+# -------------------- Helper untuk T_DATA4 --------------------
+def _so_t4_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
+    """Bangun 1 tuple parameter insert untuk T4_COLS (SO detail ringkas)."""
+    kdauf = r.get("KDAUF")
+    kdpos = r.get("KDPOS")
+    return (
+        werks, auart,
+        r.get("MATNR"),
+        r.get("MAKTX"),
+        fnum(r.get("PSMNG")), fnum(r.get("WEMNG")), fnum(r.get("PRSN")),
+        kdauf, (str(kdpos) if kdpos is not None else None),
+        now,
+    )
+
+def _bulk_insert_t4_upsert(cur, table: str, params: list, batch_size: int = 1000):
+    """Bulk insert untuk T4 dengan ON DUPLICATE KEY UPDATE."""
+    if not params: return 0
+    sql = (
+        f"INSERT INTO {table} ({T4_COL_LIST}) VALUES ({T4_PLACEHOLDERS}) "
+        f"ON DUPLICATE KEY UPDATE {T4_SET_CLAUSE}"
+    )
+    total = 0
+    for i in range(0, len(params), batch_size):
+        chunk = params[i:i+batch_size]
+        cur.executemany(sql, chunk)
+        total += len(chunk)
+    return total
+
 # -------------------- DDL & Buffer Logic for Z_FM_YSDR048 (Stock Sync) --------------------
 
 STOCK_COLS = [
@@ -454,7 +547,7 @@ def ensure_stock_tables():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
 
-    table_names = list(STOCK_TABLE_MAP.values()) # Mengambil semua nama tabel yang mungkin
+    table_names = list(STOCK_TABLE_MAP.values())  # Mengambil semua nama tabel yang mungkin
 
     db = connect_mysql()
     cur = db.cursor()
@@ -501,7 +594,7 @@ def _bulk_insert_stock_plain(cur, table: str, params: list, batch_size: int = 10
 
 # -------------------- LOGIKA SYNC LAMA (Z_FM_YPPR079_SO) --------------------
 def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, timeout_sec: int = 3000):
-    """Logika sinkronisasi lama untuk Z_FM_YPPR079_SO."""
+    """Logika sinkronisasi untuk Z_FM_YPPR079_SO (T_DATA1/2/3/4)."""
     ensure_tables()
     username, password = get_sap_credentials_from_env()
     if not username or not password:
@@ -527,7 +620,9 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
     t1_buf: List[tuple] = []
     t2_buf: List[tuple] = []
     t3_buf: List[tuple] = []
+    t4_buf: List[tuple] = []
     total_t1 = total_t2 = total_t3 = 0
+    total_t4 = 0
     summary: List[Dict[str, Any]] = []
 
     try:
@@ -538,13 +633,19 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
                 r = call_rfc_with_timeout(sap, timeout_sec, RFC_NAME_SO, IV_WERKS=werks, IV_AUART=auart)
 
                 t1 = r.get("T_DATA1", []) or []; t2 = r.get("T_DATA2", []) or []; t3 = r.get("T_DATA3", []) or []
+                t4 = r.get("T_DATA4", []) or []
                 now = datetime.datetime.now()
                 t1_buf.extend(_so_row_params(werks, auart, row, now) for row in t1)
                 t2_buf.extend(_so_row_params(werks, auart, row, now) for row in t2)
                 t3_buf.extend(_so_row_params(werks, auart, row, now) for row in t3)
-                total_t1 += len(t1); total_t2 += len(t2); total_t3 += len(t3)
-                summary.append({"werks": werks, "auart": auart, "t1_saved": len(t1), "t2_saved": len(t2), "t3_saved": len(t3)})
-                print(f"[{idx}/{total}] {werks}/{auart} - saved t1={len(t1)} t2={len(t2)} t3={len(t3)} to array", flush=True)
+                t4_buf.extend(_so_t4_row_params(werks, auart, row, now) for row in t4)
+                total_t1 += len(t1); total_t2 += len(t2); total_t3 += len(t3); total_t4 += len(t4)
+                summary.append({
+                    "werks": werks, "auart": auart,
+                    "t1_saved": len(t1), "t2_saved": len(t2), "t3_saved": len(t3),
+                    "t4_saved": len(t4)
+                })
+                print(f"[{idx}/{total}] {werks}/{auart} - saved t1={len(t1)} t2={len(t2)} t3={len(t3)} t4={len(t4)} to array", flush=True)
 
             except (FuturesTimeout, TimeoutError) as te:
                 print(f"[{idx}/{total}] {werks}/{auart} - TIMEOUT: {te}", flush=True)
@@ -558,18 +659,22 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
 
     print("Semua pair telah tersimpan ke buffer.", flush=True)
     db  = connect_mysql(); cur = db.cursor()
-    inserted_t1 = inserted_t2 = inserted_t3 = 0
+    inserted_t1 = inserted_t2 = inserted_t3 = inserted_t4 = 0
     try:
         print("Menghapus tabel SO lama (TRUNCATE)…", flush=True)
-        cur.execute("SET FOREIGN_KEY_CHECKS=0"); cur.execute("TRUNCATE TABLE so_yppr079_t1")
-        cur.execute("TRUNCATE TABLE so_yppr079_t2"); cur.execute("TRUNCATE TABLE so_yppr079_t3")
+        cur.execute("SET FOREIGN_KEY_CHECKS=0")
+        cur.execute("TRUNCATE TABLE so_yppr079_t1")
+        cur.execute("TRUNCATE TABLE so_yppr079_t2")
+        cur.execute("TRUNCATE TABLE so_yppr079_t3")
+        cur.execute("TRUNCATE TABLE so_yppr079_t4")
         cur.execute("SET FOREIGN_KEY_CHECKS=1")
         print("Memasukkan query SQL buffered ke database…", flush=True)
         inserted_t1 = _bulk_insert_so_plain(cur, "so_yppr079_t1", t1_buf)
         inserted_t2 = _bulk_insert_so_upsert(cur, "so_yppr079_t2", t2_buf)
         inserted_t3 = _bulk_insert_so_upsert(cur, "so_yppr079_t3", t3_buf)
+        inserted_t4 = _bulk_insert_t4_upsert(cur, "so_yppr079_t4", t4_buf)
         db.commit()
-        print(f"[INFO] Inserted buffered rows: t1={inserted_t1} t2={inserted_t2} t3={inserted_t3}", flush=True)
+        print(f"[INFO] Inserted buffered rows: t1={inserted_t1} t2={inserted_t2} t3={inserted_t3} t4={inserted_t4}", flush=True)
     except Exception as e:
         db.rollback(); print(f"[ERROR] Gagal menulis buffered data: {e}", flush=True)
         return {"ok": False, "error": f"DB insert failed: {e}", "summary": summary}
@@ -578,11 +683,12 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         except Exception: pass
 
     done_ts = datetime.datetime.now()
-    print(f"[INFO] Done SO sync. totals: t1={total_t1} t2={total_t2} t3={total_t3} @ {done_ts:%Y-%m-%d %H:%M:%S}", flush=True)
+    print(f"[INFO] Done SO sync. totals: t1={total_t1} t2={total_t2} t3={total_t3} t4={total_t4} @ {done_ts:%Y-%m-%d %H:%M:%S}", flush=True)
 
     return {
-        "ok": True, "totals": {"t1": total_t1, "t2": total_t2, "t3": total_t3},
-        "inserted": {"t1": inserted_t1, "t2": inserted_t2, "t3": inserted_t3},
+        "ok": True,
+        "totals": {"t1": total_t1, "t2": total_t2, "t3": total_t3, "t4": total_t4},
+        "inserted": {"t1": inserted_t1, "t2": inserted_t2, "t3": inserted_t3, "t4": inserted_t4},
         "pairs": summary, "started_at": start_ts.isoformat(), "finished_at": done_ts.isoformat(),
     }
 
@@ -620,7 +726,7 @@ def do_sync_stock(timeout_sec: int = 3000):
             buffers[table_name] = []
 
             # Memastikan hanya 1 param yang 'X' untuk setiap panggilan
-            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": "", "IV_SIPM": ""} # <-- IV_SIPM Ditambahkan
+            params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": "", "IV_SIPM": ""}  # <-- IV_SIPM Ditambahkan
             params[param_name] = param_value
 
             try:
@@ -650,7 +756,7 @@ def do_sync_stock(timeout_sec: int = 3000):
         cur.execute("SET FOREIGN_KEY_CHECKS=0")
 
         for table_name in buffers.keys():
-            cur.execute(f"TRUNCATE TABLE {table_name}") # Tabel yang ada di buffer akan dikosongkan
+            cur.execute(f"TRUNCATE TABLE {table_name}")  # Tabel yang ada di buffer akan dikosongkan
 
         cur.execute("SET FOREIGN_KEY_CHECKS=1")
 
