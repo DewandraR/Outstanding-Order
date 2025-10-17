@@ -80,7 +80,7 @@ class PoItemsExport implements
             'Shipped',
             'Outs. Ship',
             'WHFG',
-            'FG',
+            'Packing',
             'Net Price',
             'Remark', // <<< NEW (kolom L)
         ];

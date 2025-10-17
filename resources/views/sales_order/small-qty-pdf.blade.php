@@ -118,9 +118,8 @@
                 <th style="width:10%;">SO</th>
                 <th style="width:6%;">Item</th>
                 <th class="text-left" style="width:29%;">Description</th>
-                <th style="width:10%;">Shipped</th>
-
                 <th style="width:10%;">Qty SO</th>
+                <th style="width:10%;">Shipped</th>
                 <th style="width:10%;">Outs. SO</th>
                 <th style="width:11%;">WHFG</th>
                 <th style="width:11%;">Stock Packing</th>
@@ -134,11 +133,10 @@
                     <td class="text-center">{{ (int) $r->POSNR }}</td>
                     <td class="text-left">{{ $r->MAKTX }}</td>
 
-                    {{-- <<< PERUBAHAN UTAMA: Data QTY GI DITAMBAHKAN di sini --}}
-                    <td class="text-right">{{ $fmtInt($r->QTY_GI ?? 0) }}</td>
-
                     {{-- Menggunakan $fmtInt untuk menghilangkan 3 desimal --}}
                     <td class="text-right">{{ $fmtInt($r->KWMENG ?? 0) }}</td>
+                    {{-- <<< PERUBAHAN UTAMA: Data QTY GI DITAMBAHKAN di sini --}}
+                    <td class="text-right">{{ $fmtInt($r->QTY_GI ?? 0) }}</td>
                     <td class="text-right">
                         <strong>{{ $fmtInt($r->PACKG ?? 0) }}</strong>
                     </td>

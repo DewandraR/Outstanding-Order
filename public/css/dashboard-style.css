@@ -788,6 +788,35 @@ thead th {
     background-color: #e9ecef !important;
 }
 
+.form-check-input {
+    /* Perbesar sedikit ukuran checkbox (opsional) */
+    width: 1.15em;
+    height: 1.15em;
+
+    /* Ubah border default Bootstrap */
+    /* Warna border: ganti #000 (hitam) atau warna lain, Tebal: 2px */
+    border: 2px solid #6c757d; /* Border lebih tebal dengan warna abu-abu gelap */
+}
+
+/* Modifikasi tampilan saat checked */
+.form-check-input:checked {
+    /* Penting: Jaga warna latar belakang dan warna border tetap biru agar terlihat "tercentang" */
+    background-color: #0d6efd; /* Warna biru Bootstrap (Primary) */
+    border-color: #0d6efd;
+}
+
+/* Modifikasi tampilan saat hover/focus */
+.form-check-input:not(:checked):hover,
+.form-check-input:not(:checked):focus {
+    border-color: #0d6efd; /* Highlight border saat di-hover/focus */
+}
+
+/* Pastikan checkbox di tabel 2 dan 3 menggunakan gaya yang diperbarui */
+.yz-mini .form-check-input {
+    /* Agar lebih menonjol di tabel */
+    border-width: 2.5px; /* Sedikit lebih tebal lagi di tabel mini */
+}
+
 @keyframes pulse-highlight {
     0% {
         background-color: #dbeafe;

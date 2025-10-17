@@ -1522,7 +1522,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 <th>Shipped</th>
                 <th>Outs. Ship</th>
                 <th>WHFG</th>
-                <th>FG</th>
+                <th>Packing</th>
                 <th>Net Price</th>
                 <th style="width: 70px;">Remark</th> </tr>
         </thead>

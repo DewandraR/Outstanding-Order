@@ -167,7 +167,7 @@
                     <th style="width:6%;">Shipped</th>
                     <th style="width:7%;">Outs. Ship</th>
                     <th style="width:6%;">WHFG</th>
-                    <th style="width:6%;">FG</th>
+                    <th style="width:6%;">Packing</th>
                     <th style="width:10%;">Net Price</th>
                     <th style="width:16%;">Remark</th>
                 </tr>

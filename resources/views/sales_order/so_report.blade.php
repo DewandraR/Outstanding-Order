@@ -422,8 +422,8 @@
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
         /* =========================================================
-             * GLOBAL ELEMENT STYLES
-             * ======================================================= */
+                                     * GLOBAL ELEMENT STYLES
+                                     * ======================================================= */
 
         .remark-icon {
             cursor: pointer;
@@ -544,8 +544,8 @@
         }
 
         /* =========================================================
-             * MACHINING MODAL STYLES (Dioptimalkan & Final)
-             * ======================================================= */
+                                     * MACHINING MODAL STYLES (Dioptimalkan & Final)
+                                     * ======================================================= */
 
         /* 1. Mengurangi Lebar Modal Utama & Responsivitas */
         #machiningModal .modal-dialog {
@@ -918,6 +918,26 @@
             /* =========================================================
              * UI HELPERS
              * ======================================================= */
+            const globalTotalsCard = document.querySelector('.yz-global-total-card');
+            const isActuallyVisible = el => !!(el && el.getClientRects().length > 0);
+
+            function updateGlobalTotalCardVisibility() {
+                if (!globalTotalsCard) return;
+
+                // Tabel-2 dianggap terbuka jika ada kontainer nest customer yang terlihat
+                const anyLevel2Open = Array.from(document.querySelectorAll('.yz-nest-card'))
+                    .some(isActuallyVisible);
+
+                // Tabel-3 dianggap terbuka jika ada baris nest (items) yang terlihat
+                const anyLevel3Open = Array.from(document.querySelectorAll('tr.yz-nest'))
+                    .some(isActuallyVisible);
+
+                const shouldHide = anyLevel2Open || anyLevel3Open;
+                globalTotalsCard.style.display = shouldHide ? 'none' : '';
+            }
+
+            // panggil sekali saat load
+            updateGlobalTotalCardVisibility();
             const selectedItems = new Set();
             const exportDropdownContainer = document.getElementById('export-dropdown-container');
             const selectedCountSpan = document.getElementById('selected-count');
@@ -1023,7 +1043,6 @@
               <th>PAINT</th>
               <th>PACKING</th>
               <th>Net Price</th>
-              <th>Outs. Packg Value</th>
               <th>Remark</th>
             </tr>
           </thead>
@@ -1058,7 +1077,7 @@
                     title="Progress Stage: Machining">${formatMachiPercent(r.PRSM)}</span>
             </td>
             <td>
-              <span class="yz-machi-pct"
+              <span class="yz-machi-pct text-decoration-none"
                     data-bs-toggle="popover"
                     data-bs-placement="top"
                     data-stage="Assembly"
@@ -1067,7 +1086,7 @@
                     title="Progress Stage: Assembly">${formatPercent(r.PRSA)}</span>
             </td>
             <td>
-              <span class="yz-machi-pct"
+              <span class="yz-machi-pct text-decoration-none"
                     data-bs-toggle="popover"
                     data-bs-placement="top"
                     data-stage="Paint"
@@ -1076,7 +1095,7 @@
                     title="Progress Stage: Paint">${formatPercent(r.PRSI)}</span>
             </td>
             <td>
-              <span class="yz-machi-pct"
+              <span class="yz-machi-pct text-decoration-none"
                     data-bs-toggle="popover"
                     data-bs-placement="top"
                     data-stage="Packing"
@@ -1085,7 +1104,6 @@
                     title="Progress Stage: Packing">${formatPercent(r.PRSP)}</span>
             </td>
             <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
-            <td>${formatCurrencyGlobal(r.TOTPR2, r.WAERK)}</td>
             <td class="text-center">
               <i class="fas fa-comments remark-icon"
                  title="Lihat/tambah catatan"
@@ -1324,6 +1342,8 @@
                         row.querySelector('.kunnr-caret')?.classList.toggle('rot', !
                             wasOpen);
                         slot.style.display = wasOpen ? 'none' : 'block';
+                        updateGlobalTotalCardVisibility();
+
 
                         // Small Qty show/hide (tetap)
                         const smallQtySection = document.getElementById(
@@ -1446,12 +1466,15 @@
                                     if (open) {
                                         itemTr.style.display = 'none';
                                         updateT2FooterVisibility(t2tbl);
+                                        updateGlobalTotalCardVisibility();
                                         return;
                                     }
 
                                     soRow.classList.add('so-visited');
                                     itemTr.style.display = '';
+                                    updateGlobalTotalCardVisibility();
                                     updateT2FooterVisibility(t2tbl);
+                                    updateGlobalTotalCardVisibility();
                                     soRow.classList.remove(
                                         'row-highlighted');
 
@@ -2072,8 +2095,8 @@
               <th class="text-center">SO</th>
               <th class="text-center">Item</th>
               <th>Description</th>
-              <th class="text-end">Shipped</th>
               <th class="text-end">Qty SO</th>
+              <th class="text-end">Shipped</th>
               <th class="text-end">Outs. SO (≤5)</th>
               <th class="text-end">WHFG</th>
               <th class="text-end">Stock Packing</th>
@@ -2091,8 +2114,8 @@
                 </td>
                 <td class="text-center">${it.POSNR ?? ''}</td>
                 <td>${it.MAKTX ?? ''}</td>
-                <td class="text-end">${formatNumberGlobal(it.QTY_GI)}</td>
                 <td class="text-end">${formatNumberGlobal(it.KWMENG)}</td>
+                <td class="text-end">${formatNumberGlobal(it.QTY_GI)}</td>
                 <td class="text-end fw-bold text-danger">${formatNumberGlobal(it.PACKG)}</td>
                 <td class="text-end">${formatNumberGlobal(it.KALAB)}</td>
                 <td class="text-end">${formatNumberGlobal(it.KALAB2)}</td>
