@@ -81,9 +81,10 @@ class StockIssueController extends Controller
                     ->where('s.STOCK3', '>', 0)
                     ->select([
                         's.NAME1',
-                        's.VBELN',
-                        's.POSNR',
-                        's.MATNH',
+                        // 🚨 PERUBAHAN UTAMA DI SINI: Menggunakan DB::raw untuk TRIM LEADING ZEROS
+                        DB::raw("TRIM(LEADING '0' FROM s.VBELN) AS VBELN"), // Tambahan: Sales Order (VBELN)
+                        DB::raw("TRIM(LEADING '0' FROM s.POSNR) AS POSNR"), // Item
+                        DB::raw("TRIM(LEADING '0' FROM s.MATNH) AS MATNH"), // Material Finish
                         's.MAKTXH',
                         's.STOCK3',
                         's.MEINS',
