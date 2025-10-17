@@ -1436,6 +1436,7 @@
                                 updateSODot(soVbeln);
 
                                 soRow.addEventListener('click', async (ev) => {
+                                    // Cek apakah klik berasal dari checkbox, tombol, atau ikon remark, jika ya, batalkan aksi buka baris.
                                     if (ev.target.closest(
                                             '.check-so, .check-all-sos, .form-check-input, .remark-icon'
                                         )) return;
@@ -1458,6 +1459,16 @@
                                         ?.classList.toggle('rot');
 
                                     if (!open) {
+
+                                        // =========================================================
+                                        // ✅ MODIFIKASI PENTING: Hapus 'so-visited' dari SEMUA baris
+                                        // =========================================================
+                                        soTbody?.querySelectorAll(
+                                            '.js-t2row').forEach(
+                                            r => r.classList.remove(
+                                                'so-visited'));
+                                        // =========================================================
+
                                         soTbody?.classList.add(
                                             'so-focus-mode');
                                         soRow.classList.add(
@@ -1475,6 +1486,12 @@
                                         return;
                                     }
 
+                                    // =========================================================
+                                    // ✅ MODIFIKASI: Tambahkan class penanda 'so-visited' HANYA ke baris ini
+                                    // =========================================================
+                                    soRow.classList.add('so-visited');
+                                    // =========================================================
+
                                     itemTr.style.display = '';
                                     updateT2FooterVisibility(t2tbl);
                                     soRow.classList.remove(
@@ -1486,14 +1503,14 @@
                                         syncCheckAllHeader(box);
                                         attachBootstrapPopovers(
                                             box
-                                            ); // PENTING: Panggil Popover
+                                        );
                                         return;
                                     }
 
                                     box.innerHTML = `
-                    <div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
-                      <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
-                    </div>`;
+            <div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+              <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+            </div>`;
                                     try {
                                         const items =
                                             await ensureItemsLoadedForSO(
@@ -1505,7 +1522,7 @@
                                         syncCheckAllHeader(box);
                                         attachBootstrapPopovers(
                                             box
-                                            ); // PENTING: Panggil Popover
+                                        );
                                         itemTr.dataset.loaded = '1';
                                     } catch (e) {
                                         console.error(

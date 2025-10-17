@@ -706,9 +706,15 @@
                                     return;
                                 }
 
-                                // ⬇️ HILANGKAN HIGHLIGHT SAAT USER MEMBUKA TABEL 3
-                                soRow.classList.remove('row-highlighted');
+                                // [BARU] Hapus highlight dari semua baris SO sebelum menandai yang baru
+                                soTbodyLocal?.querySelectorAll('.js-t2row')
+                                    .forEach(r => r.classList.remove(
+                                        'so-visited'));
 
+                                // [BARU] Tambahkan highlight ke baris ini
+                                soRow.classList.add('so-visited');
+
+                                soRow.classList.remove('row-highlighted');
                                 await openItemsIfNeededForSORow(soRow);
                                 soTbodyLocal?.classList.add(
                                     'so-focus-mode');
@@ -773,6 +779,14 @@
                                     soRow.classList.remove('is-focused');
                                     return;
                                 }
+
+                                // [BARU] Hapus highlight dari semua baris SO sebelum menandai yang baru
+                                soTbodyLocal?.querySelectorAll('.js-t2row')
+                                    .forEach(r => r.classList.remove(
+                                        'so-visited'));
+
+                                // [BARU] Tambahkan highlight ke baris ini
+                                soRow.classList.add('so-visited');
 
                                 soRow.classList.remove('row-highlighted');
                                 await openItemsIfNeededForSORow(soRow);

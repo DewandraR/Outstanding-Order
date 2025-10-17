@@ -1030,15 +1030,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                                                                                                            title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                                                                                                            <i class="fas fa-pencil-alt"></i>
-                                                                                                                                        </button>` : ''}
+                                                                                                                                            <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                                                                                                title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                                                                                                <i class="fas fa-pencil-alt"></i>
+                                                                                                                                            </button>` : ''}
                     ${isOwner ? `
-                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                                                                                                            title="Hapus Catatan">
-                                                                                                                                            <i class="fas fa-trash"></i>
-                                                                                                                                        </button>` : ''}
+                                                                                                                                            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                                                                                                title="Hapus Catatan">
+                                                                                                                                                <i class="fas fa-trash"></i>
+                                                                                                                                            </button>` : ''}
                 </div>
             </div>
         `;
@@ -2015,6 +2015,9 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
 
             // === KETIKA T3 DIBUKA → MASUK FOCUS MODE ===
 
+            // Hapus class 'po-visited' dari SEMUA baris di tbody ini
+            soTbody.querySelectorAll('.js-t2row').forEach(r => r.classList.remove('so-visited'));
+
             // tutup semua nest lain & hapus fokusnya
             soTbody.querySelectorAll('.yz-nest').forEach(otherNest => {
                 if (otherNest !== tgt && otherNest.style.display !== 'none') {
@@ -2024,11 +2027,14 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             });
             soTbody.querySelectorAll('.js-t2row').forEach(r => r.classList.remove('is-focused'));
 
+            // tambahkan class 'po-visited' HANYA ke baris ini
+            soRow.classList.add('so-visited');
+
             // aktifkan fokus
             soTbody.classList.add('so-focus-mode');
             soRow.classList.add('is-focused');
 
-            // buka nest untuk SO ini
+            // buka nest untuk PO ini
             tgt.style.display = '';
             caret?.classList.add('rot');
             updateT2FooterVisibility(t2tbl);

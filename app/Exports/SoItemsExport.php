@@ -74,10 +74,10 @@ class SoItemsExport implements
             'Outs. SO',         // G
             'WHFG',             // H
             'Stock Packg.',     // I
-            '% MACHI',          // J  (PRSM)
-            '% ASSY',           // K  (PRSA)
-            '% PAINT',          // L  (PRSI)
-            '% PACKING',        // M  (PRSP)
+            'MACHI GR',         // J  (MACHI qty)
+            'ASSY GR',          // K  (ASSYM qty)
+            'PAINT GR',         // L  (PAINTM qty)
+            'PACKING GR',       // M  (PACKGM qty)
             'Remark',           // N
         ];
     }
@@ -89,32 +89,24 @@ class SoItemsExport implements
             return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', '', ''];
         }
 
-        // Pastikan nilai persen tetap 0..100 (integer)
-        $clamp = function ($n) {
-            $n = (int)($n ?? 0);
-            if ($n < 0)   $n = 0;
-            if ($n > 100) $n = 100;
-            return $n;
-        };
-
         return [
-            $item->headerInfo->BSTNK ?? '',  // A: PO
-            $item->VBELN ?? '',              // B: SO
-            (int)($item->POSNR ?? 0),        // C: Item
-            $item->MATNR ?? '',              // D: Material FG
-            $item->MAKTX ?? '',              // E: Description
+            $item->headerInfo->BSTNK ?? '',          // A: PO
+            $item->VBELN ?? '',                      // B: SO
+            (int)($item->POSNR ?? 0),                // C: Item
+            $item->MATNR ?? '',                      // D: Material FG
+            $item->MAKTX ?? '',                      // E: Description
 
-            (int)($item->KWMENG ?? 0),       // F: Qty SO
-            (int)($item->PACKG  ?? 0),       // G: Outs. SO
-            (int)($item->KALAB  ?? 0),       // H: WHFG
-            (int)($item->KALAB2 ?? 0),       // I: Stock Packg.
+            (float)($item->KWMENG ?? 0),             // F: Qty SO
+            (float)($item->PACKG  ?? 0),             // G: Outs. SO
+            (float)($item->KALAB  ?? 0),             // H: WHFG
+            (float)($item->KALAB2 ?? 0),             // I: Stock Packg.
 
-            $clamp($item->PRSM ?? 0),        // J: % MACHI
-            $clamp($item->PRSA ?? 0),        // K: % ASSY
-            $clamp($item->PRSI ?? 0),        // L: % PAINT
-            $clamp($item->PRSP ?? 0),        // M: % PACKING
+            (float)($item->MACHI  ?? 0),             // J: MACHI GR
+            (float)($item->ASSYM  ?? 0),             // K: ASSY GR
+            (float)($item->PAINTM ?? 0),             // L: PAINT GR
+            (float)($item->PACKGM ?? 0),             // M: PACKING GR
 
-            $item->remark ?? '',             // N: Remark
+            $item->remark ?? '',                     // N: Remark
         ];
     }
 
@@ -149,21 +141,21 @@ class SoItemsExport implements
     {
         // Angka bulat tanpa desimal
         $intNoDecimal = '#,##0';
-        // Tampilkan 0..100 dengan tanda % tanpa perlu bagi 100
-        $pct0to100 = '0"%"';
+        // Angka dengan hingga 3 desimal TANPA nol ekor (53 -> "53", 1.92 -> "1.92", 1.234 -> "1.234")
+        $upTo3Decimals = '#,##0.###';
 
         return [
-            // Kuantitas
-            'F' => $intNoDecimal, // Qty SO
-            'G' => $intNoDecimal, // Outs. SO
-            'H' => $intNoDecimal, // WHFG
-            'I' => $intNoDecimal, // Stock Packg.
+            // Kuantitas header
+            'F' => $intNoDecimal,   // Qty SO (biasanya integer)
+            'G' => $intNoDecimal,   // Outs. SO
+            'H' => $intNoDecimal,   // WHFG
+            'I' => $intNoDecimal,   // Stock Packg.
 
-            // Persentase proses
-            'J' => $pct0to100,    // % MACHI
-            'K' => $pct0to100,    // % ASSY
-            'L' => $pct0to100,    // % PAINT
-            'M' => $pct0to100,    // % PACKING
+            // GR per proses (qty) — tampilkan sampai 3 desimal, tanpa ",000"
+            'J' => $intNoDecimal,  // MACHI GR
+            'K' => $intNoDecimal,  // ASSY GR
+            'L' => $intNoDecimal,  // PAINT GR
+            'M' => $intNoDecimal,  // PACKING GR
         ];
     }
 }
