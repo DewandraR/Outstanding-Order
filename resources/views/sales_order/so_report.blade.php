@@ -134,13 +134,31 @@
 
                 {{-- Judul Utama --}}
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
-                    <h5 class="yz-table-title mb-0"><i class="fas fa-file-invoice me-2"></i>Outstanding SO</h5>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <h5 class="yz-table-title mb-0">
+                            <i class="fas fa-file-invoice me-2"></i>Outstanding SO
+                        </h5>
+
+                        {{-- Toolbar Tabel 1 --}}
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" id="check-all-customers">
+                                <label class="form-check-label" for="check-all-customers">Pilih semua customer</label>
+                            </div>
+
+                            <button class="btn btn-colabs btn-outline-secondary btn-lg" id="btn-open-selected"
+                                type="button" style="display:none">
+                                <i class="fas fa-layer-group me-1"></i>
+                                COLABS: Open To SO Item
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="yz-customer-list px-md-3 pt-3">
 
                     {{-- Customer Cards Container --}}
-                    <div class="d-grid gap-0 mb-4">
+                    <div class="d-grid gap-0 mb-4" id="customer-list-container">
                         @forelse ($rows as $r)
                             @php
                                 $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
@@ -178,10 +196,14 @@
 
                                     {{-- KIRI: Customer Name & Caret --}}
                                     <div class="d-flex align-items-center flex-grow-1 me-3">
+                                        {{-- Checkbox customer (tidak memicu toggle kartu) --}}
+                                        <input type="checkbox" class="form-check-input me-2 check-customer"
+                                            data-kunnr="{{ $r->KUNNR }}" onclick="event.stopPropagation()"
+                                            onmousedown="event.stopPropagation()">
+
                                         <span class="kunnr-caret me-3"><i class="fas fa-chevron-right"></i></span>
                                         <div class="customer-info">
                                             <div class="fw-bold fs-5 text-truncate">{{ $r->NAME1 }}</div>
-                                            {{-- MODIFIKASI SEBELUMNYA: ID Pelanggan dihapus --}}
                                         </div>
                                     </div>
 
@@ -244,7 +266,8 @@
                     {{-- Global Totals Card (Menggantikan TFOOT) --}}
                     <div class="card shadow-sm yz-global-total-card mb-4">
                         <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap">
-                            <h6 class="mb-0 text-dark-emphasis"><i class="fas fa-chart-pie me-2"></i>Total Keseluruhan</h6>
+                            <h6 class="mb-0 text-dark-emphasis"><i class="fas fa-chart-pie me-2"></i>Total Keseluruhan
+                            </h6>
 
                             {{-- STRUKTUR METRIK FOOTER HARUS SAMA PERSIS DENGAN metric-columns di atas --}}
                             <div id="footer-metric-columns"
@@ -422,8 +445,8 @@
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
         /* =========================================================
-                                     * GLOBAL ELEMENT STYLES
-                                     * ======================================================= */
+                                                                                             * GLOBAL ELEMENT STYLES
+                                                                                             * ======================================================= */
 
         .remark-icon {
             cursor: pointer;
@@ -544,8 +567,8 @@
         }
 
         /* =========================================================
-                                     * MACHINING MODAL STYLES (Dioptimalkan & Final)
-                                     * ======================================================= */
+                                                                                             * MACHINING MODAL STYLES (Dioptimalkan & Final)
+                                                                                             * ======================================================= */
 
         /* 1. Mengurangi Lebar Modal Utama & Responsivitas */
         #machiningModal .modal-dialog {
@@ -722,6 +745,7 @@
     <script>
         (() => {
             'use strict';
+            let isColabsActive = false;
 
             /* =========================================================
              * ROUTE CONSTANTS (dari Blade)
@@ -924,6 +948,12 @@
             function updateGlobalTotalCardVisibility() {
                 if (!globalTotalsCard) return;
 
+                // JIka COLABS aktif, jangan sembunyikan footer global
+                if (typeof isColabsActive !== 'undefined' && isColabsActive) {
+                    globalTotalsCard.style.display = '';
+                    return;
+                }
+
                 // Tabel-2 dianggap terbuka jika ada kontainer nest customer yang terlihat
                 const anyLevel2Open = Array.from(document.querySelectorAll('.yz-nest-card'))
                     .some(isActuallyVisible);
@@ -1063,7 +1093,7 @@
             <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked':''}></td>
             <td>${r.POSNR ?? ''}</td>
             <td>${r.MATNR ?? ''}</td>
-            <td>${r.MAKTX ?? ''}</td>
+            <td>${escapeHtml(r.MAKTX ?? '')}</td>
             <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
             <td>${formatNumberGlobal(r.PACKG, 0)}</td>
             <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
@@ -1173,7 +1203,7 @@
             </td>
             <td class="text-center fw-bold">${r.item_count ?? '-'}</td>
             <td class="text-start fw-bold fs-6">${displayValue}</td>
-            <td class="text-center fw-bold">${r.FormattedEdatu || '-'}</td>
+            <td class="text-center fw-bold">${escapeHtml(r.FormattedEdatu || '-')}</td>
             <td class="text-center fw-bold">${formatNumberGlobal(outsQty, 0)}</td>
             <td class="text-center">
               <i class="fas fa-pencil-alt so-remark-flag ${hasRemark ? 'active' : ''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
@@ -1215,7 +1245,308 @@
 
                 // Pasang popover untuk elemen yang sudah ada (jaga2)
                 attachBootstrapPopovers(document);
+                const selectedCustomers = new Set();
+                const btnOpenSelected = document.getElementById('btn-open-selected');
+                const checkAllCustomers = document.getElementById('check-all-customers');
+                const customerListContainer = document.getElementById('customer-list-container');
 
+                // VISIBILITAS tombol COLABS — tampil hanya jika ada customer tercentang & Tabel-2 tidak sedang terbuka
+                function updateColabsButtonVisibility() {
+                    if (!btnOpenSelected) return;
+                    const anyChecked = document.querySelector('.check-customer:checked') !== null;
+                    const anyTabel2Open = document.querySelector('.yz-customer-card.is-open') !== null;
+                    const shouldShow = anyChecked && (!anyTabel2Open || isColabsActive);
+                    btnOpenSelected.style.display = shouldShow ? '' : 'none';
+                }
+
+                function setColabsButton(active) {
+                    isColabsActive = active;
+                    if (!btnOpenSelected) return;
+                    if (active) {
+                        btnOpenSelected.classList.remove('btn-outline-secondary');
+                        btnOpenSelected.classList.add('btn-danger');
+                        btnOpenSelected.innerHTML = `<i class="fas fa-compress-alt me-1"></i>Tutup COLABS`;
+                    } else {
+                        btnOpenSelected.classList.remove('btn-danger');
+                        btnOpenSelected.classList.add('btn-outline-secondary');
+                        btnOpenSelected.innerHTML =
+                            `<i class="fas fa-expand-alt me-1"></i>COLABS: Open To SO Item`;
+                    }
+                    updateColabsButtonVisibility();
+                }
+                setColabsButton(false);
+                updateColabsButtonVisibility();
+
+                // sinkron checkbox master
+                function syncSelectAllCustomersState() {
+                    if (!checkAllCustomers) return;
+                    const checks = document.querySelectorAll('.check-customer');
+                    if (checks.length === 0) {
+                        checkAllCustomers.checked = false;
+                        checkAllCustomers.indeterminate = false;
+                        return;
+                    }
+                    const checkedCount = Array.from(checks).filter(ch => ch.checked).length;
+                    checkAllCustomers.checked = checkedCount === checks.length;
+                    checkAllCustomers.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+                }
+
+                // tangkap perubahan checkbox per-customer
+                document.body.addEventListener('change', (e) => {
+                    if (e.target.classList.contains('check-customer')) {
+                        const kunnr = e.target.dataset.kunnr;
+                        if (!kunnr) return;
+                        if (e.target.checked) selectedCustomers.add(kunnr);
+                        else selectedCustomers.delete(kunnr);
+                        syncSelectAllCustomersState();
+                        updateColabsButtonVisibility();
+                    }
+                });
+
+                // checkbox master
+                if (checkAllCustomers) {
+                    checkAllCustomers.addEventListener('change', () => {
+                        const all = document.querySelectorAll('.check-customer');
+                        all.forEach(ch => {
+                            ch.checked = checkAllCustomers.checked;
+                            const k = ch.dataset.kunnr;
+                            if (checkAllCustomers.checked) selectedCustomers.add(k);
+                            else selectedCustomers.delete(k);
+                        });
+                        syncSelectAllCustomersState();
+                        updateColabsButtonVisibility();
+                    });
+                }
+
+                // cegah klik checkbox memicu toggle kartu
+                document.body.addEventListener('click', (e) => {
+                    if (e.target.closest('.check-customer')) {
+                        e.stopPropagation();
+                    }
+                }, true);
+
+                // helper: buka satu SO-row sampai item (programatik, sama seperti klik baris)
+                async function openItemsIfNeededForSORow(soRow) {
+                    if (!soRow) return;
+                    const wrap = soRow.closest('.yz-nest-wrap') || document;
+                    const vbeln = soRow.dataset.vbeln;
+                    const tgtId = soRow.dataset.tgt;
+                    const itemTr = wrap.querySelector('#' + tgtId);
+                    const box = itemTr?.querySelector('.yz-slot-items');
+                    const t2tbl = soRow.closest('table');
+                    const soTbody = soRow.closest('tbody');
+
+                    if (!itemTr) return;
+                    if (itemTr.style.display === 'none') {
+                        itemTr.style.display = '';
+                        soRow.querySelector('.yz-caret')?.classList.add('rot');
+                        // JANGAN masuk focus-mode saat COLABS
+                        if (!isColabsActive) {
+                            soTbody?.classList.add('so-focus-mode');
+                            soRow.classList.add('is-focused');
+                        }
+                        updateT2FooterVisibility(t2tbl);
+                        updateGlobalTotalCardVisibility();
+                    }
+
+                    if (itemTr.dataset.loaded === '1') {
+                        applySelectionsToRenderedItems(box);
+                        syncCheckAllHeader(box);
+                        attachBootstrapPopovers(box);
+                        return;
+                    }
+
+                    box.innerHTML = `
+      <div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+        <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+      </div>`;
+                    try {
+                        const items = await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
+                        box.innerHTML = renderLevel3_Items(items);
+                        applySelectionsToRenderedItems(box);
+                        syncCheckAllHeader(box);
+                        attachBootstrapPopovers(box);
+                        itemTr.dataset.loaded = '1';
+                    } catch (e) {
+                        box.innerHTML =
+                            `<div class="alert alert-danger m-3">${(e?.message||'Gagal memuat item')}</div>`;
+                    }
+                }
+
+                function bindSoRowClicks(wrap) {
+                    wrap.querySelectorAll('.js-t2row').forEach(soRow => {
+                        if (soRow.dataset.bound === '1') return; // cegah double-binding
+                        soRow.dataset.bound = '1';
+
+                        const soVbeln = soRow.dataset.vbeln;
+                        updateSODot(soVbeln);
+
+                        soRow.addEventListener('click', async (ev) => {
+                            // Abaikan klik pada checkbox/ikon
+                            if (ev.target.closest(
+                                    '.check-so, .check-all-sos, .form-check-input, .remark-icon'
+                                )) return;
+                            ev.stopPropagation();
+
+                            const vbeln = soRow.dataset.vbeln;
+                            const tgtId = soRow.dataset.tgt;
+                            const itemTr = wrap.querySelector('#' + tgtId);
+                            const box = itemTr.querySelector('.yz-slot-items');
+                            const t2tbl = soRow.closest('table');
+                            const soTbody = soRow.closest('tbody');
+                            const open = itemTr.style.display !== 'none';
+
+                            soRow.querySelector('.yz-caret')?.classList.toggle('rot');
+
+                            if (open) {
+                                itemTr.style.display = 'none';
+                                updateT2FooterVisibility(t2tbl);
+                                updateGlobalTotalCardVisibility();
+                                return;
+                            }
+
+                            if (!isColabsActive) {
+                                soTbody?.classList.add('so-focus-mode');
+                                soRow.classList.add('is-focused');
+                            }
+                            itemTr.style.display = '';
+                            updateGlobalTotalCardVisibility();
+                            updateT2FooterVisibility(t2tbl);
+
+                            if (itemTr.dataset.loaded === '1') {
+                                applySelectionsToRenderedItems(box);
+                                syncCheckAllHeader(box);
+                                attachBootstrapPopovers(box);
+                                return;
+                            }
+
+                            box.innerHTML = `
+        <div class="p-2 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+          <div class="spinner-border spinner-border-sm me-2"></div>Memuat item…
+        </div>`;
+                            try {
+                                const items = await ensureItemsLoadedForSO(vbeln, WERKS,
+                                    AUART);
+                                box.innerHTML = renderLevel3_Items(items);
+                                applySelectionsToRenderedItems(box);
+                                syncCheckAllHeader(box);
+                                attachBootstrapPopovers(box);
+                                itemTr.dataset.loaded = '1';
+                            } catch (e) {
+                                box.innerHTML =
+                                    `<div class="alert alert-danger m-3">${escapeHtml(e.message)}</div>`;
+                            }
+                        });
+                    });
+                }
+
+                // helper: buka 1 customer sampai level-3 (tanpa focus-mode & tanpa menutup yang lain)
+                async function openCustomerFully(cardEl) {
+                    if (!cardEl) return;
+                    const kunnr = cardEl.dataset.kunnr;
+                    const kid = cardEl.dataset.kid;
+                    const slot = document.getElementById(kid);
+                    const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                    // Pastikan kartu terbuka, tapi jangan aktifkan focus-mode saat COLABS
+                    cardEl.classList.add('is-open');
+                    cardEl.querySelector('.kunnr-caret')?.classList.add('rot');
+                    if (slot) slot.style.display = 'block';
+
+                    // jika SO (tabel-2) belum dimuat → muat dulu
+                    if (wrap && wrap.dataset.loaded !== '1') {
+                        wrap.innerHTML = `
+        <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+          <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+        </div>`;
+                        const url = new URL("{{ route('so.api.by_customer') }}", window.location.origin);
+                        url.searchParams.set('kunnr', kunnr);
+                        url.searchParams.set('werks', WERKS);
+                        url.searchParams.set('auart', AUART);
+
+                        const res = await fetch(url, {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        });
+                        const js = await res.json();
+                        if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
+
+                        const soRows = (js.data || []).filter(Boolean);
+                        wrap.innerHTML = renderLevel2_SO(soRows, kunnr);
+                        wrap.dataset.loaded = '1';
+
+                        // PASANG HANDLER KLIK UNTUK BARIS SO (penting untuk COLABS -> tutup -> pilih sebagian)
+                        bindSoRowClicks(wrap);
+
+                        const soTable = wrap.querySelector('table');
+                        const soTbody = soTable?.querySelector('tbody');
+                        updateT2FooterVisibility(soTable);
+                        if (soTbody) syncCheckAllSoHeader(soTbody);
+                    }
+
+                    // setelah tabel-2 ada, buka SEMUA SO & muat item (tabel-3)
+                    const soRows = wrap?.querySelectorAll('.js-t2row') || [];
+                    for (const soRow of soRows) await openItemsIfNeededForSORow(soRow);
+                }
+
+                function closeCustomerFully(cardEl) {
+                    if (!cardEl) return;
+                    const kid = cardEl.dataset.kid;
+                    const slot = document.getElementById(kid);
+                    const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                    // Tutup semua level-2 & 3
+                    if (wrap) {
+                        wrap.querySelectorAll('.js-t2row').forEach(soRow => {
+                            const itemTr = soRow.nextElementSibling;
+                            if (itemTr) itemTr.style.display = 'none';
+                            soRow.querySelector('.yz-caret')?.classList.remove('rot');
+                        });
+                        const t2tb = wrap.querySelector('table tbody');
+                        if (t2tb) t2tb.classList.remove('so-focus-mode', 'collapse-mode');
+                    }
+
+                    if (slot) slot.style.display = 'none';
+                    cardEl.classList.remove('is-open', 'is-focused');
+                    cardEl.querySelector('.kunnr-caret')?.classList.remove('rot');
+
+                    // perbarui UI global
+                    updateT2FooterVisibility(wrap?.querySelector('table'));
+                    updateGlobalTotalCardVisibility();
+                }
+
+                // Klik tombol COLABS
+                if (btnOpenSelected) {
+                    btnOpenSelected.addEventListener('click', async () => {
+                        // Saat aksi massal: jangan focus-mode & biarkan footer global tampil
+                        customerListContainer?.classList.remove('customer-focus-mode');
+                        document.querySelectorAll('.yz-customer-card').forEach(r => r.classList
+                            .remove('is-focused'));
+                        if (globalTotalsCard) globalTotalsCard.style.display = '';
+
+                        const chosenRows = Array
+                            .from(document.querySelectorAll('.yz-customer-card'))
+                            .filter(r => r.querySelector('.check-customer')?.checked);
+
+                        if (!isColabsActive) {
+                            // --- MODE BUKA ---
+                            if (chosenRows.length === 0) {
+                                alert('Centang dulu customer di Tabel 1 yang ingin dibuka.');
+                                return;
+                            }
+                            for (const row of chosenRows) await openCustomerFully(row);
+                            setColabsButton(true);
+                        } else {
+                            // --- MODE TUTUP ---
+                            const targets = chosenRows.length ?
+                                chosenRows :
+                                Array.from(document.querySelectorAll('.yz-customer-card.is-open'));
+                            for (const row of targets) closeCustomerFully(row);
+                            setColabsButton(false);
+                        }
+                    });
+                }
                 // ====== Remark Modal setup (tetap dari skrip Anda) ======
                 const remarkModalEl = document.getElementById('remarkModal');
                 if (remarkModalEl && remarkModalEl.parentElement !== document.body) {
@@ -1343,6 +1674,8 @@
                             wasOpen);
                         slot.style.display = wasOpen ? 'none' : 'block';
                         updateGlobalTotalCardVisibility();
+                        updateColabsButtonVisibility
+                            (); // <<< supaya tombol beradaptasi saat kartu dibuka/tutup
 
 
                         // Small Qty show/hide (tetap)
@@ -1466,7 +1799,8 @@
                                     if (open) {
                                         itemTr.style.display = 'none';
                                         updateT2FooterVisibility(t2tbl);
-                                        updateGlobalTotalCardVisibility();
+                                        updateGlobalTotalCardVisibility
+                                            ();
                                         return;
                                     }
 
@@ -1670,6 +2004,7 @@
                     }
                     syncCheckAllSoHeader(tbodyEl);
                     updateT2FooterVisibility(tbodyEl.closest('table'));
+                    updateGlobalTotalCardVisibility();
                 }
                 document.body.addEventListener('click', async (e) => {
                     const toggleBtn = e.target.closest('.js-collapse-toggle');
@@ -2113,7 +2448,7 @@
                      data-posnr="${pos}" data-open-items="1" data-exclusive="1">${so}</a>
                 </td>
                 <td class="text-center">${it.POSNR ?? ''}</td>
-                <td>${it.MAKTX ?? ''}</td>
+                <td>${escapeHtml(it.MAKTX ?? '')}</td>
                 <td class="text-end">${formatNumberGlobal(it.KWMENG)}</td>
                 <td class="text-end">${formatNumberGlobal(it.QTY_GI)}</td>
                 <td class="text-end fw-bold text-danger">${formatNumberGlobal(it.PACKG)}</td>

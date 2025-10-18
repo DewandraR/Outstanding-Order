@@ -2,17 +2,19 @@
 """
 API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 (+ T_DATA4) ke MySQL.
 
-Konfigurasi ini sudah diubah sesuai **OPSI A (PURE INSERT, TANPA DEDUPE)**:
+Konfigurasi ini sudah diubah sesuai **OPSI A (PURE INSERT, TANPA DEDUPE)** + PERMINTAAN KOLOM BARU:
 - Tabel so_yppr079_t4 **TIDAK** lagi memiliki UNIQUE KEY
 - Proses insert T4 menggunakan **insert biasa** (bukan upsert)
 - Tambahan log verifikasi jumlah riil setelah commit
+- **BARU**: Tambah kolom **PRSM2** pada `so_yppr079_t1` 
+- **BARU**: Tambah kolom **PRSN2** pada `so_yppr079_t4` dan ikut di-insert
 
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
   python api.py --sync --werks 2000
   python api.py --sync             # semua pair di tabel `maping`
 
-  UNTUK STOCK (SEKARANG TERMASUK IV_SIPM KE stock_ptg_m)
+UNTUK STOCK (SEKARANG TERMASUK IV_SIPM KE stock_ptg_m)
   python api.py --sync_stock
   python api.py --sync_stock --timeout 3000
 
@@ -20,22 +22,17 @@ Mode server (opsional):
   python api.py --serve
 
 Laravel Task Scheduling
-    php artisan yppr:sync (Menjalankan sinkronisasi penuh)
-
-    php artisan schedule:work (PENTING)(melihat apakah ada skedul berjalan)
-    ATAU BISA
-    php artisan schedule:work 2>&1 | Where-Object {$_ -and ($_ -notmatch "No scheduled commands are ready to run")}     (supaya tidak terlalu banyak output)
-
-    php artisan schedule:list (melihat jadwal akan dijalankan)
+  php artisan yppr:sync               # Menjalankan sinkronisasi penuh
+  php artisan schedule:work           # Melihat apakah ada skedul berjalan
+  php artisan schedule:list           # Melihat jadwal yang akan dijalankan
 
 Buka file log langsung
   cat storage/logs/yppr_sync.log
 
-Lihat bagian akhir log (berguna kalau file sudah panjang):
+Lihat bagian akhir log
   tail -n 50 storage/logs/yppr_sync.log
-(menampilkan 50 baris terakhir)
 
-Pantau log secara real time (mirip live console):
+Pantau log secara real time
   tail -f storage/logs/yppr_sync.log
   Get-Content -Wait storage\logs\yppr_sync.log
 """
@@ -243,7 +240,7 @@ COMMON_SO_COLS = [
 
     # --- kolom baru (harus sebelum fetched_at) ---
     "ASSY", "PAINTM", "PACKGM",
-    "PRSM",
+    "PRSM", "PRSM2",
     "QPROM", "QODRM", "QPROA", "QODRA",
     "PRSA",
     "QPROI", "QODRI",
@@ -260,17 +257,17 @@ _SO_NON_KEY_UPDATE = [c for c in COMMON_SO_COLS if c not in ("IV_WERKS_PARAM","I
 _SO_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _SO_NON_KEY_UPDATE])
 
 # -------------------- Kolom & helper untuk T_DATA4 (SO Detail ringkas) --------------------
-# HANYA menyimpan field: MATNR, MAKTX, PSMNG, WEMNG, PRSN, KDAUF, KDPOS (+ kunci & fetched_at)
+# HANYA menyimpan field: MATNR, MAKTX, PSMNG, WEMNG, PRSN, PRSN2, KDAUF, KDPOS (+ kunci & fetched_at)
 T4_COLS = [
     "IV_WERKS_PARAM", "IV_AUART_PARAM",
     "MATNR", "MAKTX",
-    "PSMNG", "WEMNG", "PRSN",
+    "PSMNG", "WEMNG", "PRSN", "PRSN2",
     "KDAUF", "KDPOS",
     "fetched_at",
 ]
 T4_COL_LIST = ", ".join(T4_COLS)
 T4_PLACEHOLDERS = ", ".join(["%s"] * len(T4_COLS))
-_T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "fetched_at"]
+_T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "PRSN2", "fetched_at"]
 T4_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _T4_NON_KEY_UPDATE])
 
 # ==================== PERUBAHAN OPSI A DIMULAI DI SINI ====================
@@ -303,6 +300,7 @@ def ensure_tables():
       -- kolom baru (sebelum fetched_at)
       ASSY   DECIMAL(18,3), PAINTM DECIMAL(18,3), PACKGM DECIMAL(18,3),
       PRSM   DECIMAL(18,2),
+      PRSM2  DECIMAL(18,2),
       QPROM  DECIMAL(18,3), QODRM DECIMAL(18,3), QPROA DECIMAL(18,3), QODRA DECIMAL(18,3),
       PRSA   DECIMAL(18,2),
       QPROI  DECIMAL(18,3), QODRI DECIMAL(18,3),
@@ -345,6 +343,7 @@ def ensure_tables():
       -- kolom baru (sebelum fetched_at)
       ASSY   DECIMAL(18,3), PAINTM DECIMAL(18,3), PACKGM DECIMAL(18,3),
       PRSM   DECIMAL(18,2),
+      PRSM2  DECIMAL(18,2),
       QPROM  DECIMAL(18,3), QODRM DECIMAL(18,3), QPROA DECIMAL(18,3), QODRA DECIMAL(18,3),
       PRSA   DECIMAL(18,2),
       QPROI  DECIMAL(18,3), QODRI DECIMAL(18,3),
@@ -392,6 +391,7 @@ def ensure_tables():
             ("PAINTM", "DECIMAL(18,3)"),
             ("PACKGM", "DECIMAL(18,3)"),
             ("PRSM",   "DECIMAL(18,2)"),
+            ("PRSM2",  "DECIMAL(18,2)"),
             ("QPROM",  "DECIMAL(18,3)"),
             ("QODRM",  "DECIMAL(18,3)"),
             ("QPROA",  "DECIMAL(18,3)"),
@@ -416,6 +416,12 @@ def ensure_tables():
                     pass  # kolom mungkin sudah ada
                 after_col = col_name
 
+        # Khusus T1: pastikan PRSM2 ada (DB lama)
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t1 ADD COLUMN PRSM2 DECIMAL(18,2) AFTER PRSM")
+        except Exception:
+            pass
+
         # -------------------- DDL untuk T4 (TANPA UNIQUE) --------------------
         ddl4 = """
         CREATE TABLE IF NOT EXISTS so_yppr079_t4 (
@@ -427,6 +433,7 @@ def ensure_tables():
           PSMNG DECIMAL(18,3),
           WEMNG DECIMAL(18,3),
           PRSN  DECIMAL(18,2),
+          PRSN2 DECIMAL(18,2),
           KDAUF VARCHAR(20),
           KDPOS VARCHAR(10),
           fetched_at DATETIME NOT NULL
@@ -437,6 +444,12 @@ def ensure_tables():
         # Pastikan index unik lama di-drop bila masih ada
         try:
             cur.execute("ALTER TABLE so_yppr079_t4 DROP INDEX uq_t4")
+        except Exception:
+            pass
+
+        # Pastikan kolom PRSN2 ada (untuk DB lama)
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN PRSN2 DECIMAL(18,2) AFTER PRSN")
         except Exception:
             pass
 
@@ -477,7 +490,7 @@ def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.date
         fnum(r.get("ASSY")),
         fnum(r.get("PAINTM")),
         fnum(r.get("PACKGM")),
-        fnum(r.get("PRSM")),
+        fnum(r.get("PRSM")), fnum(r.get("PRSM2")),
         fnum(r.get("QPROM")), fnum(r.get("QODRM")), fnum(r.get("QPROA")), fnum(r.get("QODRA")),
         fnum(r.get("PRSA")),
         fnum(r.get("QPROI")), fnum(r.get("QODRI")),
@@ -524,7 +537,7 @@ def _so_t4_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.d
         werks, auart,
         r.get("MATNR"),
         r.get("MAKTX"),
-        fnum(r.get("PSMNG")), fnum(r.get("WEMNG")), fnum(r.get("PRSN")),
+        fnum(r.get("PSMNG")), fnum(r.get("WEMNG")), fnum(r.get("PRSN")), fnum(r.get("PRSN2")),
         kdauf, (str(kdpos) if kdpos is not None else None),
         now,
     )
@@ -570,7 +583,7 @@ def ensure_stock_tables():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """
 
-    table_names = list(STOCK_TABLE_MAP.values())  # Mengambil semua nama tabel yang mungkin
+    table_names = list(STOCK_TABLE_MAP.values())
 
     db = connect_mysql()
     cur = db.cursor()
@@ -698,10 +711,8 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         inserted_t2 = _bulk_insert_so_upsert(cur, "so_yppr079_t2", t2_buf)
         inserted_t3 = _bulk_insert_so_upsert(cur, "so_yppr079_t3", t3_buf)
         # ==================== PERUBAHAN OPSI A: insert biasa untuk T4 ====================
-        # inserted_t4 = _bulk_insert_t4_upsert(cur, "so_yppr079_t4", t4_buf)  # (lama)
         inserted_t4 = 0
         if t4_buf:
-            # T4 punya skema kolom sendiri → gunakan list kolom dan placeholder T4, bukan SO_COL_LIST
             sql_t4 = f"INSERT INTO so_yppr079_t4 ({T4_COL_LIST}) VALUES ({T4_PLACEHOLDERS})"
             for i in range(0, len(t4_buf), 1000):
                 chunk = t4_buf[i:i+1000]
@@ -762,11 +773,9 @@ def do_sync_stock(timeout_sec: int = 3000):
     try:
         for param_name, param_value in sync_params.items():
             now = datetime.datetime.now()
-            # 🌟 MENGGUNAKAN PEMETAAN BARU
             table_name = STOCK_TABLE_MAP[param_name]
             buffers[table_name] = []
 
-            # Memastikan hanya 1 param yang 'X' untuk setiap panggilan
             params = {"IV_SIAD": "", "IV_SIPD": "", "IV_SIPP": "", "IV_SIPM": ""}
             params[param_name] = param_value
 
@@ -797,7 +806,7 @@ def do_sync_stock(timeout_sec: int = 3000):
         cur.execute("SET FOREIGN_KEY_CHECKS=0")
 
         for table_name in buffers.keys():
-            cur.execute(f"TRUNCATE TABLE {table_name}")  # Tabel yang ada di buffer akan dikosongkan
+            cur.execute(f"TRUNCATE TABLE {table_name}")
 
         cur.execute("SET FOREIGN_KEY_CHECKS=1")
 

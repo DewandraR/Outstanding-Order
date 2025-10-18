@@ -130,13 +130,29 @@
             <div class="card-body p-0 p-md-2">
 
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
-                    <h5 class="yz-table-title mb-0">
-                        <i class="fas fa-users me-2"></i>
-                        Stock By Customer
-                        @if ($selectedWerks)
-                            <span class="text-muted small ms-2">— {{ $locName }}</span>
-                        @endif
-                    </h5>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <h5 class="yz-table-title mb-0">
+                            <i class="fas fa-users me-2"></i>
+                            Stock By Customer
+                            @if ($selectedWerks)
+                                <span class="text-muted small ms-2">— {{ $locName }}</span>
+                            @endif
+                        </h5>
+
+                        {{-- Toolbar Tabel 1 --}}
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" id="check-all-customers">
+                                <label class="form-check-label" for="check-all-customers">Pilih semua customer</label>
+                            </div>
+
+                            <button class="btn btn-colabs btn-outline-secondary btn-lg" id="btn-open-selected"
+                                type="button" style="display:none">
+                                <i class="fas fa-layer-group me-1"></i>
+                                COLABS: Open To SO Item
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="yz-customer-list px-md-3 pt-3">
@@ -169,6 +185,11 @@
 
                                     {{-- KIRI: Customer Name & Caret --}}
                                     <div class="d-flex align-items-center flex-grow-1 me-3">
+                                        {{-- Checkbox customer (tidak memicu toggle kartu) --}}
+                                        <input type="checkbox" class="form-check-input me-2 check-customer"
+                                            data-kunnr="{{ $r->KUNNR }}" onclick="event.stopPropagation()"
+                                            onmousedown="event.stopPropagation()">
+
                                         <span class="kunnr-caret me-3"><i class="fas fa-chevron-right"></i></span>
                                         <div class="customer-info">
                                             <div class="fw-bold fs-5 text-truncate">{{ $r->NAME1 }}</div>
@@ -342,6 +363,238 @@
             const selectedItems = new Set();
             const itemIdToSO = new Map();
             const itemsCache = new Map();
+
+            const selectedCustomers = new Set();
+            const btnOpenSelected = document.getElementById('btn-open-selected');
+            const checkAllCustomers = document.getElementById('check-all-customers');
+            const customerListContainer = document.getElementById('customer-list-container');
+
+            let isColabsActive = false;
+
+            function updateColabsButtonVisibility() {
+                if (!btnOpenSelected) return;
+                // Muncul hanya jika: ada customer yg dicentang DAN Tabel-2 tidak sedang terbuka (focus mode)
+                // Kecuali saat mode COLABS aktif, tombol tetap ditampilkan agar bisa menutup COLABS.
+                const anyChecked = document.querySelector('.check-customer:checked') !== null;
+                const anyTabel2Open = document.querySelector('.yz-customer-card.is-open') !== null;
+                const shouldShow = anyChecked && (!anyTabel2Open || isColabsActive);
+                btnOpenSelected.style.display = shouldShow ? '' : 'none';
+            }
+
+            function setColabsButton(active) {
+                isColabsActive = active;
+                if (!btnOpenSelected) return;
+                if (active) {
+                    btnOpenSelected.classList.remove('btn-outline-secondary');
+                    btnOpenSelected.classList.add('btn-danger');
+                    btnOpenSelected.innerHTML = `<i class="fas fa-compress-alt me-1"></i>Tutup COLABS`;
+                } else {
+                    btnOpenSelected.classList.remove('btn-danger');
+                    btnOpenSelected.classList.add('btn-outline-secondary');
+                    btnOpenSelected.innerHTML = `<i class="fas fa-expand-alt me-1"></i>COLABS: Open To SO Item`;
+                }
+                updateColabsButtonVisibility(); // <<< TAMBAH INI
+            }
+            setColabsButton(false);
+            updateColabsButtonVisibility();
+
+            function syncSelectAllCustomersState() {
+                if (!checkAllCustomers) return;
+                const checks = document.querySelectorAll('.check-customer');
+                if (checks.length === 0) {
+                    checkAllCustomers.checked = false;
+                    checkAllCustomers.indeterminate = false;
+                    return;
+                }
+                const checkedCount = Array.from(checks).filter(ch => ch.checked).length;
+                checkAllCustomers.checked = checkedCount === checks.length;
+                checkAllCustomers.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+            }
+
+            // Perubahan status checkbox customer (per baris)
+            document.body.addEventListener('change', (e) => {
+                if (e.target.classList.contains('check-customer')) {
+                    const kunnr = e.target.dataset.kunnr;
+                    if (!kunnr) return;
+                    if (e.target.checked) selectedCustomers.add(kunnr);
+                    else selectedCustomers.delete(kunnr);
+                    syncSelectAllCustomersState();
+                    updateColabsButtonVisibility();
+                }
+            });
+
+            // Pilih semua customer (yang sedang tampil di halaman/pagination ini)
+            if (checkAllCustomers) {
+                checkAllCustomers.addEventListener('change', () => {
+                    const all = document.querySelectorAll('.check-customer');
+                    all.forEach(ch => {
+                        ch.checked = checkAllCustomers.checked;
+                        const k = ch.dataset.kunnr;
+                        if (checkAllCustomers.checked) selectedCustomers.add(k);
+                        else selectedCustomers.delete(k);
+                    });
+                    syncSelectAllCustomersState();
+                    updateColabsButtonVisibility();
+                });
+            }
+
+            // Helper: buka 1 customer sampai level-3 tanpa "focus mode" & tanpa menutup customer lain
+            async function openCustomerFully(row) {
+                if (!row) return;
+                const kunnr = row.dataset.kunnr;
+                const slotId = row.dataset.kid;
+                const slot = document.getElementById(slotId);
+                const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                // Pastikan kartu terlihat terbuka
+                row.classList.add('is-open');
+                row.querySelector('.kunnr-caret')?.classList.add('rot');
+                if (slot) slot.style.display = 'block'; // tampilkan nest walau tidak di focus mode
+
+                try {
+                    // Jika SO (level-2) belum dimuat, muat dulu
+                    if (wrap && wrap.dataset.loaded !== '1') {
+                        wrap.innerHTML = `
+                    <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
+                    </div>`;
+
+                        const url = new URL(apiSoByCustomer, window.location.origin);
+                        url.searchParams.set('kunnr', kunnr);
+                        url.searchParams.set('werks', WERKS);
+                        url.searchParams.set('type', TYPE);
+
+                        const res = await fetch(url);
+                        const js = await res.json();
+                        if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
+
+                        wrap.innerHTML = renderLevel2_SO(js.data, kunnr);
+                        wrap.dataset.loaded = '1';
+
+                        // Bind listener level-2 (sama seperti click handler)
+                        const soTable = wrap.querySelector('table.yz-mini');
+                        const soTbody = soTable?.querySelector('tbody');
+                        const collapseBtn = soTable?.querySelector('.js-collapse-toggle');
+
+                        // Inisialisasi state kolaps ke 'off'
+                        setCollapseMode(soTbody, false);
+
+                        if (collapseBtn && collapseBtn.dataset.bound !== '1') {
+                            collapseBtn.addEventListener('click', async (ev) => {
+                                ev.stopPropagation();
+                                const current = getCollapseMode(soTbody);
+                                await applyCollapseView(soTbody, !current);
+                            });
+                            collapseBtn.dataset.bound = '1';
+                        }
+
+                        wrap.querySelectorAll('.js-t2row').forEach(soRow => {
+                            updateSODot(soRow.dataset.vbeln);
+                            if (soRow.dataset.bound === '1') return;
+                            soRow.addEventListener('click', async (ev) => {
+                                if (ev.target.closest('.form-check-input')) return;
+                                ev.stopPropagation();
+                                const open = soRow.nextElementSibling.style.display !==
+                                    'none';
+                                const soTbodyLocal = soRow.closest('tbody');
+                                if (open) {
+                                    closeItemsForSORow(soRow);
+                                    soTbodyLocal?.classList.remove('so-focus-mode');
+                                    soRow.classList.remove('is-focused');
+                                    return;
+                                }
+                                soTbodyLocal?.querySelectorAll('.js-t2row')
+                                    .forEach(r => r.classList.remove('so-visited'));
+                                soRow.classList.add('so-visited');
+                                soRow.classList.remove('row-highlighted');
+                                await openItemsIfNeededForSORow(soRow);
+                                soTbodyLocal?.classList.add('so-focus-mode');
+                                soRow.classList.add('is-focused');
+                            });
+                            soRow.dataset.bound = '1';
+                        });
+                        if (soTbody) syncSelectAllSoState(soTbody);
+                    }
+
+                    // Setelah SO tersedia, buka SEMUA SO dan muat item (level-3)
+                    const soRows = wrap?.querySelectorAll('.js-t2row') || [];
+                    for (const soRow of soRows) {
+                        await openItemsIfNeededForSORow(
+                            soRow); // ini akan menampilkan row item & fetch jika perlu
+                    }
+                } catch (e) {
+                    if (wrap) wrap.innerHTML = `<div class="alert alert-danger m-3">${e.message}</div>`;
+                }
+            }
+
+            function closeCustomerFully(row) {
+                if (!row) return;
+                const slotId = row.dataset.kid;
+                const slot = document.getElementById(slotId);
+                const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                // Tutup semua level-2 & level-3 jika ada
+                if (wrap) {
+                    const soTable = wrap.querySelector('table.yz-mini');
+                    const soTbody = soTable?.querySelector('tbody');
+                    wrap.querySelectorAll('.js-t2row').forEach(soRow => closeItemsForSORow(soRow));
+                    if (soTbody) {
+                        soTbody.classList.remove('so-focus-mode', 'collapse-mode');
+                        setCollapseMode(soTbody, false);
+                    }
+                }
+
+                // Sembunyikan nest & reset status kartu
+                if (slot) slot.style.display = 'none';
+                row.classList.remove('is-open', 'is-focused');
+                row.querySelector('.kunnr-caret')?.classList.remove('rot');
+            }
+
+            // Tombol COLABS: buka semua customer yang dicentang sampai tabel-3
+            if (btnOpenSelected) {
+                btnOpenSelected.addEventListener('click', async () => {
+                    // Jangan pernah masuk focus-mode untuk aksi massal
+                    customerListContainer?.classList.remove('customer-focus-mode');
+                    document.querySelectorAll('.yz-customer-card').forEach(r => r.classList.remove(
+                        'is-focused'));
+                    if (globalFooter) globalFooter.style.display = '';
+
+                    const chosenRows = Array
+                        .from(document.querySelectorAll('.yz-customer-card'))
+                        .filter(r => r.querySelector('.check-customer')?.checked);
+
+                    if (!isColabsActive) {
+                        // --- MODE BUKA ---
+                        if (chosenRows.length === 0) {
+                            alert('Centang dulu customer di Tabel 1 yang ingin dibuka.');
+                            return;
+                        }
+                        for (const row of chosenRows) {
+                            await openCustomerFully(row);
+                        }
+                        setColabsButton(true);
+                        updateColabsButtonVisibility();
+                    } else {
+                        // --- MODE TUTUP ---
+                        // Jika tidak ada yang dicentang, tutup semua yang sedang terbuka
+                        const targets = chosenRows.length ? chosenRows : Array.from(document
+                            .querySelectorAll('.yz-customer-card.is-open'));
+                        if (targets.length === 0) {
+                            // tidak ada yang terbuka, tidak perlu apa-apa
+                            setColabsButton(false);
+                            return;
+                        }
+                        for (const row of targets) {
+                            closeCustomerFully(row);
+                        }
+                        setColabsButton(false);
+                        updateColabsButtonVisibility();
+                    }
+                });
+            }
+            // Sinkron awal (jika ada pre-checked karena state sebelumnya)
+            syncSelectAllCustomersState();
+            updateColabsButtonVisibility();
 
             // ==============================
             //  State kolaps per-tbody (bukan global)
@@ -635,39 +888,44 @@
                     const wasOpen = row.classList.contains('is-open');
 
                     // 1. Exclusive Toggle & Focus Mode — pastikan customer lain ditutup
-                    document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
-                        if (r !== row) {
-                            const otherSlot = document.getElementById(r.dataset.kid);
-                            r.classList.remove('is-open', 'is-focused');
-                            r.querySelector('.kunnr-caret')?.classList.remove('rot');
+                    if (!isColabsActive) {
+                        document.querySelectorAll('.yz-customer-card.is-open').forEach(r => {
+                            if (r !== row) {
+                                const otherSlot = document.getElementById(r.dataset
+                                    .kid);
+                                r.classList.remove('is-open', 'is-focused');
+                                r.querySelector('.kunnr-caret')?.classList.remove(
+                                    'rot');
 
-                            const otherTable = otherSlot?.querySelector('table');
-                            const otherTbody = otherTable?.querySelector('tbody');
-                            otherTbody?.classList.remove('so-focus-mode',
-                                'collapse-mode');
-                            // ⬇ reset dataset state agar sinkron
-                            setCollapseMode(otherTbody, false);
+                                const otherTable = otherSlot?.querySelector('table');
+                                const otherTbody = otherTable?.querySelector('tbody');
+                                otherTbody?.classList.remove('so-focus-mode',
+                                    'collapse-mode');
+                                setCollapseMode(otherTbody, false);
 
-                            otherTable?.querySelectorAll('.js-t2row').forEach(rr =>
-                                closeItemsForSORow(rr));
-                        }
-                    });
+                                otherTable?.querySelectorAll('.js-t2row').forEach(rr =>
+                                    closeItemsForSORow(rr));
+                            }
+                        });
+                    }
 
                     // 2. Toggle status kartu saat ini
                     row.classList.toggle('is-open');
                     row.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
 
                     // 3. Keluar/masuk Customer Focus Mode & Global Footer
-                    if (!wasOpen) {
-                        customerListContainer.classList.add('customer-focus-mode');
-                        row.classList.add('is-focused');
-                        if (globalFooter) globalFooter.style.display = 'none';
-                    } else {
-                        customerListContainer.classList.remove('customer-focus-mode');
-                        row.classList.remove('is-focused');
-                        if (globalFooter) globalFooter.style.display = '';
+                    if (!isColabsActive) {
+                        if (!wasOpen) {
+                            customerListContainer.classList.add('customer-focus-mode');
+                            row.classList.add('is-focused');
+                            if (globalFooter) globalFooter.style.display = 'none';
+                        } else {
+                            customerListContainer.classList.remove('customer-focus-mode');
+                            row.classList.remove('is-focused');
+                            if (globalFooter) globalFooter.style.display = '';
+                        }
                     }
-
+                    updateColabsButtonVisibility();
                     if (wasOpen) return;
 
                     // 4. Muat data SO (Level 2)

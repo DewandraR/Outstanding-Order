@@ -195,13 +195,31 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
 
                 {{-- Judul Utama --}}
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
-                    <h5 class="yz-table-title mb-0"><i class="fas fa-file-invoice me-2"></i>Outstanding PO</h5>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <h5 class="yz-table-title mb-0">
+                            <i class="fas fa-file-invoice me-2"></i>Outstanding PO
+                        </h5>
+
+                        <!-- Toolbar: Select-all + COLABS -->
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="form-check m-0">
+                                <input class="form-check-input" type="checkbox" id="check-all-customers">
+                                <label class="form-check-label" for="check-all-customers">Pilih semua customer</label>
+                            </div>
+
+                            <button class="btn btn-colabs btn-outline-secondary btn-lg" id="btn-open-selected"
+                                type="button" style="display:none">
+                                <i class="fas fa-layer-group me-1"></i>
+                                COLABS: Open To PO Item
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="yz-customer-list px-md-3 pt-3">
 
                     {{-- Customer Cards Container (LEVEL 1 BARU) --}}
-                    <div class="d-grid gap-0 mb-4">
+                    <div class="d-grid gap-0 mb-4" id="customer-list-container">
                         @forelse ($rows as $r)
                             @php
                                 $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
@@ -236,6 +254,10 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
 
                                     {{-- KIRI: Customer Name & Caret --}}
                                     <div class="d-flex align-items-center flex-grow-1 me-3">
+                                        <!-- NEW: checkbox customer -->
+                                        <input type="checkbox" class="form-check-input me-2 check-customer"
+                                            data-kunnr="{{ $r->KUNNR }}" onclick="event.stopPropagation()"
+                                            onmousedown="event.stopPropagation()">
                                         <span class="kunnr-caret me-3"><i class="fas fa-chevron-right"></i></span>
                                         <div class="customer-info">
                                             <div class="fw-bold fs-5 text-truncate">{{ $r->NAME1 }}</div>
@@ -1030,15 +1052,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                                                                                                            <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                                                                                                                title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                                                                                                                <i class="fas fa-pencil-alt"></i>
-                                                                                                                                            </button>` : ''}
+                                                                                                                                                                    <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                                                                                                                        title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                                                                                                                        <i class="fas fa-pencil-alt"></i>
+                                                                                                                                                                    </button>` : ''}
                     ${isOwner ? `
-                                                                                                                                            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                                                                                                                title="Hapus Catatan">
-                                                                                                                                                <i class="fas fa-trash"></i>
-                                                                                                                                            </button>` : ''}
+                                                                                                                                                                    <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                                                                                                                        title="Hapus Catatan">
+                                                                                                                                                                        <i class="fas fa-trash"></i>
+                                                                                                                                                                    </button>` : ''}
                 </div>
             </div>
         `;
@@ -2387,12 +2409,176 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             const modalSubTitle = document.getElementById('modal-sub-title');
             const modalContentArea = document.getElementById('modal-content-area');
 
+            /* ===================== COLABS: pilih & buka massal ===================== */
+            const btnOpenSelected = document.getElementById('btn-open-selected');
+            const checkAllCustomers = document.getElementById('check-all-customers');
+            const customerListContainer = document.getElementById('customer-list-container');
             const globalTotalsCard = document.querySelector('.yz-global-total-card');
+
+            const selectedCustomers = new Set();
+            let isColabsActive = false;
+
+            function updateColabsButtonVisibility() {
+                if (!btnOpenSelected) return;
+                const anyChecked = document.querySelector('.check-customer:checked') !== null;
+                const anyOpen = document.querySelector('.yz-customer-card.is-open') !== null;
+                const shouldShow = anyChecked && (!anyOpen || isColabsActive);
+                btnOpenSelected.style.display = shouldShow ? '' : 'none';
+            }
+
+            function setColabsButton(active) {
+                isColabsActive = active;
+                if (!btnOpenSelected) return;
+                if (active) {
+                    btnOpenSelected.classList.remove('btn-outline-secondary');
+                    btnOpenSelected.classList.add('btn-danger');
+                    btnOpenSelected.innerHTML = `<i class="fas fa-compress-alt me-1"></i>Tutup COLABS`;
+                } else {
+                    btnOpenSelected.classList.remove('btn-danger');
+                    btnOpenSelected.classList.add('btn-outline-secondary');
+                    btnOpenSelected.innerHTML = `<i class="fas fa-expand-alt me-1"></i>COLABS: Open To PO Item`;
+                }
+                updateColabsButtonVisibility();
+            }
+
+            function syncSelectAllCustomersState() {
+                if (!checkAllCustomers) return;
+                const checks = document.querySelectorAll('.check-customer');
+                if (checks.length === 0) {
+                    checkAllCustomers.checked = false;
+                    checkAllCustomers.indeterminate = false;
+                    return;
+                }
+                const checkedCount = [...checks].filter(ch => ch.checked).length;
+                checkAllCustomers.checked = checkedCount === checks.length;
+                checkAllCustomers.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+            }
+
+            // per-baris customer
+            document.body.addEventListener('change', (e) => {
+                if (!e.target.classList.contains('check-customer')) return;
+                const kunnr = e.target.dataset.kunnr;
+                if (e.target.checked) selectedCustomers.add(kunnr);
+                else selectedCustomers.delete(kunnr);
+                syncSelectAllCustomersState();
+                updateColabsButtonVisibility();
+            });
+
+            // master select-all
+            checkAllCustomers?.addEventListener('change', () => {
+                document.querySelectorAll('.check-customer').forEach(ch => {
+                    ch.checked = checkAllCustomers.checked;
+                    const k = ch.dataset.kunnr;
+                    if (checkAllCustomers.checked) selectedCustomers.add(k);
+                    else selectedCustomers.delete(k);
+                });
+                syncSelectAllCustomersState();
+                updateColabsButtonVisibility();
+            });
+
+            // buka 1 customer sampai T3 (tanpa focus-mode)
+            async function openCustomerFully(row) {
+                if (!row) return;
+                const kunnr = row.dataset.kunnr;
+                const kid = row.dataset.kid;
+                const slot = document.getElementById(kid);
+                const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                // tampilkan kartu & nest
+                row.classList.add('is-open');
+                row.querySelector('.kunnr-caret')?.classList.add('rot');
+                if (slot) slot.style.display = 'block';
+                if (globalTotalsCard) globalTotalsCard.style.display = '';
+
+                // muat T2 jika perlu
+                if (wrap && wrap.dataset.loaded !== '1') {
+                    wrap.innerHTML = `
+      <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
+      </div>`;
+                    const url = new URL("{{ route('dashboard.api.t2') }}", window.location.origin);
+                    const root = document.getElementById('yz-root');
+                    const WERKS = (root.dataset.werks || '').trim();
+                    const AUART = (root.dataset.auart || '').trim();
+                    url.searchParams.set('kunnr', kunnr);
+                    if (WERKS) url.searchParams.set('werks', WERKS);
+                    if (AUART) url.searchParams.set('auart', AUART);
+
+                    try {
+                        const res = await fetch(url);
+                        const js = await res.json();
+                        if (!res.ok || !js.ok) throw new Error(js.error || 'Gagal memuat data PO');
+                        wrap.innerHTML = renderT2(js.data, kunnr);
+                        wrap.dataset.loaded = '1';
+                    } catch (e) {
+                        wrap.innerHTML = `<div class="alert alert-danger m-3">${e.message}</div>`;
+                        return;
+                    }
+                }
+
+                // buka SEMUA SO → load T3 (tanpa mode fokus)
+                const soRows = wrap?.querySelectorAll('.js-t2row') || [];
+                for (const soRow of soRows) {
+                    await openItemsIfNeededForSORow(soRow);
+                    const tbody = soRow.closest('tbody');
+                    tbody?.classList.remove('so-focus-mode');
+                    soRow.classList.remove('is-focused');
+                }
+            }
+
+            function closeCustomerFully(row) {
+                if (!row) return;
+                const kid = row.dataset.kid;
+                const slot = document.getElementById(kid);
+                const wrap = slot?.querySelector('.yz-nest-wrap');
+                if (wrap) {
+                    wrap.querySelectorAll('.js-t2row').forEach(soRow => closeItemsForSORow(soRow));
+                    const tb = wrap.querySelector('table.yz-mini tbody');
+                    tb?.classList.remove('so-focus-mode', 'collapse-mode');
+                }
+                if (slot) slot.style.display = 'none';
+                row.classList.remove('is-open', 'is-focused');
+                row.querySelector('.kunnr-caret')?.classList.remove('rot');
+            }
+
+            // tombol COLABS
+            btnOpenSelected?.addEventListener('click', async () => {
+                // keluar dari focus-mode jika ada
+                customerListContainer?.classList.remove('customer-focus-mode');
+                document.querySelectorAll('.yz-customer-card').forEach(r => r.classList.remove(
+                    'is-focused'));
+                if (globalTotalsCard) globalTotalsCard.style.display = '';
+
+                const chosenRows = [...document.querySelectorAll('.yz-customer-card')]
+                    .filter(r => r.querySelector('.check-customer')?.checked);
+
+                if (!isColabsActive) {
+                    if (chosenRows.length === 0) {
+                        alert('Centang dulu customer di Tabel 1 yang ingin dibuka.');
+                        return;
+                    }
+                    for (const row of chosenRows) await openCustomerFully(row);
+                    setColabsButton(true);
+                } else {
+                    const targets = chosenRows.length ? chosenRows : [...document.querySelectorAll(
+                        '.yz-customer-card.is-open')];
+                    for (const row of targets) closeCustomerFully(row);
+                    setColabsButton(false);
+                }
+                updateColabsButtonVisibility();
+            });
+
+            // init awal
+            setColabsButton(false);
+            syncSelectAllCustomersState();
+            updateColabsButtonVisibility();
 
             function updateGlobalTotalsVisibility() {
                 const anyOpen = !!document.querySelector('.yz-customer-card.is-open');
-                if (!globalTotalsCard) return;
-                globalTotalsCard.style.display = anyOpen ? 'none' : '';
+                if (globalTotalsCard) {
+                    globalTotalsCard.style.display = anyOpen ? 'none' : '';
+                }
+                updateColabsButtonVisibility();
             }
             updateGlobalTotalsVisibility();
 
@@ -2474,6 +2660,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     custRow.querySelector('.kunnr-caret')?.classList.toggle('rot', !wasOpen);
                     slot.style.display = wasOpen ? 'none' : 'block';
                     updateGlobalTotalsVisibility();
+                    updateColabsButtonVisibility();
 
                     if (!wasOpen) {
                         customerListContainer.classList.add('customer-focus-mode');
