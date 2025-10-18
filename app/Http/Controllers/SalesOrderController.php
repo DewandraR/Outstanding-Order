@@ -1067,7 +1067,8 @@ class SalesOrderController extends Controller
                 't4.MAKTX',
                 DB::raw('CAST(t4.PSMNG AS DECIMAL(18,3)) AS PSMNG'),
                 DB::raw('CAST(t4.WEMNG AS DECIMAL(18,3)) AS WEMNG'),
-                DB::raw('CAST(t4.PRSN  AS DECIMAL(18,3)) AS PRSN')
+                DB::raw('CAST(t4.PRSN  AS DECIMAL(18,3)) AS PRSN'),
+                DB::raw('CAST(t4.PRSN2 AS DECIMAL(18,3)) AS PRSN2')
             )
             ->orderBy('t4.MATNR')
             ->get();

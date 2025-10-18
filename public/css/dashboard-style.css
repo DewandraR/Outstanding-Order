@@ -305,11 +305,6 @@ thead th {
 .yz-mini .js-t2row:hover td {
     background: #f8f9fa;
 }
-
-.yz-mini tbody tr:hover td {
-    background: #ccd8d8; /* Ini adalah warna abu-abu default (sangat muda) */
-}
-
 .yz-t2-vbeln {
     font-weight: 600;
     color: #15803d;

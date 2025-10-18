@@ -445,8 +445,8 @@
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
         /* =========================================================
-                                                                                             * GLOBAL ELEMENT STYLES
-                                                                                             * ======================================================= */
+                 * GLOBAL ELEMENT STYLES
+                 * ======================================================= */
 
         .remark-icon {
             cursor: pointer;
@@ -567,8 +567,8 @@
         }
 
         /* =========================================================
-                                                                                             * MACHINING MODAL STYLES (Dioptimalkan & Final)
-                                                                                             * ======================================================= */
+                 * MACHINING MODAL STYLES (Dioptimalkan & Final dengan PRSN2)
+                 * ======================================================= */
 
         /* 1. Mengurangi Lebar Modal Utama & Responsivitas */
         #machiningModal .modal-dialog {
@@ -645,6 +645,17 @@
             border-radius: 0.5rem;
         }
 
+        /* MODIFIKASI: Mengubah col-4 menjadi col-3 untuk 4 kolom metrik */
+        .machi-metrics .col-3 {
+            flex: 0 0 25%;
+            max-width: 25%;
+        }
+
+        /* BARU: Style untuk pemisah kolom (opsional) */
+        .machi-metrics .border-start {
+            border-left: 1px solid #dee2e6 !important;
+        }
+
         .machi-metrics .metric-label {
             text-align: center;
             color: #6c757d !important;
@@ -694,6 +705,9 @@
             }
 
             @media (max-width: 480px) {
+
+                .machi-metrics .col-3,
+                /* UBAH: col-4 menjadi col-3 */
                 .machi-metrics .col-4 {
                     flex: 0 0 100%;
                     max-width: 100%;
@@ -707,6 +721,11 @@
 
                 .machi-metrics .col-4:last-child {
                     margin-bottom: 0;
+                }
+
+                /* Hapus batas vertikal di mobile view */
+                .machi-metrics .border-start {
+                    border-left: none !important;
                 }
 
                 .machi-header {
@@ -1072,7 +1091,6 @@
               <th>ASSY</th>
               <th>PAINT</th>
               <th>PACKING</th>
-              <th>Net Price</th>
               <th>Remark</th>
             </tr>
           </thead>
@@ -1133,7 +1151,6 @@
                     data-order="${r.QPROP ?? ''}"
                     title="Progress Stage: Packing">${formatPercent(r.PRSP)}</span>
             </td>
-            <td>${formatCurrencyGlobal(r.NETPR, r.WAERK)}</td>
             <td class="text-center">
               <i class="fas fa-comments remark-icon"
                  title="Lihat/tambah catatan"
@@ -2754,9 +2771,19 @@
 
                     const bodyHtml = rows.map((r, i) => {
                         const prsn = Number(r.PRSN || 0);
+                        const prsn2 = Number(r.PRSN2 || 0); // <--- BARU: Ambil nilai PRSN2
                         const progressPct = Math.min(100, Math.max(0, prsn));
+                        const progressPct2 = Math.min(100, Math.max(0,
+                            prsn2)); // <--- BARU: Hitung persentase PRSN2
+
+                        // Atur kelas progress bar untuk PRSN (Progress 1)
                         const progressClass = progressPct === 100 ? 'bg-success' : (progressPct > 0 ?
                             'bg-info' : 'bg-secondary');
+
+                        // Atur kelas progress bar untuk PRSN2 (Progress 2), gunakan warna berbeda agar kontras
+                        const progressClass2 = progressPct2 === 100 ? 'bg-success' : (progressPct2 > 0 ?
+                            'bg-warning' : 'bg-secondary');
+
                         const desc = escapeHtml(r.MAKTX ?? '—');
                         const matnr = escapeHtml(r.MATNR ?? '—');
 
@@ -2766,27 +2793,52 @@
                     <div class="machi-title-group">
                         <div class="machi-matnr-display fw-bold text-primary">${matnr}</div>
                     </div>
-                    <div class="machi-status-badge badge rounded-pill ${progressPct === 100 ? 'bg-success' : 'bg-primary'}">${progressPct}% Complete</div>
                 </div>
                 <div class="machi-description mb-3">${desc}</div>
                 <div class="machi-metrics row g-2 mb-3">
-                    <div class="col-4">
+                    <div class="col-3">
                         <div class="metric-label small text-muted">Order</div>
                         <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.PSMNG, 0)}</div>
                     </div>
-                    <div class="col-4">
+                    <div class="col-3">
                         <div class="metric-label small text-muted">GR</div>
                         <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.WEMNG, 0)}</div>
                     </div>
-                    <div class="col-4">
-                        <div class="metric-label small text-muted">Progress</div>
+                    
+                    <div class="col-3"> <div class="metric-label small text-muted">Pembahanan</div>
+                        <div class="metric-value fw-bold text-end ${progressPct2 === 100 ? 'text-success' : 'text-danger'}">${progressPct2}%</div>
+                    </div>
+                    
+                    <div class="col-3 border-start"> <div class="metric-label small text-muted">Progress</div>
                         <div class="metric-value fw-bold text-end ${progressPct === 100 ? 'text-success' : 'text-primary'}">${progressPct}%</div>
                     </div>
+                    
                 </div>
-                <div class="progress machi-progress" style="height: 6px;">
-                    <div class="progress-bar ${progressClass}" role="progressbar" style="width: ${progressPct}%;" 
-                         aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100"></div>
+                
+                ${progressPct2 > 0 ? `
+                            <div class="machi-progress-wrapper mb-2">
+                                <div class="small text-muted mb-1 d-flex justify-content-between">
+                                    <span>Pembahanan</span>
+                                    <span>${progressPct2}%</span>
+                                </div>
+                                <div class="progress machi-progress" style="height: 6px;">
+                                    <div class="progress-bar ${progressClass2}" role="progressbar" style="width: ${progressPct2}%;" 
+                                        aria-valuenow="${progressPct2}" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                            </div>
+                            ` : ''}
+
+                <div class="machi-progress-wrapper">
+                    <div class="small text-muted mb-1 d-flex justify-content-between">
+                        <span>Progress</span>
+                        <span>${progressPct}%</span>
+                    </div>
+                    <div class="progress machi-progress" style="height: 6px;">
+                        <div class="progress-bar ${progressClass}" role="progressbar" style="width: ${progressPct}%;" 
+                            aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
                 </div>
+                
             </div>`;
                     }).join('');
 
