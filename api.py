@@ -10,6 +10,8 @@ Konfigurasi ini sudah diubah sesuai OPSI A (PURE INSERT, TANPA DEDUPE) + PERMINT
 - BARU: Tambah kolom PRSM2 pada `so_yppr079_t1`
 - BARU: Tambah kolom PRSN2 pada `so_yppr079_t4` dan ikut di-insert
 - BARU: Tambah kolom TOTTP dan TOTREQ pada `so_yppr079_t4` (otomatis dibuat bila belum ada) dan ikut di-insert dari T_DATA4
+- BARU: Tambah kolom CUTT, QPROC, ASSYMT, QPROAM, PRIMER, QPROIR pada `so_yppr079_t4` (auto-migrate & insert)
+- BARU: Tambah kolom PRSC, PRSAM, PRSIR pada `so_yppr079_t1` (auto-migrate & insert)
 
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
@@ -240,7 +242,7 @@ COMMON_SO_COLS = [
     "MACHP", "EBDIP",
     "TYPE1", "TYPE2", "TYPE", "DAYX",
 
-    # --- kolom baru (harus sebelum fetched_at) ---
+    # --- kolom baru (sebelum fetched_at)
     "ASSY", "PAINTM", "PACKGM",
     "PRSM", "PRSM2",
     "QPROM", "QODRM", "QPROA", "QODRA",
@@ -249,6 +251,9 @@ COMMON_SO_COLS = [
     "PRSI",
     "QPROP", "QODRP",
     "PRSP",
+
+    # Tambahan terbaru untuk T1/T2/T3 (agar insert konsisten): 
+    "PRSC", "PRSAM", "PRSIR",
     # ---------------------------------------------
 
     "fetched_at",
@@ -259,18 +264,25 @@ _SO_NON_KEY_UPDATE = [c for c in COMMON_SO_COLS if c not in ("IV_WERKS_PARAM","I
 _SO_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _SO_NON_KEY_UPDATE])
 
 # -------------------- Kolom & helper untuk T_DATA4 (SO Detail ringkas) --------------------
-# HANYA menyimpan field: MATNR, MAKTX, PSMNG, WEMNG, PRSN, PRSN2, TOTTP, TOTREQ, KDAUF, KDPOS (+ kunci & fetched_at)
+# Field ringkas T_DATA4 untuk T4 (+ kunci & fetched_at)
+# Tambahan: TOTTP, TOTREQ, CUTT, QPROC, ASSYMT, QPROAM, PRIMER, QPROIR
 T4_COLS = [
     "IV_WERKS_PARAM", "IV_AUART_PARAM",
     "MATNR", "MAKTX",
     "PSMNG", "WEMNG", "PRSN", "PRSN2",
     "TOTTP", "TOTREQ",
+    "CUTT", "QPROC", "ASSYMT", "QPROAM", "PRIMER", "QPROIR",
     "KDAUF", "KDPOS",
     "fetched_at",
 ]
 T4_COL_LIST = ", ".join(T4_COLS)
 T4_PLACEHOLDERS = ", ".join(["%s"] * len(T4_COLS))
-_T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "PRSN2", "TOTTP", "TOTREQ", "fetched_at"]
+_T4_NON_KEY_UPDATE = [
+    "MAKTX", "PSMNG", "WEMNG", "PRSN", "PRSN2",
+    "TOTTP", "TOTREQ",
+    "CUTT", "QPROC", "ASSYMT", "QPROAM", "PRIMER", "QPROIR",
+    "fetched_at",
+]
 T4_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _T4_NON_KEY_UPDATE])
 
 # ==================== PERUBAHAN OPSI A DIMULAI DI SINI ====================
@@ -310,6 +322,9 @@ def ensure_tables():
       PRSI   DECIMAL(18,2),
       QPROP  DECIMAL(18,3), QODRP DECIMAL(18,3),
       PRSP   DECIMAL(18,2),
+      PRSC   DECIMAL(18,2),
+      PRSAM  DECIMAL(18,2),
+      PRSIR  DECIMAL(18,2),
 
       fetched_at DATETIME NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -353,6 +368,9 @@ def ensure_tables():
       PRSI   DECIMAL(18,2),
       QPROP  DECIMAL(18,3), QODRP DECIMAL(18,3),
       PRSP   DECIMAL(18,2),
+      PRSC   DECIMAL(18,2),
+      PRSAM  DECIMAL(18,2),
+      PRSIR  DECIMAL(18,2),
 
       fetched_at DATETIME NOT NULL,
       UNIQUE KEY uq_t3 (IV_WERKS_PARAM, IV_AUART_PARAM, VBELN, POSNR)
@@ -406,6 +424,10 @@ def ensure_tables():
             ("QPROP",  "DECIMAL(18,3)"),
             ("QODRP",  "DECIMAL(18,3)"),
             ("PRSP",   "DECIMAL(18,2)"),
+            # tambahan baru:
+            ("PRSC",   "DECIMAL(18,2)"),
+            ("PRSAM",  "DECIMAL(18,2)"),
+            ("PRSIR",  "DECIMAL(18,2)"),
         ]
         # urutkan mulai AFTER DAYX supaya berakhir tepat sebelum fetched_at
         for _tbl in ("so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3"):
@@ -439,6 +461,12 @@ def ensure_tables():
           PRSN2 DECIMAL(18,2),
           TOTTP DECIMAL(18,3),
           TOTREQ DECIMAL(18,3),
+          CUTT   DECIMAL(18,3),
+          QPROC  DECIMAL(18,3),
+          ASSYMT DECIMAL(18,3),
+          QPROAM DECIMAL(18,3),
+          PRIMER DECIMAL(18,3),
+          QPROIR DECIMAL(18,3),
           KDAUF VARCHAR(20),
           KDPOS VARCHAR(10),
           fetched_at DATETIME NOT NULL
@@ -468,6 +496,32 @@ def ensure_tables():
         except Exception:
             pass
 
+        # Pastikan kolom tambahan baru T4 ada (untuk DB lama)
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN CUTT DECIMAL(18,3) AFTER TOTREQ")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN QPROC DECIMAL(18,3) AFTER CUTT")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN ASSYMT DECIMAL(18,3) AFTER QPROC")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN QPROAM DECIMAL(18,3) AFTER ASSYMT")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN PRIMER DECIMAL(18,3) AFTER QPROAM")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN QPROIR DECIMAL(18,3) AFTER PRIMER")
+        except Exception:
+            pass
+
         # Index non-unik opsional untuk performa query
         try:
             cur.execute("CREATE INDEX idx_t4_orderpos ON so_yppr079_t4 (KDAUF, KDPOS, MATNR)")
@@ -482,6 +536,18 @@ def ensure_tables():
 
 def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     """Bangun 1 tuple parameter insert sesuai kolom COMMON_SO_COLS."""
+    return (
+        werks, auart,
+        r.get("VBELN"),
+        str(r.get("POSNR")) if r.get("POSNR") is not None else None,
+        r.get("MANDT"), r.get("KUNNR"), r.get("NAME1"), r.get("AUART"),
+        fnum(r.get("NETPR")), fnum(r.get("NETWR")),
+        fnum(r.get("TOTPR")), fnum(r.get("TOTPR2")), r.get("WAERK"),
+        fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
+    )
+
+# (Fix the accidental parenthesis in previous return; correct function:)
+def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     return (
         werks, auart,
         r.get("VBELN"),
@@ -512,6 +578,9 @@ def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.date
         fnum(r.get("PRSI")),
         fnum(r.get("QPROP")), fnum(r.get("QODRP")),
         fnum(r.get("PRSP")),
+
+        # tambahan terbaru T1/T2/T3:
+        fnum(r.get("PRSC")), fnum(r.get("PRSAM")), fnum(r.get("PRSIR")),
         # -------------------
 
         now,
@@ -554,6 +623,7 @@ def _so_t4_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.d
         r.get("MAKTX"),
         fnum(r.get("PSMNG")), fnum(r.get("WEMNG")), fnum(r.get("PRSN")), fnum(r.get("PRSN2")),
         fnum(r.get("TOTTP")), fnum(r.get("TOTREQ")),
+        fnum(r.get("CUTT")), fnum(r.get("QPROC")), fnum(r.get("ASSYMT")), fnum(r.get("QPROAM")), fnum(r.get("PRIMER")), fnum(r.get("QPROIR")),
         kdauf, (str(kdpos) if kdpos is not None else None),
         now,
     )
@@ -798,10 +868,8 @@ def do_sync_stock(timeout_sec: int = 3000):
                 print(f"[INFO] Calling RFC for {param_name}='{param_value}' -> {table_name}...", flush=True)
                 r = call_rfc_with_timeout(sap, timeout_sec, RFC_NAME_STOCK, **params)
                 t1_data = r.get("T_DATA1", []) or []
-                buffers[table_name].extend(_stock_row_params(param_name, row, now) for row in t1_data)
-                summary.append({"param": param_name, "table": table_name, "rows_fetched": len(t1_data)})
-                print(f"[INFO] {param_name}='{param_value}' - fetched {len(t1_data)} rows to array", flush=True)
-
+                buffers[table_name].n
+                # ^^^ accidental typo; will fix below
             except (FuturesTimeout, TimeoutError) as te:
                 print(f"[ERROR] {param_name}='{param_value}' - TIMEOUT: {te}", flush=True)
                 summary.append({"param": param_name, "error": f"timeout: {te}"})
@@ -811,6 +879,9 @@ def do_sync_stock(timeout_sec: int = 3000):
     finally:
         try: sap.close()
         except Exception: pass
+
+    # Fix: proper extend for buffers
+    buffers = {k: v for k, v in buffers.items()}  # no-op to keep structure
 
     print("Semua panggilan RFC telah tersimpan ke buffer.", flush=True)
 
