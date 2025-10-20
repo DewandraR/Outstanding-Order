@@ -509,6 +509,26 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.IV_AUART_PARAM) as AUART_KEY'),
                 't1.VBELN as VBELN_KEY',
 
+                DB::raw('MAX(t1.PRSC)  as PRSC'),
+                DB::raw('MAX(t1.PRSAM) as PRSAM'),
+                DB::raw('MAX(t1.PRSIR) as PRSIR'),
+
+                // --- GR & ORDER khusus METAL (CUTING/ASSY/PRIMER/PAINT) ---
+                DB::raw('MAX(t1.CUTT)    as CUTT'),
+                DB::raw('MAX(t1.QPROC)   as QPROC'),
+
+                DB::raw('MAX(t1.ASSYMT)  as ASSYMT'),
+                DB::raw('MAX(t1.QPROAM)  as QPROAM'),
+
+                DB::raw('MAX(t1.PRIMER)  as PRIMER'),
+                DB::raw('MAX(t1.QPROIR)  as QPROIR'),
+
+                DB::raw('MAX(t1.PAINTMT) as PAINTMT'),
+                DB::raw('MAX(t1.QPROIMT) as QPROIMT'),
+
+                // --- Persentase khusus METAL ---
+                DB::raw('MAX(t1.PRSIMT)  as PRSIMT'),
+
                 // remarks
                 DB::raw('COALESCE(MAX(ragg.remark_count), 0) as remark_count'),
                 DB::raw('MAX(ragg.last_remark_at) as last_remark_at'),

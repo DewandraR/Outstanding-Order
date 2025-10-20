@@ -367,3 +367,72 @@ a.js-open-so:hover {
 .text-info-emphasis {
     color: #0aa2c0;
 }
+
+.yz-material-toggle-container {
+    position: relative;
+    display: inline-flex;
+    padding: 4px; /* Padding di sekitar tombol */
+    background-color: #f0f4f8; /* Warna latar belakang kontainer */
+    border-radius: 20px; /* Sudut membulat */
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(255, 255, 255, 0.5); /* Efek inset halus */
+    transition: background-color 0.3s ease;
+}
+
+.yz-toggle-btn {
+    border: none;
+    padding: 8px 15px;
+    border-radius: 16px; /* Sudut membulat */
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    z-index: 10; /* Pastikan tombol di atas slider */
+    position: relative;
+    background-color: transparent;
+    color: #4a5568; /* Warna teks default abu-abu tua */
+    transition: color 0.3s ease, background-color 0.3s ease;
+    min-width: 100px; /* Lebar minimum agar terlihat rapi */
+    text-align: center;
+}
+
+/* Slider yang bergerak */
+.yz-toggle-slider {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    height: calc(100% - 8px);
+    background-color: #ffffff; /* Warna slider, putih bersih */
+    border-radius: 16px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15); /* Bayangan dalam untuk efek mengambang */
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 5;
+}
+
+/* Kustomisasi untuk mode WOOD */
+.yz-toggle-btn.yz-wood.active {
+    color: #157347; /* Hijau tua saat aktif */
+}
+.yz-toggle-btn.yz-wood i {
+    color: #198754; /* Icon hijau */
+}
+
+/* Kustomisasi untuk mode METAL */
+.yz-toggle-btn.yz-metal.active {
+    color: #495057; /* Abu-abu tua saat aktif */
+}
+.yz-toggle-btn.yz-metal i {
+    color: #6c757d; /* Icon abu-abu */
+}
+
+/* Efek Hover (bahkan jika aktif) */
+.yz-toggle-btn:hover {
+    color: #3182ce; /* Warna biru saat hover */
+}
+.yz-toggle-btn.active:hover {
+    /* Biarkan warna aktif tetap saat di hover */
+    color: inherit;
+}
+
+/* Untuk transisi halus dari tombol yang tidak aktif */
+.yz-toggle-btn:not(.active):hover {
+    color: #3182ce;
+}
