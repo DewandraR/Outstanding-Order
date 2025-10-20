@@ -438,6 +438,30 @@
             </div>
         </div>
     </div>
+    <div class="modal fade" id="pembahananModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Pembahanan Lines
+                        <small class="text-muted d-block">
+                            SO <span id="pemb-so"></span> • Item <span id="pemb-pos"></span><br>
+                            <span id="pemb-desc" style="max-width:60vw;"></span>
+                        </small>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="pembahananModalBody" class="p-3 text-muted d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2"></div> Memuat data...
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 @endsection
 
@@ -445,8 +469,8 @@
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
         /* =========================================================
-                         * GLOBAL ELEMENT STYLES
-                         * ======================================================= */
+                                                                     * GLOBAL ELEMENT STYLES
+                                                                     * ======================================================= */
 
         .remark-icon {
             cursor: pointer;
@@ -566,193 +590,254 @@
             color: #fff;
         }
 
-        /* =========================================================
-                         * MACHINING MODAL STYLES (Dioptimalkan & Final dengan PRSN2)
-                         * ======================================================= */
-
-        /* 1. Mengurangi Lebar Modal Utama & Responsivitas */
-        #machiningModal .modal-dialog {
+        /* Dialog size & rounded header */
+        #machiningModal .modal-dialog,
+        #pembahananModal .modal-dialog {
             max-width: 550px;
-            /* Lebar maksimum yang lebih ringkas */
             margin: 1.75rem auto;
         }
 
-        #machiningModal .modal-content {
+        #machiningModal .modal-content,
+        #pembahananModal .modal-content {
             border-radius: .75rem;
         }
 
-        #machiningModal .modal-header {
+        #machiningModal .modal-header,
+        #pembahananModal .modal-header {
             background: linear-gradient(90deg, #f8f9fa, #fff);
-            border-bottom: 1px solid #dee2e6;
+            border-bottom: 1px solid var(--yz-border);
             border-top-left-radius: .75rem;
             border-top-right-radius: .75rem;
         }
 
-        #machiningModal .modal-body {
+        #machiningModal .modal-body,
+        #pembahananModal .modal-body {
             padding: 1rem 1.25rem;
-            /* Padding horizontal yang ringkas */
         }
 
+        /* Shared cards & progress (class prefix 'machi-' dipakai di kedua modal) */
         .machi-container {
-            padding: 0;
-            /* Hapus padding container karena sudah di handle modal-body */
+            padding: 0
         }
 
-        /* Mengatur tampilan MATNR */
         .machi-matnr-display {
             font-size: 1.25rem;
-            /* Membuat MATNR besar */
-            color: #0d6efd;
-            font-weight: 700;
+            color: var(--yz-primary);
+            font-weight: 700
         }
 
         .machi-number-small {
-            font-size: 0.8rem;
-            /* Membuat urutan item kecil di bawah MATNR */
+            font-size: .8rem
         }
 
-        /* Card untuk setiap baris Machining */
         .machi-line-card {
             background: #fff;
             border: 1px solid #e0e0e0;
-            border-radius: 0.75rem;
+            border-radius: .75rem;
             padding: 1.25rem;
-            transition: all 0.2s ease-in-out;
+            transition: all .2s ease-in-out
         }
 
         .machi-line-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .1) !important;
             transform: translateY(-2px);
-            border-color: #0d6efd;
+            border-color: var(--yz-primary)
         }
 
         .machi-header {
             border-bottom: 1px dashed #f0f0f0;
-            padding-bottom: 0.75rem;
-            margin-bottom: 0.75rem !important;
+            padding-bottom: .75rem;
+            margin-bottom: .75rem !important
         }
 
         .machi-description {
             font-size: 1rem;
             color: #343a40;
-            font-weight: 500;
+            font-weight: 500
         }
 
         .machi-metrics {
-            padding: 0 0.5rem;
+            padding: 0 .5rem;
             border: 1px solid #f8f9fa;
             background: #f8f9fa;
-            border-radius: 0.5rem;
+            border-radius: .5rem
         }
 
-        /* MODIFIKASI: Mengubah col-4 menjadi col-3 untuk 4 kolom metrik */
         .machi-metrics .col-3 {
             flex: 0 0 25%;
-            max-width: 25%;
+            max-width: 25%
         }
 
-        /* BARU: Style untuk pemisah kolom (opsional) */
         .machi-metrics .border-start {
-            border-left: 1px solid #dee2e6 !important;
+            border-left: 1px solid var(--yz-border) !important
         }
 
         .machi-metrics .metric-label {
             text-align: center;
             color: #6c757d !important;
-            font-size: 0.75rem !important;
-            white-space: nowrap;
+            font-size: .75rem !important;
+            white-space: nowrap
         }
 
         .machi-metrics .metric-value {
             font-size: 1.1rem;
-            text-align: center !important;
+            text-align: center !important
         }
 
         .machi-progress {
             border-radius: 4px;
-            background-color: #e9ecef;
+            background: #e9ecef
         }
 
         .machi-progress .progress-bar {
             border-radius: 4px;
-            transition: width 0.6s ease;
+            transition: width .6s ease
         }
 
-        /* Total Card di bawah */
         .machi-total-card {
             background: #e9f5ff;
             border: 1px solid #cce5ff;
-            border-radius: 0.75rem;
-            padding: 1rem;
+            border-radius: .75rem;
+            padding: 1rem
         }
 
         .machi-total-card .text-primary {
             color: #0d6efd !important;
-            font-size: 1.25rem;
+            font-size: 1.25rem
         }
 
         .machi-total-card .text-success {
             color: #198754 !important;
-            font-size: 1.25rem;
+            font-size: 1.25rem
         }
 
-        /* 2. Media Query untuk Tampilan Ponsel (Max-width 480px) */
+        /* =========================================================
+             * OVERDUE/ON-TRACK COLORS INSIDE MACHINING & PEMBAHANAN
+             * ======================================================= */
+        /* (progress color already handled inline by classes) */
+
+        /* =========================================================
+             * RESPONSIVE
+             * ======================================================= */
+
+        @media (max-width: 992px) {
+
+            .yz-customer-card #metric-columns>.metric-box,
+            #footer-metric-columns>div {
+                margin-left: 1rem !important;
+                margin-right: 1rem !important
+            }
+        }
+
+        @media (max-width: 768px) {
+            .yz-customer-card .d-flex.align-items-center.justify-content-between {
+                gap: .75rem
+            }
+
+            .yz-customer-card #metric-columns {
+                flex-wrap: wrap;
+                justify-content: flex-start
+            }
+
+            .yz-customer-card #metric-columns .metric-box {
+                min-width: 140px;
+                margin: .25rem 1rem !important
+            }
+        }
+
         @media (max-width: 576px) {
-            #machiningModal .modal-dialog {
+
+            #machiningModal .modal-dialog,
+            #pembahananModal .modal-dialog {
                 max-width: 95%;
-                /* Tetap 95% di mobile */
-                margin: 0.5rem auto;
+                margin: .5rem auto
             }
 
-            @media (max-width: 480px) {
-
-                .machi-metrics .col-3,
-                /* UBAH: col-4 menjadi col-3 */
-                .machi-metrics .col-4 {
-                    flex: 0 0 100%;
-                    max-width: 100%;
-                    margin-bottom: 0.75rem;
-                }
-
-                .machi-metrics .metric-label,
-                .machi-metrics .metric-value {
-                    text-align: left !important;
-                }
-
-                .machi-metrics .col-4:last-child {
-                    margin-bottom: 0;
-                }
-
-                /* Hapus batas vertikal di mobile view */
-                .machi-metrics .border-start {
-                    border-left: none !important;
-                }
-
-                .machi-header {
-                    flex-direction: column;
-                    align-items: flex-start !important;
-                }
-
-                .machi-status-badge {
-                    margin-top: 0.5rem;
-                }
-
-                .machi-total-card {
-                    flex-direction: column;
-                    align-items: flex-start !important;
-                }
-
-                .machi-total-card .d-flex.gap-4 {
-                    flex-direction: column;
-                    width: 100%;
-                    margin-top: 0.75rem;
-                }
-
-                .machi-total-card .d-flex.gap-4>div {
-                    text-align: left !important;
-                    width: 100%;
-                }
+            .yz-customer-card {
+                margin-left: 0
             }
+
+            .yz-nest-card {
+                margin: 0 0 1rem 0;
+                border-radius: .6rem
+            }
+
+            .machi-metrics .col-3,
+            .machi-metrics .col-4 {
+                flex: 0 0 100%;
+                max-width: 100%;
+                margin-bottom: .75rem
+            }
+
+            .machi-metrics .metric-label,
+            .machi-metrics .metric-value {
+                text-align: left !important
+            }
+
+            .machi-metrics .col-4:last-child {
+                margin-bottom: 0
+            }
+
+            .machi-metrics .border-start {
+                border-left: none !important
+            }
+
+            .machi-header {
+                flex-direction: column;
+                align-items: flex-start !important
+            }
+
+            .machi-status-badge {
+                margin-top: .5rem
+            }
+
+            .machi-total-card {
+                flex-direction: column;
+                align-items: flex-start !important
+            }
+
+            .machi-total-card .d-flex.gap-4 {
+                flex-direction: column;
+                width: 100%;
+                margin-top: .75rem
+            }
+
+            .machi-total-card .d-flex.gap-4>div {
+                text-align: left !important;
+                width: 100%
+            }
+        }
+
+        /* =========================================================
+             * MISC UTILITIES
+             * ======================================================= */
+
+        /* disable text underline on links used as JS triggers */
+        a.js-open-so {
+            text-decoration: none
+        }
+
+        a.js-open-so:hover {
+            text-decoration: underline
+        }
+
+        /* subtle shadows for cards */
+        .yz-card {
+            border: 1px solid var(--yz-border);
+            border-radius: .8rem
+        }
+
+        .yz-card.shadow-sm {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .04) !important
+        }
+
+        /* small helpers */
+        .text-primary-emphasis {
+            color: #0b5ed7
+        }
+
+        .text-info-emphasis {
+            color: #0aa2c0
         }
     </style>
 @endpush
@@ -779,6 +864,7 @@
             const apiDeleteItemRemarkTpl = @json(route('so.api.item_remarks.delete', ['id' => '___ID___']));
             const apiUpdateItemRemarkTpl = @json(route('so.api.item_remarks.update', ['id' => '___ID___']));
             const apiMachiningLines = "{{ route('so.api.machining_lines') }}"; // <-- PENTING
+            const apiPembahananLines = "{{ route('so.api.pembahanan_lines') }}";
             const csrfToken = "{{ csrf_token() }}";
 
             /* =========================================================
@@ -927,7 +1013,8 @@
 
                     el.classList.add('popover-cursor');
                     // Tambah affordance "klik" khusus Machining
-                    if ((stage || '').toLowerCase() === 'machining') {
+                    const st = (stage || '').toLowerCase();
+                    if (st === 'machining' || st === 'pembahanan') {
                         el.style.cursor = 'pointer';
                         el.style.textDecoration = 'underline';
                     }
@@ -1087,7 +1174,7 @@
                 <th>Qty SO</th>
                 <th>Outs. SO</th>
                 <th>Stock Packing</th>
-                <th>PRSM2</th>        <!-- ⬅️ BARU -->
+                <th>Pembahanan</th>
                 <th>MACHI</th>
                 <th>ASSY</th>
                 <th>PAINT</th>
@@ -1117,7 +1204,13 @@
             <td>${formatNumberGlobal(r.PACKG, 0)}</td>
             <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
             <td>
-            <span class="yz-machi-pct text-decoration-none">
+            <span class="yz-machi-pct"
+                    data-bs-toggle="popover"
+                    data-bs-placement="top"
+                    data-stage="Pembahanan"
+                    data-gr="${r.TOTTP ?? ''}"
+                    data-order="${r.TOTREQ ?? ''}"
+                    title="Progress Stage: Pembahanan">
                 ${formatMachiPercent(r.PRSM2)}
             </span>
             </td>
@@ -2762,10 +2855,10 @@
                 function renderMachiningModal(rows) {
                     if (!rows || rows.length === 0) {
                         return `<div class="text-center text-muted p-5 bg-light rounded-3">
-            <i class="fas fa-tools fa-3x mb-3 text-secondary"></i>
-            <h5 class="fw-bold">Tidak Ada Langkah Machining</h5>
-            <p class="mb-0">Data langkah-langkah Machining Lines tidak ditemukan untuk item ini.</p>
-        </div>`;
+      <i class="fas fa-tools fa-3x mb-3 text-secondary"></i>
+      <h5 class="fw-bold">Tidak Ada Langkah Machining</h5>
+      <p class="mb-0">Data langkah-langkah Machining Lines tidak ditemukan untuk item ini.</p>
+    </div>`;
                     }
 
                     let tPS = 0,
@@ -2775,98 +2868,54 @@
                         tWE += Number(r.WEMNG || 0);
                     });
 
-                    const bodyHtml = rows.map((r, i) => {
+                    const bodyHtml = rows.map(r => {
                         const prsn = Number(r.PRSN || 0);
-                        const prsn2 = Number(r.PRSN2 || 0); // <--- BARU: Ambil nilai PRSN2
                         const progressPct = Math.min(100, Math.max(0, prsn));
-                        const progressPct2 = Math.min(100, Math.max(0,
-                            prsn2)); // <--- BARU: Hitung persentase PRSN2
-
-                        // Atur kelas progress bar untuk PRSN (Progress 1)
                         const progressClass = progressPct === 100 ? 'bg-success' : (progressPct > 0 ?
                             'bg-info' : 'bg-secondary');
-
-                        // Atur kelas progress bar untuk PRSN2 (Progress 2), gunakan warna berbeda agar kontras
-                        const progressClass2 = progressPct2 === 100 ? 'bg-success' : (progressPct2 > 0 ?
-                            'bg-warning' : 'bg-secondary');
-
                         const desc = escapeHtml(r.MAKTX ?? '—');
                         const matnr = escapeHtml(r.MATNR ?? '—');
 
                         return `
-            <div class="machi-line-card shadow-sm mb-3">
-                <div class="machi-header d-flex justify-content-between align-items-center mb-2">
-                    <div class="machi-title-group">
-                        <div class="machi-matnr-display fw-bold text-primary">${matnr}</div>
-                    </div>
-                </div>
-                <div class="machi-description mb-3">${desc}</div>
-                <div class="machi-metrics row g-2 mb-3">
-                    <div class="col-3">
-                        <div class="metric-label small text-muted">Order</div>
-                        <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.PSMNG, 0)}</div>
-                    </div>
-                    <div class="col-3">
-                        <div class="metric-label small text-muted">GR</div>
-                        <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.WEMNG, 0)}</div>
-                    </div>
-                    
-                    <div class="col-3"> <div class="metric-label small text-muted">Pembahanan</div>
-                        <div class="metric-value fw-bold text-end ${progressPct2 === 100 ? 'text-success' : 'text-danger'}">${progressPct2}%</div>
-                    </div>
-                    
-                    <div class="col-3 border-start"> <div class="metric-label small text-muted">Progress</div>
-                        <div class="metric-value fw-bold text-end ${progressPct === 100 ? 'text-success' : 'text-primary'}">${progressPct}%</div>
-                    </div>
-                    
-                </div>
-                
-                ${progressPct2 > 0 ? `
-                                    <div class="machi-progress-wrapper mb-2">
-                                        <div class="small text-muted mb-1 d-flex justify-content-between">
-                                            <span>Pembahanan</span>
-                                            <span>${progressPct2}%</span>
-                                        </div>
-                                        <div class="progress machi-progress" style="height: 6px;">
-                                            <div class="progress-bar ${progressClass2}" role="progressbar" style="width: ${progressPct2}%;" 
-                                                aria-valuenow="${progressPct2}" aria-valuemin="0" aria-valuemax="100"></div>
-                                        </div>
-                                    </div>
-                                    ` : ''}
+      <div class="machi-line-card shadow-sm mb-3">
+        <div class="machi-header d-flex justify-content-between align-items-center mb-2">
+          <div class="machi-title-group"><div class="machi-matnr-display fw-bold text-primary">${matnr}</div></div>
+        </div>
+        <div class="machi-description mb-3">${desc}</div>
 
-                <div class="machi-progress-wrapper">
-                    <div class="small text-muted mb-1 d-flex justify-content-between">
-                        <span>Progress</span>
-                        <span>${progressPct}%</span>
-                    </div>
-                    <div class="progress machi-progress" style="height: 6px;">
-                        <div class="progress-bar ${progressClass}" role="progressbar" style="width: ${progressPct}%;" 
-                            aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
-                </div>
-                
-            </div>`;
+        <div class="machi-metrics row g-2 mb-3">
+          <div class="col-3"><div class="metric-label small text-muted">Order</div>
+            <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.PSMNG, 0)}</div></div>
+          <div class="col-3"><div class="metric-label small text-muted">GR</div>
+            <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.WEMNG, 0)}</div></div>
+          <div class="col-3 border-start"><div class="metric-label small text-muted">Progress</div>
+            <div class="metric-value fw-bold text-end ${progressPct === 100 ? 'text-success' : 'text-primary'}">${progressPct}%</div></div>
+        </div>
+
+        <div class="machi-progress-wrapper">
+          <div class="small text-muted mb-1 d-flex justify-content-between">
+            <span>Progress</span><span>${progressPct}%</span>
+          </div>
+          <div class="progress machi-progress" style="height: 6px;">
+            <div class="progress-bar ${progressClass}" role="progressbar" style="width: ${progressPct}%;" aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+      </div>`;
                     }).join('');
 
                     return `
-        <div class="machi-container">
-            ${bodyHtml}
-            <div class="machi-total-card p-3 mt-4 border-top">
-                <div class="d-flex justify-content-between align-items-center fw-bold">
-                    <div class="fs-5 text-dark">TOTAL KUANTITAS</div>
-                    <div class="d-flex gap-4">
-                        <div class="text-end">
-                            <div class="small text-muted">Total Order</div>
-                            <div class="text-primary">${formatNumberGlobal(tPS, 0)}</div>
-                        </div>
-                        <div class="text-end">
-                            <div class="small text-muted">Total GR</div>
-                            <div class="text-success">${formatNumberGlobal(tWE, 0)}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
+    <div class="machi-container">
+      ${bodyHtml}
+      <div class="machi-total-card p-3 mt-4 border-top">
+        <div class="d-flex justify-content-between align-items-center fw-bold">
+          <div class="fs-5 text-dark">TOTAL KUANTITAS</div>
+          <div class="d-flex gap-4">
+            <div class="text-end"><div class="small text-muted">Total Order</div><div class="text-primary">${formatNumberGlobal(tPS, 0)}</div></div>
+            <div class="text-end"><div class="small text-muted">Total GR</div><div class="text-success">${formatNumberGlobal(tWE, 0)}</div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
                 }
 
                 async function openMachiningModal(fromRowEl) {
@@ -2920,15 +2969,146 @@
                     }
                 }
 
-                // Klik pada persen MACHI -> buka modal
+                const pembahananModalEl = document.getElementById('pembahananModal');
+                let pembahananModal = null;
+                let pembSOEl = null,
+                    pembPOSEl = null,
+                    pembBodyEl = null,
+                    pembDescEl = null;
+
+                function ensurePembahananModal() {
+                    if (!pembahananModalEl) return false;
+                    if (pembahananModalEl && pembahananModalEl.parentElement !== document.body) {
+                        document.body.appendChild(pembahananModalEl);
+                    }
+                    pembahananModal = bootstrap.Modal.getInstance(pembahananModalEl) || new bootstrap.Modal(
+                        pembahananModalEl);
+                    pembSOEl = document.getElementById('pemb-so');
+                    pembPOSEl = document.getElementById('pemb-pos');
+                    pembBodyEl = document.getElementById('pembahananModalBody');
+                    pembDescEl = document.getElementById('pemb-desc');
+                    return true;
+                }
+
+                function renderPembahananModal(rows) {
+                    if (!rows || rows.length === 0) {
+                        return `<div class="text-center text-muted p-5 bg-light rounded-3">
+      <i class="fas fa-tools fa-3x mb-3 text-secondary"></i>
+      <h5 class="fw-bold">Tidak Ada Langkah Pembahanan</h5>
+      <p class="mb-0">Data langkah-langkah Pembahanan tidak ditemukan untuk item ini.</p>
+    </div>`;
+                    }
+
+                    let tOrder = 0,
+                        tGr = 0;
+                    rows.forEach(r => {
+                        tOrder += Number(r.TOTREQ || 0);
+                        tGr += Number(r.TOTTP || 0);
+                    });
+
+                    const bodyHtml = rows.map(r => {
+                        const prsn2 = Number(r.PRSN2 || 0);
+                        const progressPct = Math.min(100, Math.max(0, prsn2));
+                        const progressClass = progressPct === 100 ? 'bg-success' : (progressPct > 0 ?
+                            'bg-warning' : 'bg-secondary');
+                        const desc = escapeHtml(r.MAKTX ?? '—');
+                        const matnr = escapeHtml(r.MATNR ?? '—');
+
+                        return `
+      <div class="machi-line-card shadow-sm mb-3">
+        <div class="machi-header d-flex justify-content-between align-items-center mb-2">
+          <div class="machi-title-group"><div class="machi-matnr-display fw-bold text-primary">${matnr}</div></div>
+        </div>
+        <div class="machi-description mb-3">${desc}</div>
+
+        <div class="machi-metrics row g-2 mb-3">
+          <div class="col-3"><div class="metric-label small text-muted">Order</div>
+            <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.TOTREQ, 0)}</div></div>
+          <div class="col-3"><div class="metric-label small text-muted">GR</div>
+            <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.TOTTP, 0)}</div></div>
+          <div class="col-3 border-start"><div class="metric-label small text-muted">Progress</div>
+             <div class="metric-value fw-bold text-end ${progressPct === 100 ? 'text-success' : 'text-primary'}">${progressPct}%</div></div>
+        </div>
+
+        <div class="machi-progress-wrapper">
+          <div class="small text-muted mb-1 d-flex justify-content-between">
+            <span>Progress</span><span>${progressPct}%</span>
+          </div>
+          <div class="progress machi-progress" style="height: 6px;">
+            <div class="progress-bar ${progressClass}" role="progressbar" style="width: ${progressPct}%;" aria-valuenow="${progressPct}" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+      </div>`;
+                    }).join('');
+
+                    return `
+    <div class="machi-container">
+      ${bodyHtml}
+      <div class="machi-total-card p-3 mt-4 border-top">
+        <div class="d-flex justify-content-between align-items-center fw-bold">
+          <div class="fs-5 text-dark">TOTAL KUANTITAS</div>
+          <div class="d-flex gap-4">
+            <div class="text-end"><div class="small text-muted">Total Order</div><div class="text-primary">${formatNumberGlobal(tOrder, 0)}</div></div>
+            <div class="text-end"><div class="small text-muted">Total GR</div><div class="text-success">${formatNumberGlobal(tGr, 0)}</div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+                }
+
+                async function openPembahananModal(fromRowEl) {
+                    if (!ensurePembahananModal() || !fromRowEl) return;
+
+                    const werks = fromRowEl.dataset.werks || '';
+                    const auart = fromRowEl.dataset.auart || '';
+                    const vbeln = fromRowEl.dataset.vbeln || '';
+                    const posnr = fromRowEl.dataset.posnr || '';
+                    const posnrKey = fromRowEl.dataset.posnrKey || '';
+                    const descFG = fromRowEl.dataset.maktx || '';
+
+                    if (pembSOEl) pembSOEl.textContent = vbeln;
+                    if (pembPOSEl) pembPOSEl.textContent = posnr;
+                    if (pembDescEl) pembDescEl.textContent = descFG;
+                    if (pembBodyEl) {
+                        pembBodyEl.innerHTML = `<div class="p-3 text-muted d-flex align-items-center">
+      <div class="spinner-border spinner-border-sm me-2"></div> Memuat data...</div>`;
+                    }
+
+                    pembahananModal.show();
+
+                    try {
+                        const u = new URL(apiPembahananLines, window.location.origin);
+                        u.searchParams.set('werks', werks);
+                        u.searchParams.set('auart', auart);
+                        u.searchParams.set('vbeln', vbeln);
+                        u.searchParams.set('posnr', posnrKey);
+                        const r = await fetch(u, {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        });
+                        const js = await r.json();
+                        const rows = (js && js.ok) ? (js.data || []) : [];
+                        if (pembBodyEl) pembBodyEl.innerHTML = renderPembahananModal(rows);
+                    } catch (err) {
+                        if (pembBodyEl) pembBodyEl.innerHTML =
+                            `<div class="text-danger">Gagal memuat data.</div>`;
+                        console.error(err);
+                    }
+                }
                 document.addEventListener('click', (e) => {
                     const span = e.target.closest('.yz-machi-pct');
                     if (!span) return;
-                    if ((span.dataset.stage || '').toLowerCase() !== 'machining') return;
+
+                    const st = (span.dataset.stage || '').toLowerCase();
+                    if (st !== 'machining' && st !== 'pembahanan') return;
+
                     e.preventDefault();
                     e.stopPropagation();
+
                     const tr = span.closest('tr'); // baris item Tabel-3 (punya dataset lengkap)
-                    openMachiningModal(tr);
+                    if (st === 'machining') openMachiningModal(tr);
+                    else if (st === 'pembahanan') openPembahananModal(tr);
                 });
 
             }); // DOMContentLoaded

@@ -436,7 +436,7 @@ class SalesOrderController extends Controller
 
         $auartList = $this->resolveAuartListForContext($auart);
 
-        // Subquery: jumlah remark per item
+        // --- Subquery: jumlah remark per item ---
         $remarksAgg = DB::table('item_remarks as ir')
             ->select(
                 'ir.VBELN',
@@ -448,12 +448,27 @@ class SalesOrderController extends Controller
             ->whereIn('ir.IV_AUART_PARAM', $auartList)
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
-        // [PERBAIKAN: Gunakan MAX() pada non-grouped columns untuk mengatasi duplikasi di t1]
-        // Grouping berdasarkan VBELN, POSNR, MATNR
+        // --- Subquery: agregat TOTREQ (order) & TOTTP (GR) dari t4 per SO-item ---
+        $t4Agg = DB::table('so_yppr079_t4 as t4')
+            ->where('t4.IV_WERKS_PARAM', $werks)
+            ->whereIn('t4.IV_AUART_PARAM', $auartList)
+            ->selectRaw("
+            TRIM(CAST(t4.KDAUF AS CHAR)) AS VBELN,
+            LPAD(TRIM(CAST(t4.KDPOS AS CHAR)), 6, '0') AS POSNR_KEY,
+            CAST(SUM(t4.TOTTP)  AS DECIMAL(18,3)) AS TOTTP,
+            CAST(SUM(t4.TOTREQ) AS DECIMAL(18,3)) AS TOTREQ
+        ")
+            ->groupBy('VBELN', 'POSNR_KEY');
+
+        // --- Query utama: de-dup item (VBELN, POSNR, MATNR) + remarks + t4Agg ---
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
                 $j->on('ragg.VBELN', '=', 't1.VBELN')
                     ->on('ragg.POSNR', '=', 't1.POSNR');
+            })
+            ->leftJoinSub($t4Agg, 't4a', function ($j) {
+                $j->on('t4a.VBELN', '=', 't1.VBELN')
+                    ->on('t4a.POSNR_KEY', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
             })
             ->select(
                 DB::raw('MAX(t1.id) as id'),
@@ -462,11 +477,9 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PACKG) as PACKG'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
 
-                // untuk MACHI tooltip
+                // progress per proses (untuk tooltip/kolom tabel-3)
                 DB::raw('MAX(t1.MACHI)  as MACHI'),
                 DB::raw('MAX(t1.QPROM)  as QPROM'),
-
-                // ⬅️ TAMBAHKAN INI
                 DB::raw('MAX(t1.ASSYM)  as ASSYM'),
                 DB::raw('MAX(t1.QPROA)  as QPROA'),
                 DB::raw('MAX(t1.PAINTM) as PAINTM'),
@@ -474,24 +487,35 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PACKGM) as PACKGM'),
                 DB::raw('MAX(t1.QPROP)  as QPROP'),
 
-                DB::raw('MAX(t1.PRSM2) as PRSM2'),   // ⬅️ TAMBAHAN
+                // persentase proses
+                DB::raw('MAX(t1.PRSM2) as PRSM2'),
                 DB::raw('MAX(t1.PRSM)  as PRSM'),
                 DB::raw('MAX(t1.PRSA)  as PRSA'),
                 DB::raw('MAX(t1.PRSI)  as PRSI'),
                 DB::raw('MAX(t1.PRSP)  as PRSP'),
+
+                // nilai
                 DB::raw('MAX(t1.NETPR) as NETPR'),
                 DB::raw('MAX(t1.TOTPR2) as TOTPR2'),
-                DB::raw('MAX(t1.TOTPR) as TOTPR'),
-                DB::raw('MAX(t1.NETWR) as NETWR'),
-                DB::raw('MAX(t1.WAERK) as WAERK'),
+                DB::raw('MAX(t1.TOTPR)  as TOTPR'),
+                DB::raw('MAX(t1.NETWR)  as NETWR'),
+                DB::raw('MAX(t1.WAERK)  as WAERK'),
+
+                // keys & tampil di tabel-3
                 DB::raw("TRIM(LEADING '0' FROM TRIM(t1.POSNR)) as POSNR"),
                 DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_KEY"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
                 DB::raw('MAX(t1.IV_WERKS_PARAM) as WERKS_KEY'),
                 DB::raw('MAX(t1.IV_AUART_PARAM) as AUART_KEY'),
                 't1.VBELN as VBELN_KEY',
+
+                // remarks
                 DB::raw('COALESCE(MAX(ragg.remark_count), 0) as remark_count'),
-                DB::raw('MAX(ragg.last_remark_at) as last_remark_at')
+                DB::raw('MAX(ragg.last_remark_at) as last_remark_at'),
+
+                // --- agregat pembahanan untuk PRSM2 modal/tooltip ---
+                DB::raw('COALESCE(MAX(t4a.TOTTP),  0) as TOTTP'),
+                DB::raw('COALESCE(MAX(t4a.TOTREQ), 0) as TOTREQ')
             )
             ->where('t1.VBELN', $request->vbeln)
             ->where('t1.IV_WERKS_PARAM', $request->werks)
@@ -503,7 +527,6 @@ class SalesOrderController extends Controller
 
         return response()->json(['ok' => true, 'data' => $items]);
     }
-
     /**
      * Export PDF / Excel untuk item terpilih.
      */
@@ -1070,6 +1093,39 @@ class SalesOrderController extends Controller
                 DB::raw('CAST(t4.WEMNG AS DECIMAL(18,3)) AS WEMNG'),
                 DB::raw('CAST(t4.PRSN  AS DECIMAL(18,3)) AS PRSN'),
                 DB::raw('CAST(t4.PRSN2 AS DECIMAL(18,3)) AS PRSN2')
+            )
+            ->orderBy('t4.MATNR')
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows], 200);
+    }
+    public function apiPembahananLines(Request $request)
+    {
+        $validated = $request->validate([
+            'werks' => 'required|string',
+            'auart' => 'required|string',
+            'vbeln' => 'required|string',
+            'posnr' => 'required|string',
+        ]);
+
+        $werks   = $validated['werks'];
+        $auart   = $validated['auart'];
+        $vbeln   = trim((string)$validated['vbeln']);
+        $posnrKey = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
+
+        $auartList = $this->resolveAuartListForContext($auart);
+
+        $rows = DB::table('so_yppr079_t4 as t4')
+            ->where('t4.IV_WERKS_PARAM', $werks)
+            ->whereIn('t4.IV_AUART_PARAM', $auartList)
+            ->whereRaw('TRIM(CAST(t4.KDAUF AS CHAR)) = ?', [$vbeln])
+            ->whereRaw('LPAD(TRIM(CAST(t4.KDPOS AS CHAR)), 6, "0") = ?', [$posnrKey])
+            ->select(
+                DB::raw("CASE WHEN t4.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t4.MATNR) ELSE t4.MATNR END AS MATNR"),
+                't4.MAKTX',
+                DB::raw('CAST(t4.TOTREQ AS DECIMAL(18,3)) AS TOTREQ'), // Order pembahanan
+                DB::raw('CAST(t4.TOTTP  AS DECIMAL(18,3)) AS TOTTP'),  // GR pembahanan
+                DB::raw('CAST(t4.PRSN2  AS DECIMAL(18,3)) AS PRSN2')   // Progress pembahanan
             )
             ->orderBy('t4.MATNR')
             ->get();

@@ -183,6 +183,7 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::put('/so/api/item-remarks/{id}', [SalesOrderController::class, 'apiUpdateItemRemark'])->name('so.api.item_remarks.update');
 	Route::get('/so/api/machining-lines', [SalesOrderController::class, 'apiMachiningLines'])
 		->name('so.api.machining_lines');
+	Route::get('/so/api/pembahanan-lines', [SalesOrderController::class, 'apiPembahananLines'])->name('so.api.pembahanan_lines');
 
 	/*
     |------------------------ Stock report & dashboard ------------------

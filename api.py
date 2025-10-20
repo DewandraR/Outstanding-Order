@@ -2,12 +2,14 @@
 """
 API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 (+ T_DATA4) ke MySQL.
 
-Konfigurasi ini sudah diubah sesuai **OPSI A (PURE INSERT, TANPA DEDUPE)** + PERMINTAAN KOLOM BARU:
-- Tabel so_yppr079_t4 **TIDAK** lagi memiliki UNIQUE KEY
-- Proses insert T4 menggunakan **insert biasa** (bukan upsert)
+Konfigurasi ini sudah diubah sesuai OPSI A (PURE INSERT, TANPA DEDUPE) + PERMINTAAN KOLOM BARU:
+
+- Tabel so_yppr079_t4 TIDAK lagi memiliki UNIQUE KEY
+- Proses insert T4 menggunakan insert biasa (bukan upsert)
 - Tambahan log verifikasi jumlah riil setelah commit
-- **BARU**: Tambah kolom **PRSM2** pada `so_yppr079_t1` 
-- **BARU**: Tambah kolom **PRSN2** pada `so_yppr079_t4` dan ikut di-insert
+- BARU: Tambah kolom PRSM2 pada `so_yppr079_t1`
+- BARU: Tambah kolom PRSN2 pada `so_yppr079_t4` dan ikut di-insert
+- BARU: Tambah kolom TOTTP dan TOTREQ pada `so_yppr079_t4` (otomatis dibuat bila belum ada) dan ikut di-insert dari T_DATA4
 
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
@@ -22,9 +24,9 @@ Mode server (opsional):
   python api.py --serve
 
 Laravel Task Scheduling
-  php artisan yppr:sync               # Menjalankan sinkronisasi penuh
-  php artisan schedule:work           # Melihat apakah ada skedul berjalan
-  php artisan schedule:list           # Melihat jadwal yang akan dijalankan
+  php artisan yppr:sync
+  php artisan schedule:work
+  php artisan schedule:list
 
 Buka file log langsung
   cat storage/logs/yppr_sync.log
@@ -257,17 +259,18 @@ _SO_NON_KEY_UPDATE = [c for c in COMMON_SO_COLS if c not in ("IV_WERKS_PARAM","I
 _SO_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _SO_NON_KEY_UPDATE])
 
 # -------------------- Kolom & helper untuk T_DATA4 (SO Detail ringkas) --------------------
-# HANYA menyimpan field: MATNR, MAKTX, PSMNG, WEMNG, PRSN, PRSN2, KDAUF, KDPOS (+ kunci & fetched_at)
+# HANYA menyimpan field: MATNR, MAKTX, PSMNG, WEMNG, PRSN, PRSN2, TOTTP, TOTREQ, KDAUF, KDPOS (+ kunci & fetched_at)
 T4_COLS = [
     "IV_WERKS_PARAM", "IV_AUART_PARAM",
     "MATNR", "MAKTX",
     "PSMNG", "WEMNG", "PRSN", "PRSN2",
+    "TOTTP", "TOTREQ",
     "KDAUF", "KDPOS",
     "fetched_at",
 ]
 T4_COL_LIST = ", ".join(T4_COLS)
 T4_PLACEHOLDERS = ", ".join(["%s"] * len(T4_COLS))
-_T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "PRSN2", "fetched_at"]
+_T4_NON_KEY_UPDATE = ["MAKTX", "PSMNG", "WEMNG", "PRSN", "PRSN2", "TOTTP", "TOTREQ", "fetched_at"]
 T4_SET_CLAUSE = ", ".join([f"{c}=VALUES({c})" for c in _T4_NON_KEY_UPDATE])
 
 # ==================== PERUBAHAN OPSI A DIMULAI DI SINI ====================
@@ -434,6 +437,8 @@ def ensure_tables():
           WEMNG DECIMAL(18,3),
           PRSN  DECIMAL(18,2),
           PRSN2 DECIMAL(18,2),
+          TOTTP DECIMAL(18,3),
+          TOTREQ DECIMAL(18,3),
           KDAUF VARCHAR(20),
           KDPOS VARCHAR(10),
           fetched_at DATETIME NOT NULL
@@ -450,6 +455,16 @@ def ensure_tables():
         # Pastikan kolom PRSN2 ada (untuk DB lama)
         try:
             cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN PRSN2 DECIMAL(18,2) AFTER PRSN")
+        except Exception:
+            pass
+
+        # Pastikan kolom TOTTP/TOTREQ ada (untuk DB lama)
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN TOTTP DECIMAL(18,3) AFTER PRSN2")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN TOTREQ DECIMAL(18,3) AFTER TOTTP")
         except Exception:
             pass
 
@@ -538,6 +553,7 @@ def _so_t4_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.d
         r.get("MATNR"),
         r.get("MAKTX"),
         fnum(r.get("PSMNG")), fnum(r.get("WEMNG")), fnum(r.get("PRSN")), fnum(r.get("PRSN2")),
+        fnum(r.get("TOTTP")), fnum(r.get("TOTREQ")),
         kdauf, (str(kdpos) if kdpos is not None else None),
         now,
     )
@@ -602,7 +618,6 @@ def ensure_stock_tables():
         db.commit()
     finally:
         cur.close(); db.close()
-
 
 def _stock_row_params(param: str, r: Dict[str, Any], now: datetime.datetime) -> tuple:
     """Bangun 1 tuple parameter insert sesuai kolom STOCK_COLS."""
