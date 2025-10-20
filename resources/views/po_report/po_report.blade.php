@@ -1052,15 +1052,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                                                                                                                                    <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                                                                                                                                        title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                                                                                                                                        <i class="fas fa-pencil-alt"></i>
-                                                                                                                                                                    </button>` : ''}
+                                                                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                                                                                                                                            title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                                                                                                                                            <i class="fas fa-pencil-alt"></i>
+                                                                                                                                                                                        </button>` : ''}
                     ${isOwner ? `
-                                                                                                                                                                    <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                                                                                                                                        title="Hapus Catatan">
-                                                                                                                                                                        <i class="fas fa-trash"></i>
-                                                                                                                                                                    </button>` : ''}
+                                                                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                                                                                                                                            title="Hapus Catatan">
+                                                                                                                                                                                            <i class="fas fa-trash"></i>
+                                                                                                                                                                                        </button>` : ''}
                 </div>
             </div>
         `;
@@ -2369,6 +2369,183 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
         window.openItemsIfNeededForSORow = openItemsIfNeededForSORow;
 
+
+        function mountT2Handlers(wrap, WERKS, AUART) {
+            if (!wrap || wrap.dataset.t2Bound === '1') return; // cegah dobel
+            wrap.dataset.t2Bound = '1';
+
+            wrap.addEventListener('change', async (e) => {
+                // --- CHECK-ALL ITEMS di T3 ---
+                if (e.target.classList.contains('check-all-items')) {
+                    const t3 = e.target.closest('table');
+                    t3.querySelectorAll('.check-item').forEach(ch => {
+                        const sid = sanitizeId(ch.dataset.id);
+                        if (!sid) return;
+                        ch.checked = e.target.checked;
+                        if (e.target.checked) selectedItems.add(sid);
+                        else selectedItems.delete(sid);
+                    });
+                    const anyItem = t3.querySelector('.check-item');
+                    if (anyItem) {
+                        const v = itemIdToSO.get(String(anyItem.dataset.id));
+                        if (v) soHasSelectionDot(v);
+                        const tbody = anyItem.closest('tbody');
+                        if (tbody) {
+                            const t2tbody =
+                                tbody.closest('.yz-nest').previousElementSibling.closest('table').querySelector(
+                                    'tbody');
+                            if (t2tbody) syncSelectAllSoState(t2tbody);
+                        }
+                    }
+                    updateExportButton();
+                    return;
+                }
+
+                // --- ITEM tunggal di T3 ---
+                if (e.target.classList.contains('check-item')) {
+                    const sid = sanitizeId(e.target.dataset.id);
+                    if (!sid) return;
+                    if (e.target.checked) selectedItems.add(sid);
+                    else selectedItems.delete(sid);
+
+                    const v = itemIdToSO.get(String(sid));
+                    if (v) soHasSelectionDot(v);
+
+                    const tbody = e.target.closest('tbody');
+                    if (tbody) {
+                        const t2tbody =
+                            tbody.closest('.yz-nest').previousElementSibling.closest('table').querySelector(
+                                'tbody');
+                        if (t2tbody) syncSelectAllSoState(t2tbody);
+                    }
+                    updateExportButton();
+                    return;
+                }
+
+                // --- CHECK-ALL-SOS (pilih semua PO di T2) ---
+                if (e.target.classList.contains('check-all-sos')) {
+                    const tbody = e.target.closest('table')?.querySelector('tbody');
+                    if (!tbody) return;
+                    const allSO = tbody.querySelectorAll('.check-so');
+
+                    for (const chk of allSO) {
+                        // jika kolaps ON, baris tersembunyi lewati
+                        const currentRow = chk.closest('.js-t2row');
+                        if (currentRow.style.display === 'none' && !COLLAPSE_MODE) continue;
+
+                        chk.checked = e.target.checked;
+                        const vbeln = chk.dataset.vbeln;
+                        const nest = currentRow.nextElementSibling;
+                        const box = nest.querySelector('.yz-slot-t3');
+
+                        if (e.target.checked) {
+                            // jika T3 belum dimuat → fetch lalu centang semua item
+                            if (nest.dataset.loaded !== '1') {
+                                const u3 = new URL("{{ route('dashboard.api.t3') }}", window.location.origin);
+                                if (WERKS) u3.searchParams.set('werks', WERKS);
+                                if (AUART) u3.searchParams.set('auart', AUART);
+                                u3.searchParams.set('vbeln', vbeln);
+
+                                const r3 = await fetch(u3);
+                                const j3 = await r3.json();
+                                if (j3?.ok) {
+                                    j3.data.forEach(it => {
+                                        const sid = sanitizeId(it.id);
+                                        if (sid) selectedItems.add(sid);
+                                    });
+                                    box.innerHTML = renderT3(j3.data);
+                                    nest.dataset.loaded = '1';
+                                    updatePoRemarkFlagFromDom(vbeln);
+                                }
+                            } else {
+                                // T3 sudah ada → centang semua
+                                box.querySelectorAll('.check-item').forEach(ci => {
+                                    const sid = sanitizeId(ci.dataset.id);
+                                    if (sid) selectedItems.add(sid);
+                                    ci.checked = true;
+                                });
+                            }
+                        } else {
+                            // uncheck semua item milik SO ini
+                            if (nest.dataset.loaded === '1') {
+                                box.querySelectorAll('.check-item').forEach(ci => {
+                                    const sid = sanitizeId(ci.dataset.id);
+                                    if (sid) selectedItems.delete(sid);
+                                    ci.checked = false;
+                                });
+                            } else {
+                                // belum dimuat → bersihkan selectedItems by mapping
+                                Array.from(selectedItems).forEach(id => {
+                                    if (itemIdToSO.get(String(id)) === vbeln) selectedItems.delete(id);
+                                });
+                            }
+                        }
+                        soHasSelectionDot(vbeln);
+                    }
+
+                    syncSelectAllSoState(tbody);
+                    if (COLLAPSE_MODE) await applyCollapseView(tbody, true);
+                    updateExportButton();
+                    return;
+                }
+
+                // --- SO tunggal di T2 ---
+                if (e.target.classList.contains('check-so')) {
+                    const vbeln = e.target.dataset.vbeln;
+                    const isChecked = e.target.checked;
+                    const soRow = e.target.closest('.js-t2row');
+                    const nest = soRow.nextElementSibling;
+                    const box = nest.querySelector('.yz-slot-t3');
+
+                    if (isChecked) {
+                        if (nest.dataset.loaded !== '1') {
+                            const u3 = new URL("{{ route('dashboard.api.t3') }}", window.location.origin);
+                            if (WERKS) u3.searchParams.set('werks', WERKS);
+                            if (AUART) u3.searchParams.set('auart', AUART);
+                            u3.searchParams.set('vbeln', vbeln);
+
+                            const r3 = await fetch(u3);
+                            const j3 = await r3.json();
+                            if (j3?.ok) {
+                                j3.data.forEach(it => {
+                                    const sid = sanitizeId(it.id);
+                                    if (sid) selectedItems.add(sid);
+                                });
+                                box.innerHTML = renderT3(j3.data);
+                                nest.dataset.loaded = '1';
+                                updatePoRemarkFlagFromDom(vbeln);
+                            }
+                        } else {
+                            box.querySelectorAll('.check-item').forEach(ci => {
+                                const sid = sanitizeId(ci.dataset.id);
+                                if (sid) selectedItems.add(sid);
+                                ci.checked = true;
+                            });
+                        }
+                    } else {
+                        if (nest.dataset.loaded === '1') {
+                            box.querySelectorAll('.check-item').forEach(ci => {
+                                const sid = sanitizeId(ci.dataset.id);
+                                if (sid) selectedItems.delete(sid);
+                                ci.checked = false;
+                            });
+                        } else {
+                            Array.from(selectedItems).forEach(id => {
+                                if (itemIdToSO.get(String(id)) === vbeln) selectedItems.delete(id);
+                            });
+                        }
+                    }
+
+                    soHasSelectionDot(vbeln);
+                    const tbody = e.target.closest('tbody');
+                    if (tbody) syncSelectAllSoState(tbody);
+                    if (COLLAPSE_MODE && tbody) await applyCollapseView(tbody, true);
+                    updateExportButton();
+                    return;
+                }
+            });
+        }
+
         /* ====================== MAIN EVENT LISTENERS ====================== */
         document.addEventListener('DOMContentLoaded', () => {
             // INIT modul remark (baru)
@@ -2484,6 +2661,11 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 const slot = document.getElementById(kid);
                 const wrap = slot?.querySelector('.yz-nest-wrap');
 
+                // NEW: ambil context
+                const root = document.getElementById('yz-root');
+                const WERKS = (root.dataset.werks || '').trim();
+                const AUART = (root.dataset.auart || '').trim();
+
                 // tampilkan kartu & nest
                 row.classList.add('is-open');
                 row.querySelector('.kunnr-caret')?.classList.add('rot');
@@ -2510,11 +2692,14 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         if (!res.ok || !js.ok) throw new Error(js.error || 'Gagal memuat data PO');
                         wrap.innerHTML = renderT2(js.data, kunnr);
                         wrap.dataset.loaded = '1';
+                        mountT2Handlers(wrap, WERKS, AUART);
+
                     } catch (e) {
                         wrap.innerHTML = `<div class="alert alert-danger m-3">${e.message}</div>`;
                         return;
                     }
                 }
+                mountT2Handlers(wrap, WERKS, AUART);
 
                 // buka SEMUA SO → load T3 (tanpa mode fokus)
                 const soRows = wrap?.querySelectorAll('.js-t2row') || [];
@@ -2790,197 +2975,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         });
 
                         if (soTbody) syncSelectAllSoState(soTbody);
-
-                        wrap.addEventListener('change', async (e) => {
-                            if (e.target.classList.contains('check-all-items')) {
-                                const t3 = e.target.closest('table');
-                                t3.querySelectorAll('.check-item').forEach(ch => {
-                                    const sid = sanitizeId(ch.dataset.id);
-                                    if (!sid) return;
-                                    ch.checked = e.target.checked;
-                                    if (e.target.checked) selectedItems.add(
-                                        sid);
-                                    else selectedItems.delete(sid);
-                                });
-                                const anyItem = t3.querySelector('.check-item');
-                                if (anyItem) {
-                                    const v = itemIdToSO.get(String(anyItem.dataset
-                                        .id));
-                                    if (v) soHasSelectionDot(v);
-                                    const tbody = anyItem.closest('tbody');
-                                    if (tbody) syncSelectAllSoState(tbody.closest(
-                                            '.yz-nest').previousElementSibling
-                                        .querySelector('table tbody'));
-                                }
-                                updateExportButton();
-                                return;
-                            }
-
-                            if (e.target.classList.contains('check-item')) {
-                                const sid = sanitizeId(e.target.dataset.id);
-                                if (!sid) return;
-                                if (e.target.checked) selectedItems.add(sid);
-                                else selectedItems.delete(sid);
-                                const v = itemIdToSO.get(String(sid));
-                                if (v) soHasSelectionDot(v);
-                                const tbody = e.target.closest('tbody');
-                                if (tbody) syncSelectAllSoState(tbody.closest(
-                                        '.yz-nest').previousElementSibling
-                                    .querySelector('table tbody'));
-                                updateExportButton();
-                                return;
-                            }
-
-                            if (e.target.classList.contains('check-all-sos')) {
-                                const tbody = e.target.closest('table')
-                                    ?.querySelector('tbody');
-                                if (!tbody) return;
-                                const allSO = tbody.querySelectorAll('.check-so');
-
-                                for (const chk of allSO) {
-                                    const currentRow = chk.closest('.js-t2row');
-                                    if (currentRow.style.display === 'none' && !
-                                        COLLAPSE_MODE) continue;
-
-                                    chk.checked = e.target.checked;
-                                    const vbeln = chk.dataset.vbeln;
-                                    const nest = chk.closest('.js-t2row')
-                                        .nextElementSibling;
-                                    const box = nest.querySelector('.yz-slot-t3');
-
-                                    if (e.target.checked) {
-                                        if (nest.dataset.loaded !== '1') {
-                                            const u3 = new URL(
-                                                "{{ route('dashboard.api.t3') }}",
-                                                window.location.origin);
-                                            if (WERKS) u3.searchParams.set('werks',
-                                                WERKS);
-                                            if (AUART) u3.searchParams.set('auart',
-                                                AUART);
-                                            u3.searchParams.set('vbeln', vbeln);
-
-                                            const r3 = await fetch(u3);
-                                            const j3 = await r3.json();
-                                            if (j3?.ok) {
-                                                j3.data.forEach(it => {
-                                                    const sid = sanitizeId(
-                                                        it.id);
-                                                    if (sid) selectedItems
-                                                        .add(sid);
-                                                });
-                                                box.innerHTML = renderT3(j3.data);
-                                                nest.dataset.loaded = '1';
-                                            }
-                                        } else {
-                                            box.querySelectorAll('.check-item')
-                                                .forEach(ci => {
-                                                    const sid = sanitizeId(ci
-                                                        .dataset.id);
-                                                    if (sid) selectedItems.add(
-                                                        sid);
-                                                    ci.checked = true;
-                                                });
-                                        }
-                                    } else {
-                                        if (nest.dataset.loaded === '1') {
-                                            box.querySelectorAll('.check-item')
-                                                .forEach(ci => {
-                                                    const sid = sanitizeId(ci
-                                                        .dataset.id);
-                                                    if (sid) selectedItems
-                                                        .delete(sid);
-                                                    ci.checked = false;
-                                                });
-                                        } else {
-                                            Array.from(selectedItems).forEach(
-                                                id => {
-                                                    if (itemIdToSO.get(String(
-                                                            id)) === vbeln)
-                                                        selectedItems.delete(
-                                                            id);
-                                                });
-                                        }
-                                    }
-                                    soHasSelectionDot(vbeln);
-                                }
-
-                                syncSelectAllSoState(tbody);
-                                if (COLLAPSE_MODE) await applyCollapseView(tbody,
-                                    true);
-                                updateExportButton();
-                                return;
-                            }
-
-                            if (e.target.classList.contains('check-so')) {
-                                const vbeln = e.target.dataset.vbeln;
-                                const isChecked = e.target.checked;
-                                const soRow = e.target.closest('.js-t2row');
-                                const nest = soRow.nextElementSibling;
-                                const box = nest.querySelector('.yz-slot-t3');
-
-                                if (isChecked) {
-                                    if (nest.dataset.loaded !== '1') {
-                                        const u3 = new URL(
-                                            "{{ route('dashboard.api.t3') }}",
-                                            window.location.origin);
-                                        if (WERKS) u3.searchParams.set('werks',
-                                            WERKS);
-                                        if (AUART) u3.searchParams.set('auart',
-                                            AUART);
-                                        u3.searchParams.set('vbeln', vbeln);
-
-                                        const r3 = await fetch(u3);
-                                        const j3 = await r3.json();
-                                        if (j3?.ok) {
-                                            j3.data.forEach(it => {
-                                                const sid = sanitizeId(it
-                                                    .id);
-                                                if (sid) selectedItems.add(
-                                                    sid);
-                                            });
-                                            box.innerHTML = renderT3(j3.data);
-                                            nest.dataset.loaded = '1';
-                                            updatePoRemarkFlagFromDom(vbeln);
-                                        }
-                                    } else {
-                                        box.querySelectorAll('.check-item').forEach(
-                                            ci => {
-                                                const sid = sanitizeId(ci
-                                                    .dataset.id);
-                                                if (sid) selectedItems.add(sid);
-                                                ci.checked = true;
-                                            });
-                                    }
-                                } else {
-                                    if (nest.dataset.loaded === '1') {
-                                        box.querySelectorAll('.check-item').forEach(
-                                            ci => {
-                                                const sid = sanitizeId(ci
-                                                    .dataset.id);
-                                                if (sid) selectedItems.delete(
-                                                    sid);
-                                                ci.checked = false;
-                                            });
-                                    } else {
-                                        Array.from(selectedItems).forEach(id => {
-                                            if (itemIdToSO.get(String(
-                                                    id)) === vbeln)
-                                                selectedItems.delete(id);
-                                        });
-                                    }
-                                }
-
-                                soHasSelectionDot(vbeln);
-                                const tbody = e.target.closest('tbody');
-                                if (tbody) syncSelectAllSoState(tbody);
-
-                                if (COLLAPSE_MODE && tbody) await applyCollapseView(
-                                    tbody, true);
-
-                                updateExportButton();
-                                return;
-                            }
-                        });
+                        mountT2Handlers(wrap, WERKS, AUART);
 
                     } catch (err) {
                         wrap.innerHTML =

@@ -445,8 +445,8 @@
     <link rel="stylesheet" href="{{ asset('css/dashboard-style.css') }}">
     <style>
         /* =========================================================
-                 * GLOBAL ELEMENT STYLES
-                 * ======================================================= */
+                         * GLOBAL ELEMENT STYLES
+                         * ======================================================= */
 
         .remark-icon {
             cursor: pointer;
@@ -567,8 +567,8 @@
         }
 
         /* =========================================================
-                 * MACHINING MODAL STYLES (Dioptimalkan & Final dengan PRSN2)
-                 * ======================================================= */
+                         * MACHINING MODAL STYLES (Dioptimalkan & Final dengan PRSN2)
+                         * ======================================================= */
 
         /* 1. Mengurangi Lebar Modal Utama & Responsivitas */
         #machiningModal .modal-dialog {
@@ -1080,18 +1080,19 @@
         <table class="table table-sm table-hover mb-0 yz-mini">
           <thead class="yz-header-item">
             <tr>
-              <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-              <th>Item</th>
-              <th>Material FG</th>
-              <th>Desc FG</th>
-              <th>Qty SO</th>
-              <th>Outs. SO</th>
-              <th>Stock Packing</th>
-              <th>MACHI</th>
-              <th>ASSY</th>
-              <th>PAINT</th>
-              <th>PACKING</th>
-              <th>Remark</th>
+                <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+                <th>Item</th>
+                <th>Material FG</th>
+                <th>Desc FG</th>
+                <th>Qty SO</th>
+                <th>Outs. SO</th>
+                <th>Stock Packing</th>
+                <th>PRSM2</th>        <!-- ⬅️ BARU -->
+                <th>MACHI</th>
+                <th>ASSY</th>
+                <th>PAINT</th>
+                <th>PACKING</th>
+                <th>Remark</th>
             </tr>
           </thead>
           <tbody>`;
@@ -1115,6 +1116,11 @@
             <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
             <td>${formatNumberGlobal(r.PACKG, 0)}</td>
             <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
+            <td>
+            <span class="yz-machi-pct text-decoration-none">
+                ${formatMachiPercent(r.PRSM2)}
+            </span>
+            </td>
             <td>
               <span class="yz-machi-pct"
                     data-bs-toggle="popover"
@@ -2816,17 +2822,17 @@
                 </div>
                 
                 ${progressPct2 > 0 ? `
-                            <div class="machi-progress-wrapper mb-2">
-                                <div class="small text-muted mb-1 d-flex justify-content-between">
-                                    <span>Pembahanan</span>
-                                    <span>${progressPct2}%</span>
-                                </div>
-                                <div class="progress machi-progress" style="height: 6px;">
-                                    <div class="progress-bar ${progressClass2}" role="progressbar" style="width: ${progressPct2}%;" 
-                                        aria-valuenow="${progressPct2}" aria-valuemin="0" aria-valuemax="100"></div>
-                                </div>
-                            </div>
-                            ` : ''}
+                                    <div class="machi-progress-wrapper mb-2">
+                                        <div class="small text-muted mb-1 d-flex justify-content-between">
+                                            <span>Pembahanan</span>
+                                            <span>${progressPct2}%</span>
+                                        </div>
+                                        <div class="progress machi-progress" style="height: 6px;">
+                                            <div class="progress-bar ${progressClass2}" role="progressbar" style="width: ${progressPct2}%;" 
+                                                aria-valuenow="${progressPct2}" aria-valuemin="0" aria-valuemax="100"></div>
+                                        </div>
+                                    </div>
+                                    ` : ''}
 
                 <div class="machi-progress-wrapper">
                     <div class="small text-muted mb-1 d-flex justify-content-between">

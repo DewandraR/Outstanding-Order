@@ -474,6 +474,7 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PACKGM) as PACKGM'),
                 DB::raw('MAX(t1.QPROP)  as QPROP'),
 
+                DB::raw('MAX(t1.PRSM2) as PRSM2'),   // ⬅️ TAMBAHAN
                 DB::raw('MAX(t1.PRSM)  as PRSM'),
                 DB::raw('MAX(t1.PRSA)  as PRSA'),
                 DB::raw('MAX(t1.PRSI)  as PRSI'),
