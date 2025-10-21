@@ -617,31 +617,45 @@
                         const n = Number(v);
                         return Number.isFinite(n) ? n : null;
                     };
-                    const fm = toNum(grRaw); // GR
-                    const fq = toNum(orderRaw); // Total order
+
+                    // nilai numerik apa adanya (sudah dipasok lewat data-* di masing2 stage)
+                    const fm = toNum(grRaw); // GR / TP (tergantung stage)
+                    const fq = toNum(orderRaw); // Total Order / Request (tergantung stage)
+
+                    // === label dinamis khusus Pembahanan ===
+                    const isPemb = (String(stageName).trim().toLowerCase() === 'pembahanan');
+                    const pairLabel = isPemb ? 'TP / Request' : 'GR / Total Order';
+
                     const grValue = fm !== null ? formatNumberGlobal(fm, 0) : '—';
                     const orderValue = fq !== null ? formatNumberGlobal(fq, 0) : '—';
+
                     const totalOrder = fq !== null && fq > 0 ? fq : 1;
                     const grProgress = (fm / totalOrder) * 100;
+
                     const isCompleted = (fm !== null && fq !== null && fm >= fq && fq > 0);
                     const status = isCompleted ? 'Selesai' : (fm > 0 ? 'Sedang Diproses' : 'Belum Mulai');
                     const statusClass = isCompleted ? 'text-success' : (fm > 0 ? 'text-warning' : 'text-muted');
+
                     const progressStyle = `width: ${Math.min(100, grProgress || 0)}%;`;
                     const progressClass = isCompleted ? 'bg-success' : (fm > 0 ? 'bg-warning' : 'bg-secondary');
+
                     return `
-        <div class="yz-popover-content-lux">
-          <h6 class="mb-2 fw-bold">Progress Stage: ${escapeHtml(stageName)}</h6>
-          <div class="d-flex justify-content-between mb-1">
-            <span class="fw-bolder">GR / Total Order</span>
-            <span class="fw-bolder">${grValue} / ${orderValue}</span>
-          </div>
-          <div class="progress" style="height:8px;">
-            <div class="progress-bar ${progressClass}" role="progressbar" style="${progressStyle}"
-                 aria-valuenow="${Math.min(100, grProgress || 0)}" aria-valuemin="0" aria-valuemax="100"></div>
-          </div>
-          <hr class="my-2">
-          <div class="small ${statusClass}">Status: <strong>${status}</strong></div>
-        </div>`;
+    <div class="yz-popover-content-lux">
+      <h6 class="mb-2 fw-bold">Progress Stage: ${escapeHtml(stageName)}</h6>
+
+      <div class="d-flex justify-content-between mb-1">
+        <span class="fw-bolder">${pairLabel}</span>
+        <span class="fw-bolder">${grValue} / ${orderValue}</span>
+      </div>
+
+      <div class="progress" style="height:8px;">
+        <div class="progress-bar ${progressClass}" role="progressbar" style="${progressStyle}"
+             aria-valuenow="${Math.min(100, grProgress || 0)}" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+
+      <hr class="my-2">
+      <div class="small ${statusClass}">Status: <strong>${status}</strong></div>
+    </div>`;
                 };
 
                 function attachBootstrapPopovers(container) {
@@ -908,19 +922,19 @@
         <td>
           ${isMetal
             ? `<span class="yz-machi-pct text-decoration-none"
-                                                     data-bs-toggle="popover"
-                                                     data-bs-placement="top"
-                                                     data-stage="Cuting"
-                                                     data-gr="${r.CUTT ?? ''}"
-                                                     data-order="${r.QPROC ?? ''}"
-                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
+                                                                             data-bs-toggle="popover"
+                                                                             data-bs-placement="top"
+                                                                             data-stage="Cuting"
+                                                                             data-gr="${r.CUTT ?? ''}"
+                                                                             data-order="${r.QPROC ?? ''}"
+                                                                             title="Progress Stage: Cuting">${cutingPercent}</span>`
             : `<span class="yz-machi-pct"
-                                                     data-bs-toggle="popover"
-                                                     data-bs-placement="top"
-                                                     data-stage="Machining"
-                                                     data-gr="${r.MACHI ?? ''}"
-                                                     data-order="${r.QPROM ?? ''}"
-                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
+                                                                             data-bs-toggle="popover"
+                                                                             data-bs-placement="top"
+                                                                             data-stage="Machining"
+                                                                             data-gr="${r.MACHI ?? ''}"
+                                                                             data-order="${r.QPROM ?? ''}"
+                                                                             title="Progress Stage: Machining">${cutingPercent}</span>`}
         </td>
 
         <!-- ASSY -->
@@ -938,17 +952,17 @@
 
         <!-- PRIMER (hanya METAL) -->
         ${isMetal ? `
-                                        <td>
-                                          <span class="yz-machi-pct text-decoration-none"
-                                                data-bs-toggle="popover"
-                                                data-bs-placement="top"
-                                                data-stage="Primer"
-                                                data-gr="${r.PRIMER ?? ''}"
-                                                data-order="${r.QPROIR ?? ''}"
-                                                title="Progress Stage: Primer">
-                                            ${primerPercent}
-                                          </span>
-                                        </td>` : ''}
+                                                                <td>
+                                                                  <span class="yz-machi-pct text-decoration-none"
+                                                                        data-bs-toggle="popover"
+                                                                        data-bs-placement="top"
+                                                                        data-stage="Primer"
+                                                                        data-gr="${r.PRIMER ?? ''}"
+                                                                        data-order="${r.QPROIR ?? ''}"
+                                                                        title="Progress Stage: Primer">
+                                                                    ${primerPercent}
+                                                                  </span>
+                                                                </td>` : ''}
 
         <!-- PAINT -->
         <td>
@@ -2778,7 +2792,6 @@
                     }
 
                     function renderPembahananModal(rows) {
-                        // Jika tidak ada data
                         if (!rows || rows.length === 0) {
                             return `
       <div class="text-center text-muted p-5 bg-light rounded-3">
@@ -2789,26 +2802,20 @@
     `;
                         }
 
-                        // Akumulasi total untuk kartu ringkasan
-                        let tOrder = 0,
-                            tGr = 0;
+                        // total untuk ringkasan
+                        let tRequest = 0,
+                            tTP = 0;
                         rows.forEach(r => {
-                            tOrder += Number(r.TOTREQ || 0);
-                            tGr += Number(r.TOTTP || 0);
+                            tRequest += Number(r.TOTREQ || 0);
+                            tTP += Number(r.TOTTP || 0);
                         });
 
-                        // Kartu per-baris (material)
                         const bodyHtml = rows.map(r => {
-                            const rawPct = Number(r.PRSN2 ?? 0); // PRSN2 murni (bisa >100)
-                            const displayPct =
-                                `${formatNumberGlobal(rawPct, 0)}%`; // label angka yang ditampilkan
-                            const barPct = Math.max(0, Math.min(100,
-                                rawPct)); // batasi 0..100 untuk lebar bar
-
+                            const rawPct = Number(r.PRSN2 ?? 0); // progress murni (bisa >100)
+                            const displayPct = `${formatNumberGlobal(rawPct, 0)}%`;
+                            const barPct = Math.max(0, Math.min(100, rawPct)); // lebar bar dibatasi 0..100
                             const progressClass =
-                                rawPct <= 0 ? 'bg-secondary' :
-                                rawPct >= 100 ? 'bg-success' :
-                                'bg-warning';
+                                rawPct <= 0 ? 'bg-secondary' : rawPct >= 100 ? 'bg-success' : 'bg-warning';
 
                             const desc = escapeHtml(r.MAKTX ?? '—');
                             const matnr = escapeHtml(r.MATNR ?? '—');
@@ -2825,11 +2832,11 @@
 
         <div class="machi-metrics row g-2 mb-3">
           <div class="col-3">
-            <div class="metric-label small text-muted">Order</div>
+            <div class="metric-label small text-muted">Request</div>
             <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.TOTREQ, 0)}</div>
           </div>
           <div class="col-3">
-            <div class="metric-label small text-muted">GR</div>
+            <div class="metric-label small text-muted">TP</div>
             <div class="metric-value fw-bold text-end">${formatNumberGlobal(r.TOTTP, 0)}</div>
           </div>
           <div class="col-3 border-start">
@@ -2843,8 +2850,7 @@
             <span>Progress</span><span>${displayPct}</span>
           </div>
           <div class="progress machi-progress" style="height: 6px;">
-            <div class="progress-bar ${progressClass}"
-                 role="progressbar"
+            <div class="progress-bar ${progressClass}" role="progressbar"
                  style="width: ${barPct}%;" aria-valuenow="${barPct}"
                  aria-valuemin="0" aria-valuemax="100"></div>
           </div>
@@ -2853,7 +2859,6 @@
     `;
                         }).join('');
 
-                        // Container + total
                         return `
     <div class="machi-container">
       ${bodyHtml}
@@ -2862,12 +2867,12 @@
           <div class="fs-5 text-dark">TOTAL KUANTITAS</div>
           <div class="d-flex gap-4">
             <div class="text-end">
-              <div class="small text-muted">Total Order</div>
-              <div class="text-primary">${formatNumberGlobal(tOrder, 0)}</div>
+              <div class="small text-muted">Total Request</div>
+              <div class="text-primary">${formatNumberGlobal(tRequest, 0)}</div>
             </div>
             <div class="text-end">
-              <div class="small text-muted">Total GR</div>
-              <div class="text-success">${formatNumberGlobal(tGr, 0)}</div>
+              <div class="small text-muted">Total TP</div>
+              <div class="text-success">${formatNumberGlobal(tTP, 0)}</div>
             </div>
           </div>
         </div>

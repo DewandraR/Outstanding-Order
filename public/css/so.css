@@ -12,6 +12,16 @@
     color: #0d6efd;
 }
 
+.remark-dot {
+    height: 8px;
+    width: 8px;
+    background: #0d6efd;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
 .so-selected-dot {
     height: 8px;
     width: 8px;
@@ -33,6 +43,207 @@
 
 .row-highlighted {
     animation: flashRow 1.2s ease-in-out 3;
+}
+
+@keyframes flashRow {
+    0% {
+        background: #fff8d6;
+    }
+
+    50% {
+        background: #ffe89a;
+    }
+
+    100% {
+        background: transparent;
+    }
+}
+
+.yz-caret {
+    display: inline-block;
+    transition: transform 0.18s ease;
+    user-select: none;
+    /* Tambahkan margin-left untuk mengatur posisi */
+    margin-left: 5px;
+    vertical-align: middle;
+    line-height: 1;
+}
+
+/* Gaya baru untuk caret di Tabel 2 */
+.yz-t2-vbeln-wrap {
+    display: flex;
+    align-items: center;
+}
+
+.yz-caret.rot {
+    transform: rotate(90deg);
+}
+
+/* Mengatur focus mode untuk Card-Row Level 1 */
+.customer-focus-mode .yz-customer-card:not(.is-focused) {
+    display: none !important;
+}
+
+/* Menyembunyikan total global saat detail customer dibuka */
+.customer-focus-mode ~ .yz-global-total-card {
+    display: none;
+}
+
+/* Tambahan CSS agar metrik sejajar atas-bawah */
+#metric-columns,
+#footer-metric-columns {
+    /* Pastikan elemen ini memegang lebar yang sama dan kolomnya terstruktur */
+    width: 100%;
+    justify-content: flex-end;
+    /* Dorong ke kanan */
+}
+
+#footer-metric-columns .metric-box {
+    /* Hapus border vertikal di footer agar terlihat lebih bersih */
+    border-left: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+
+/* Atur metrik boxes agar selalu sejajar vertikal */
+.yz-customer-card #metric-columns > .metric-box,
+#footer-metric-columns > div {
+    /* Hilangkan gap yang diatur d-flex gap-4 */
+    margin-left: 2rem !important;
+    margin-right: 2rem !important;
+}
+
+/* Metrik box pertama harus lurus dengan container */
+.yz-customer-card #metric-columns > .metric-box:first-child {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+
+/* Metrik box pertama di footer harus lurus dengan container */
+#footer-metric-columns > div:first-child {
+    margin-left: 0 !important;
+}
+
+/* Atur alignment teks di dalam metric box untuk memastikan angka sejajar kanan */
+.metric-box .metric-value,
+.metric-box .metric-label {
+    text-align: right !important;
+}
+
+/* Perbaikan: Atur progress bar agar tetap di tengah horizontal di dalam metric-box */
+.metric-box .progress {
+    margin: 4px auto 0 !important;
+    /* Mengatur ulang margin yang mungkin terpengaruh oleh alignment text-end */
+}
+
+.so-focus-mode .js-t2row {
+    display: none;
+}
+
+.so-focus-mode .js-t2row.is-focused {
+    display: table-row;
+}
+
+/* MODIFIKASI: Menghilangkan highlight baris merah penuh yang lama */
+.yz-row-highlight-negative > td,
+.yz-row-highlight-negative td {
+    background-color: transparent !important;
+}
+
+.table-hover tbody tr.yz-row-highlight-negative:hover > td,
+.table-hover tbody tr.yz-row-highlight-negative:hover td {
+    background-color: #f8f9fa !important;
+    /* Kembali ke hover abu-abu normal */
+}
+
+/* Gaya kustom untuk bubble Overdue/On Track */
+.overdue-badge-bubble {
+    padding: 0.35em 0.7em;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #fff;
+    text-align: center;
+    border-radius: 1rem;
+    /* Bentuk bubble/pill */
+    white-space: nowrap;
+}
+
+.bubble-late {
+    background-color: #c53030;
+    /* Merah gelap/Bordeaux */
+}
+
+.bubble-track {
+    background-color: #38a3a5;
+    /* Hijau Teal */
+}
+
+.bubble-today {
+    background-color: #b7791f;
+    /* Kuning Gelap/Coklat */
+    color: #fff;
+}
+
+/* Tambahkan style untuk tombol collapse header Tabel 2 */
+.yz-header-so .js-collapse-toggle {
+    line-height: 1;
+    padding: 2px 8px;
+}
+
+.yz-header-so .yz-collapse-caret {
+    display: inline-block;
+    transition: transform 0.18s ease;
+}
+
+.yz-header-so .yz-collapse-caret.rot {
+    transform: rotate(90deg);
+}
+
+.remark-thread-list {
+    max-height: 360px;
+    overflow: auto;
+    border: 1px solid #eee;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: #fafafa;
+}
+
+.remark-item {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.5rem;
+    background: #fff;
+    border: 1px solid #f0f0f0;
+    margin-bottom: 0.5rem;
+}
+
+.remark-item.own {
+    border-color: #d1e7dd;
+    background: #f8fff9;
+}
+
+.remark-item .meta {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.remark-item .text {
+    white-space: pre-wrap;
+}
+
+.remark-item .act {
+    margin-left: auto;
+}
+
+.yz-machi-pct {
+    cursor: help;
+    text-decoration: underline dotted;
+    white-space: nowrap;
+}
+
+.tooltip-cursor {
+    cursor: pointer;
 }
 
 @keyframes flashRow {
@@ -374,7 +585,8 @@ a.js-open-so:hover {
     padding: 4px; /* Padding di sekitar tombol */
     background-color: #f0f4f8; /* Warna latar belakang kontainer */
     border-radius: 20px; /* Sudut membulat */
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(255, 255, 255, 0.5); /* Efek inset halus */
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1),
+        0 1px 1px rgba(255, 255, 255, 0.5); /* Efek inset halus */
     transition: background-color 0.3s ease;
 }
 
@@ -403,7 +615,8 @@ a.js-open-so:hover {
     background-color: #ffffff; /* Warna slider, putih bersih */
     border-radius: 16px;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15); /* Bayangan dalam untuk efek mengambang */
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 5;
 }
 
