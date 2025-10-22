@@ -41,6 +41,9 @@ Lihat bagian akhir log
 Pantau log secara real time
   tail -f storage/logs/yppr_sync.log
   Get-Content -Wait storage\logs\yppr_sync.log
+
+PENTING AGAR TIDAK VERBOSE
+php artisan schedule:work 2>&1 | Where-Object {$_ -and ($_ -notmatch "No scheduled commands are ready to run")}
 """
 
 import os, json, decimal, datetime, math

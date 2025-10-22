@@ -846,22 +846,22 @@
 
                     // ===== Header =====
                     const headerHtml = `
-    <tr>
-      <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-      <th>Item</th>
-      <th>Material FG</th>
-      <th>Desc FG</th>
-      <th>Qty SO</th>
-      <th>Outs. SO</th>
-      <th>Stock Packing</th>
-      <th>Pembahanan</th>
-      <th>${isMetal ? 'CUTING' : 'MACHI'}</th>
-      <th>ASSY</th>
-      ${isMetal ? '<th>PRIMER</th>' : ''}   <!-- PRIMER hanya saat METAL -->
-      <th>PAINT</th>                        <!-- PAINT selalu ada -->
-      <th>PACKING</th>
-      <th>Remark</th>
-    </tr>`;
+<tr>
+  <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+  <th>Item</th>
+  <th>Material FG</th>
+  <th>Desc FG</th>
+  <th>Qty SO</th>
+  <th>Outs. SO</th>
+  <th>Stock Packing</th>
+  ${isMetal ? '' : '<th>Pembahanan</th>'}          <!-- ⬅ tampil hanya WOOD -->
+  <th>${isMetal ? 'CUTING' : 'MACHI'}</th>
+  <th>ASSY</th>
+  ${isMetal ? '<th>PRIMER</th>' : ''}              <!-- PRIMER hanya METAL -->
+  <th>PAINT</th>
+  <th>PACKING</th>
+  <th>Remark</th>
+</tr>`;
 
                     let html = `
     <div class="table-responsive">
@@ -898,43 +898,44 @@
           data-posnr-key="${r.POSNR_KEY}"
           data-maktx="${escapeHtml(r.MAKTX ?? '')}">
         <td><input class="form-check-input check-item" type="checkbox" data-id="${r.id}" ${isChecked ? 'checked' : ''}></td>
-        <td>${r.POSNR ?? ''}</td>
-        <td>${r.MATNR ?? ''}</td>
-        <td>${escapeHtml(r.MAKTX ?? '')}</td>
-        <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
-        <td>${formatNumberGlobal(r.PACKG, 0)}</td>
-        <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
+  <td>${r.POSNR ?? ''}</td>
+  <td>${r.MATNR ?? ''}</td>
+  <td>${escapeHtml(r.MAKTX ?? '')}</td>
+  <td>${formatNumberGlobal(r.KWMENG, 0)}</td>
+  <td>${formatNumberGlobal(r.PACKG, 0)}</td>
+  <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
 
-        <!-- Pembahanan (popover T4) -->
-        <td>
-          <span class="yz-machi-pct"
-                data-bs-toggle="popover"
-                data-bs-placement="top"
-                data-stage="Pembahanan"
-                data-gr="${r.TOTTP ?? ''}"
-                data-order="${r.TOTREQ ?? ''}"
-                title="Progress Stage: Pembahanan">
-            ${pembPercent}
-          </span>
-        </td>
+  ${isMetal ? '' : `
+          <!-- Pembahanan (popover T4) – hanya WOOD -->
+          <td>
+            <span class="yz-machi-pct"
+                  data-bs-toggle="popover"
+                  data-bs-placement="top"
+                  data-stage="Pembahanan"
+                  data-gr="${r.TOTTP ?? ''}"
+                  data-order="${r.TOTREQ ?? ''}"
+                  title="Progress Stage: Pembahanan">
+              ${pembPercent}
+            </span>
+          </td>`}
 
         <!-- CUTING (METAL) atau MACHI (WOOD) -->
         <td>
           ${isMetal
             ? `<span class="yz-machi-pct text-decoration-none"
-                                                                             data-bs-toggle="popover"
-                                                                             data-bs-placement="top"
-                                                                             data-stage="Cuting"
-                                                                             data-gr="${r.CUTT ?? ''}"
-                                                                             data-order="${r.QPROC ?? ''}"
-                                                                             title="Progress Stage: Cuting">${cutingPercent}</span>`
+                                                                                             data-bs-toggle="popover"
+                                                                                             data-bs-placement="top"
+                                                                                             data-stage="Cuting"
+                                                                                             data-gr="${r.CUTT ?? ''}"
+                                                                                             data-order="${r.QPROC ?? ''}"
+                                                                                             title="Progress Stage: Cuting">${cutingPercent}</span>`
             : `<span class="yz-machi-pct"
-                                                                             data-bs-toggle="popover"
-                                                                             data-bs-placement="top"
-                                                                             data-stage="Machining"
-                                                                             data-gr="${r.MACHI ?? ''}"
-                                                                             data-order="${r.QPROM ?? ''}"
-                                                                             title="Progress Stage: Machining">${cutingPercent}</span>`}
+                                                                                             data-bs-toggle="popover"
+                                                                                             data-bs-placement="top"
+                                                                                             data-stage="Machining"
+                                                                                             data-gr="${r.MACHI ?? ''}"
+                                                                                             data-order="${r.QPROM ?? ''}"
+                                                                                             title="Progress Stage: Machining">${cutingPercent}</span>`}
         </td>
 
         <!-- ASSY -->
@@ -952,17 +953,17 @@
 
         <!-- PRIMER (hanya METAL) -->
         ${isMetal ? `
-                                                                <td>
-                                                                  <span class="yz-machi-pct text-decoration-none"
-                                                                        data-bs-toggle="popover"
-                                                                        data-bs-placement="top"
-                                                                        data-stage="Primer"
-                                                                        data-gr="${r.PRIMER ?? ''}"
-                                                                        data-order="${r.QPROIR ?? ''}"
-                                                                        title="Progress Stage: Primer">
-                                                                    ${primerPercent}
-                                                                  </span>
-                                                                </td>` : ''}
+                                                                                <td>
+                                                                                  <span class="yz-machi-pct text-decoration-none"
+                                                                                        data-bs-toggle="popover"
+                                                                                        data-bs-placement="top"
+                                                                                        data-stage="Primer"
+                                                                                        data-gr="${r.PRIMER ?? ''}"
+                                                                                        data-order="${r.QPROIR ?? ''}"
+                                                                                        title="Progress Stage: Primer">
+                                                                                    ${primerPercent}
+                                                                                  </span>
+                                                                                </td>` : ''}
 
         <!-- PAINT -->
         <td>
