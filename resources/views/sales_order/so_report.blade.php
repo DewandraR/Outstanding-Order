@@ -881,7 +881,7 @@
                         const pembPercent = formatPercent(r.PRSM2); // (0..100) – pembahanan
                         const cutingPercent = isMetal ? formatPercentAuto(r.PRSC) : formatMachiPercent(r.PRSM);
                         const assyPercent = isMetal ? formatPercentAuto(r.PRSAM) : formatPercent(r.PRSA);
-                        const primerPercent = isMetal ? formatPercentScale1(r.PRSIR) : null; // (0..1) → %
+                        const primerPercent = isMetal ? formatPercentAuto(r.PRSIR) : null; // (0..1) → %
                         const paintPercent = isMetal ? formatPercentAuto(r
                                 .PRSIMT) // METAL pakai PRSIMT (auto-scale)
                             :
@@ -906,36 +906,36 @@
   <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
 
   ${isMetal ? '' : `
-          <!-- Pembahanan (popover T4) – hanya WOOD -->
-          <td>
-            <span class="yz-machi-pct"
-                  data-bs-toggle="popover"
-                  data-bs-placement="top"
-                  data-stage="Pembahanan"
-                  data-gr="${r.TOTTP ?? ''}"
-                  data-order="${r.TOTREQ ?? ''}"
-                  title="Progress Stage: Pembahanan">
-              ${pembPercent}
-            </span>
-          </td>`}
+                  <!-- Pembahanan (popover T4) – hanya WOOD -->
+                  <td>
+                    <span class="yz-machi-pct"
+                          data-bs-toggle="popover"
+                          data-bs-placement="top"
+                          data-stage="Pembahanan"
+                          data-gr="${r.TOTTP ?? ''}"
+                          data-order="${r.TOTREQ ?? ''}"
+                          title="Progress Stage: Pembahanan">
+                      ${pembPercent}
+                    </span>
+                  </td>`}
 
         <!-- CUTING (METAL) atau MACHI (WOOD) -->
         <td>
           ${isMetal
             ? `<span class="yz-machi-pct text-decoration-none"
-                                                                                             data-bs-toggle="popover"
-                                                                                             data-bs-placement="top"
-                                                                                             data-stage="Cuting"
-                                                                                             data-gr="${r.CUTT ?? ''}"
-                                                                                             data-order="${r.QPROC ?? ''}"
-                                                                                             title="Progress Stage: Cuting">${cutingPercent}</span>`
+                                                                                                     data-bs-toggle="popover"
+                                                                                                     data-bs-placement="top"
+                                                                                                     data-stage="Cuting"
+                                                                                                     data-gr="${r.CUTT ?? ''}"
+                                                                                                     data-order="${r.QPROC ?? ''}"
+                                                                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
             : `<span class="yz-machi-pct"
-                                                                                             data-bs-toggle="popover"
-                                                                                             data-bs-placement="top"
-                                                                                             data-stage="Machining"
-                                                                                             data-gr="${r.MACHI ?? ''}"
-                                                                                             data-order="${r.QPROM ?? ''}"
-                                                                                             title="Progress Stage: Machining">${cutingPercent}</span>`}
+                                                                                                     data-bs-toggle="popover"
+                                                                                                     data-bs-placement="top"
+                                                                                                     data-stage="Machining"
+                                                                                                     data-gr="${r.MACHI ?? ''}"
+                                                                                                     data-order="${r.QPROM ?? ''}"
+                                                                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
         </td>
 
         <!-- ASSY -->
@@ -953,17 +953,17 @@
 
         <!-- PRIMER (hanya METAL) -->
         ${isMetal ? `
-                                                                                <td>
-                                                                                  <span class="yz-machi-pct text-decoration-none"
-                                                                                        data-bs-toggle="popover"
-                                                                                        data-bs-placement="top"
-                                                                                        data-stage="Primer"
-                                                                                        data-gr="${r.PRIMER ?? ''}"
-                                                                                        data-order="${r.QPROIR ?? ''}"
-                                                                                        title="Progress Stage: Primer">
-                                                                                    ${primerPercent}
-                                                                                  </span>
-                                                                                </td>` : ''}
+                                                                                        <td>
+                                                                                          <span class="yz-machi-pct text-decoration-none"
+                                                                                                data-bs-toggle="popover"
+                                                                                                data-bs-placement="top"
+                                                                                                data-stage="Primer"
+                                                                                                data-gr="${r.PRIMER ?? ''}"
+                                                                                                data-order="${r.QPROIR ?? ''}"
+                                                                                                title="Progress Stage: Primer">
+                                                                                            ${primerPercent}
+                                                                                          </span>
+                                                                                        </td>` : ''}
 
         <!-- PAINT -->
         <td>

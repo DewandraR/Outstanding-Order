@@ -21,7 +21,7 @@ class SyncYppr079 extends Command
         $python = $this->detectPython();
         $this->info("Python: {$python}");
 
-        $cmd = [$python, $apiPath, '--sync', '--timeout', '3000'];
+        $cmd = [$python, $apiPath, '--sync', '--timeout', '9000'];
         $process = new SymfonyProcess($cmd, base_path(), null, null, 7200.0);
         $process->run(function ($type, $buffer) {
             $this->output->write($buffer);

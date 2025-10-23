@@ -923,7 +923,7 @@ def sync_yppr079_http():
     ensure_tables()
     u, p = get_sap_credentials_from_headers()
     filter_werks = request.args.get("werks"); filter_auart = request.args.get("auart")
-    limit_param  = request.args.get("limit", type=int); timeout_sec  = request.args.get("timeout", default=3000, type=int)
+    limit_param  = request.args.get("limit", type=int); timeout_sec  = request.args.get("timeout", default=9000, type=int)
 
     os.environ["SAP_USERNAME"] = u; os.environ["SAP_PASSWORD"] = p
     result = do_sync(filter_werks, filter_auart, limit_param, timeout_sec)
@@ -937,7 +937,7 @@ def sync_ysdr048_http():
     """Endpoint HTTP untuk sinkronisasi Stock (Z_FM_YSDR048)."""
     ensure_stock_tables()
     u, p = get_sap_credentials_from_headers()
-    timeout_sec  = request.args.get("timeout", default=3000, type=int)
+    timeout_sec  = request.args.get("timeout", default=9000, type=int)
 
     os.environ["SAP_USERNAME"] = u; os.environ["SAP_PASSWORD"] = p
     result = do_sync_stock(timeout_sec)
@@ -959,7 +959,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--sync_stock", action="store_true", help="Jalankan sinkronisasi Stock Z_FM_YSDR048 (tanpa HTTP)")
 
-    parser.add_argument("--timeout", type=int, default=3000, help="Timeout per panggilan RFC (detik)")
+    parser.add_argument("--timeout", type=int, default=9000, help="Timeout per panggilan RFC (detik)")
     args = parser.parse_args()
 
     if args.sync:
