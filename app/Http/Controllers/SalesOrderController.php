@@ -565,7 +565,10 @@ class SalesOrderController extends Controller
         $werks      = $validated['werks'];
         $auart      = $validated['auart'];
 
-        // Ambil VBELN & POSNR dari Item ID yang dipilih
+        // Hormati konteks Export+Replace (agar remark tidak hilang)
+        $auartList = $this->resolveAuartListForContext($auart);
+
+        // Ambil VBELN & POSNR & MATNR dari Item ID yang dipilih
         $itemKeys = DB::table('so_yppr079_t1')
             ->whereIn('id', $itemIds)
             ->select('VBELN', 'POSNR', 'MATNR')
@@ -579,25 +582,26 @@ class SalesOrderController extends Controller
             ];
         })->unique();
 
+        // Jika tidak ada item unik
         if ($vbelnPosnrMatnrPairs->isEmpty()) {
-            // Jika tidak ada item yang ditemukan, mungkin karena duplikasi ID, kembalikan response kosong
             if ($exportType === 'excel') {
                 return Excel::download(new SoItemsExport(collect()), 'Outstanding_SO_Empty_' . date('Ymd_His') . ".xlsx");
             }
             return response()->json(['error' => 'No unique items found for export.'], 400);
         }
 
-        // Subquery agregasi remark (nama user + teks)
+        // Subquery agregasi remark (nama user + teks) — SELARASKAN AUART dg konteks
         $remarksConcat = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
             ->where('ir.IV_WERKS_PARAM', $werks)
-            ->where('ir.IV_AUART_PARAM', $auart)
+            ->whereIn('ir.IV_AUART_PARAM', $auartList)
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->select(
                 'ir.VBELN',
                 'ir.POSNR',
                 DB::raw("
                 GROUP_CONCAT(
-                    CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
+                    DISTINCT CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
                     ORDER BY ir.created_at
                     SEPARATOR '\n'
                 ) AS REMARKS
@@ -605,12 +609,17 @@ class SalesOrderController extends Controller
             )
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
-        // Query utama: Ambil data item, DENGAN DEDUPLIKASI
+        // Query utama: Ambil data item, DENGAN DEDUPLIKASI & filter plant/konteks AUART
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksConcat, 'rc', function ($j) {
                 $j->on('rc.VBELN', '=', 't1.VBELN')
-                    ->on('rc.POSNR', '=', 't1.POSNR');
+                    // pastikan join POSNR ke format 6 digit
+                    ->on('rc.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
             })
+            // jaga konsistensi plant & auart (mengikuti konteks)
+            ->where('t1.IV_WERKS_PARAM', $werks)
+            ->whereIn('t1.IV_AUART_PARAM', $auartList)
+            // batasi item hanya ke triplet yang dipilih
             ->where(function ($query) use ($vbelnPosnrMatnrPairs) {
                 foreach ($vbelnPosnrMatnrPairs as $pair) {
                     $query->orWhere(function ($q) use ($pair) {
@@ -632,7 +641,7 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.KALAB)  as KALAB'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
 
-                // ⬇️ kolom GR by process (bukan persentase)
+                // GR by process (bukan persentase)
                 DB::raw('MAX(t1.MACHI)  as MACHI'),
                 DB::raw('MAX(t1.ASSYM)  as ASSYM'),
                 DB::raw('MAX(t1.PAINTM) as PAINTM'),
@@ -646,7 +655,7 @@ class SalesOrderController extends Controller
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
-
+        // Info header per VBELN
         $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName   = $locationMap[$werks] ?? $werks;
         $auartDesc      = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
@@ -662,13 +671,16 @@ class SalesOrderController extends Controller
             $item->headerInfo = $headers->get($item->VBELN);
         }
 
+        // Nama file
         $fileExtension = $exportType === 'excel' ? 'xlsx' : 'pdf';
         $fileName = "Outstanding_SO_{$locationName}_{$auart}_" . date('Ymd_His') . ".{$fileExtension}";
 
+        // Export Excel
         if ($exportType === 'excel') {
             return Excel::download(new SoItemsExport($items), $fileName);
         }
 
+        // Export PDF
         $dataForPdf = [
             'items'              => $items,
             'locationName'       => $locationName,
@@ -676,6 +688,7 @@ class SalesOrderController extends Controller
             'auartDescription'   => $auartDesc,
             'auart'              => $auart,
         ];
+
         $pdf = Pdf::loadView('sales_order.so_pdf_template', $dataForPdf)
             ->setPaper('a4', 'landscape');
 

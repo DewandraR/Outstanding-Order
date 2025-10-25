@@ -317,98 +317,157 @@ COALESCE(
     /** Export item terpilih ke PDF/Excel */
     public function exportData(Request $request)
     {
-        // Validasi dasar (tanpa memaksa integer di sini; kita sanitasi manual)
-        $request->validate([
-            'item_ids'       => 'required|array|min:1',
+        // Validasi dasar
+        $validated = $request->validate([
+            'item_ids'    => 'required|array|min:1',
             'export_type' => 'required|string|in:pdf,excel',
             'werks'       => 'required|string',
             'auart'       => 'required|string',
         ]);
 
+        $werks      = $validated['werks'];
+        $auart      = $validated['auart'];
+        $exportType = $validated['export_type'];
+
         // Sanitasi ID → hanya digit
-        $ids = collect($request->input('item_ids', []))
+        $ids = collect($validated['item_ids'])
             ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
             ->filter(fn($v) => $v > 0)
-            ->unique()->values()->all();
+            ->unique()
+            ->values();
 
-        if (empty($ids)) {
+        if ($ids->isEmpty()) {
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        $werks          = $request->input('werks');
-        $auart          = $request->input('auart');
-        $exportType = $request->input('export_type');
+        // ===== AUART context: gabungkan Export + Replace bila sedang di menu Export =====
+        $rawMapping = DB::table('maping')->select('IV_AUART', 'Deskription')->get();
 
-        // Ambil item by id + info header (PO, SO, Customer)
-        $remarksAgg = DB::table('item_remarks as r')
-            ->leftJoin('users as u', 'u.id', '=', 'r.user_id')
-            ->select(
-                'r.VBELN',
-                'r.POSNR',
-                // Pisah per-baris: "Nama: Pesan"
-                DB::raw("
-            GROUP_CONCAT(
-                CONCAT(COALESCE(u.name,'Guest'), ': ', r.remark)
-                ORDER BY r.created_at
-                SEPARATOR '\n'      -- atau SEPARATOR CHAR(10)
-            ) AS REMARKS
-        ")
-            )
-            ->where('r.IV_WERKS_PARAM', $werks)
-            ->where('r.IV_AUART_PARAM', $auart)
-            ->groupBy('r.VBELN', 'r.POSNR');
+        $exportAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'export')
+                && !Str::contains(strtolower((string)$i->Deskription), 'local')
+                && !Str::contains(strtolower((string)$i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
 
+        $replaceAuartCodes = $rawMapping
+            ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
 
-        $items = DB::table('so_yppr079_t1 as t1')
-            ->leftJoin('so_yppr079_t2 as t2', 't1.VBELN', '=', 't2.VBELN')
-            ->leftJoinSub($remarksAgg, 'ir', function ($j) {
-                $j->on('ir.VBELN', '=', 't1.VBELN')
-                    ->on('ir.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
-            })
-            ->select(
-                't1.id',
-                't1.VBELN as SO',
-                't2.BSTNK as PO',
-                't2.NAME1 as CUSTOMER',
-                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
-                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.QTY_GI',
-                't1.QTY_BALANCE2',
-                't1.KALAB',
-                't1.KALAB2',
-                't1.NETPR',
-                't1.WAERK',
-                DB::raw("COALESCE(ir.REMARKS,'') as REMARK") // <- sekarang berisi gabungan remark
-            )
-            ->whereIn('t1.id', $ids)
-            ->orderBy('t1.VBELN')->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
+        $auartList = in_array($auart, $exportAuartCodes, true)
+            ? array_unique(array_merge($exportAuartCodes, $replaceAuartCodes))
+            : [$auart];
+
+        // Ambil triplet (VBELN, POSNR, MATNR) dari id yang dipilih
+        $itemKeys = DB::table('so_yppr079_t1')
+            ->whereIn('id', $ids)
+            ->select('VBELN', 'POSNR', 'MATNR')
             ->get();
 
+        $vbelnPosnrMatnrPairs = $itemKeys->map(fn($r) => [
+            'VBELN' => $r->VBELN,
+            'POSNR' => $r->POSNR,
+            'MATNR' => $r->MATNR,
+        ])->unique();
+
+        if ($vbelnPosnrMatnrPairs->isEmpty()) {
+            if ($exportType === 'excel') {
+                return Excel::download(new PoItemsExport(collect()), 'PO_Items_Empty_' . date('Ymd_His') . '.xlsx');
+            }
+            return back()->withErrors('Tidak ada item unik untuk diekspor.');
+        }
+
+        // ===== Subquery remark (gabung multi user, buang remark kosong) =====
+        $remarksConcat = DB::table('item_remarks as ir')
+            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereIn('ir.IV_AUART_PARAM', $auartList)
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+            ->select(
+                'ir.VBELN',
+                'ir.POSNR', // POSNR di table remarks sudah 6 digit
+                DB::raw("
+                GROUP_CONCAT(
+                    DISTINCT CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
+                    ORDER BY ir.created_at
+                    SEPARATOR '\n'
+                ) AS REMARKS
+            ")
+            )
+            ->groupBy('ir.VBELN', 'ir.POSNR');
+
+        // ===== Query utama: de-dup per (VBELN, POSNR, MATNR) + join remark =====
+        $items = DB::table('so_yppr079_t1 as t1')
+            ->leftJoin(
+                'so_yppr079_t2 as t2',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
+            ->leftJoinSub($remarksConcat, 'rc', function ($j) {
+                $j->on('rc.VBELN', '=', 't1.VBELN')
+                    ->on('rc.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
+            })
+            ->where('t1.IV_WERKS_PARAM', $werks)
+            ->whereIn('t1.IV_AUART_PARAM', $auartList)
+            // batasi hanya ke triplet yang dipilih user
+            ->where(function ($query) use ($vbelnPosnrMatnrPairs) {
+                foreach ($vbelnPosnrMatnrPairs as $pair) {
+                    $query->orWhere(function ($q) use ($pair) {
+                        $q->where('t1.VBELN', $pair['VBELN'])
+                            ->where('t1.POSNR', $pair['POSNR'])
+                            ->where('t1.MATNR', $pair['MATNR']);
+                    });
+                }
+            })
+            ->select(
+                't1.VBELN as SO',
+                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
+                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
+
+                // header
+                DB::raw('MAX(t2.BSTNK)  as PO'),
+                DB::raw('MAX(t2.NAME1)  as CUSTOMER'),
+
+                // detail item
+                DB::raw('MAX(t1.MAKTX)       as MAKTX'),
+                DB::raw('MAX(t1.KWMENG)      as KWMENG'),
+                DB::raw('MAX(t1.QTY_GI)      as QTY_GI'),
+                DB::raw('MAX(t1.QTY_BALANCE2) as QTY_BALANCE2'),
+                DB::raw('MAX(t1.KALAB)       as KALAB'),
+                DB::raw('MAX(t1.KALAB2)      as KALAB2'),
+                DB::raw('MAX(t1.NETPR)       as NETPR'),
+                DB::raw('MAX(t1.WAERK)       as WAERK'),
+
+                // remark gabungan (sudah dirapikan)
+                DB::raw("COALESCE(MAX(rc.REMARKS), '') AS REMARK")
+            )
+            ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
+            ->orderBy('t1.VBELN')
+            ->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
+            ->get();
 
         if ($items->isEmpty()) {
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        $locationMap     = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName     = $locationMap[$werks] ?? $werks;
-        $auartDesc     = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
+        // ===== Nama file & metadata =====
+        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
+        $locationName = $locationMap[$werks] ?? $werks;
+        $auartDesc    = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
         if ($exportType === 'excel') {
             $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".xlsx";
             return Excel::download(new PoItemsExport($items), $fileName);
         }
 
-        // PDF
         $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".pdf";
         $pdf = Pdf::loadView('po_report.po_pdf_template', [
-            'items'              => $items,
-            'locationName'          => $locationName,
-            'auartDescription'      => $auartDesc,
-            'werks'              => $werks,
-            'auart'              => $auart,
-            'today'              => now(),
+            'items'            => $items,
+            'locationName'     => $locationName,
+            'auartDescription' => $auartDesc,
+            'werks'            => $werks,
+            'auart'            => $auart,
+            'today'            => now(),
         ])
             ->setPaper('a4', 'landscape');
 

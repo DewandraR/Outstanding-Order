@@ -20,7 +20,7 @@ Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000
   python api.py --sync             # semua pair di tabel `maping`
 
-UNTUK STOCK (SEKARANG TERMASUK IV_SIPM KE stock_ptg_m)
+UNTUK STOCK
   python api.py --sync_stock
   python api.py --sync_stock --timeout 3000
 
@@ -44,6 +44,9 @@ Pantau log secara real time
 
 PENTING AGAR TIDAK VERBOSE
 php artisan schedule:work 2>&1 | Where-Object {$_ -and ($_ -notmatch "No scheduled commands are ready to run")}
+
+BASH NOT VERBOSE
+stdbuf -oL -eL php artisan --no-ansi schedule:work 2>&1 | grep -v -E 'No scheduled commands are ready to run|^\s*$|^stdout is not a tty$'
 """
 
 import os, json, decimal, datetime, math
