@@ -2,18 +2,6 @@
 """
 API/CLI untuk memanggil Z_FM_YPPR079_SO dan Z_FM_YSDR048 dan menyimpan T_DATA1/2/3 (+ T_DATA4) ke MySQL.
 
-Konfigurasi ini sudah diubah sesuai OPSI A (PURE INSERT, TANPA DEDUPE) + PERMINTAAN KOLOM BARU:
-
-- Tabel so_yppr079_t4 TIDAK lagi memiliki UNIQUE KEY
-- Proses insert T4 menggunakan insert biasa (bukan upsert)
-- Tambahan log verifikasi jumlah riil setelah commit
-- BARU: Tambah kolom PRSM2 pada `so_yppr079_t1`
-- BARU: Tambah kolom PRSN2 pada `so_yppr079_t4` dan ikut di-insert
-- BARU: Tambah kolom TOTTP dan TOTREQ pada `so_yppr079_t4` (otomatis dibuat bila belum ada) dan ikut di-insert dari T_DATA4
-- BARU: (Koreksi) CUTT, QPROC, ASSYMT, QPROAM, PRIMER, QPROIR dipindah ke `so_yppr079_t1` (BUKAN T4)
-- BARU: Tambah kolom PRSC, PRSAM, PRSIR pada `so_yppr079_t1`
-- BARU: Tambah kolom PAINTMT, QPROIMT, QODRIMT, PRSIMT pada `so_yppr079_t1`
-- T4 sekarang HANYA menyimpan: MATNR, MAKTX, PSMNG, WEMNG, PRSN, PRSN2, TOTTP, TOTREQ, KDAUF, KDPOS (+ kunci & fetched_at)
 
 Mode CLI (tanpa HTTP):
   python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
@@ -107,6 +95,36 @@ def connect_sap(username: str, password: str) -> Connection:
         client=DEFAULT_SAP["client"],
         lang=DEFAULT_SAP["lang"],
     )
+
+def connect_sap_with_fallback(username: str, password: str) -> Tuple[Connection, str]:
+    """
+    Coba koneksi SAP dengan user awal. Jika user awal adalah 'auto_email' dan gagal,
+    otomatis fallback ke 'sap_automation' dengan password yang sama.
+    Mengembalikan (conn, used_username).
+    """
+    primary_user = (username or "auto_email").strip()
+    fallback_user = os.getenv("SAP_FALLBACK_USER", "sap_automation").strip()
+
+    try:
+        print(f"[INFO] Connecting to SAP as '{primary_user}'...", flush=True)
+        conn = connect_sap(primary_user, password)
+        print(f"[INFO] SAP connected as '{primary_user}'.", flush=True)
+        return conn, primary_user
+    except Exception as e1:
+        # Fallback hanya jika user awal adalah auto_email (sesuai permintaan)
+        if primary_user.lower() == "auto_email":
+            print(f"[WARN] Login '{primary_user}' failed ({e1}). Trying fallback '{fallback_user}'...", flush=True)
+            try:
+                conn = connect_sap(fallback_user, password)
+                print(f"[INFO] SAP connected as fallback '{fallback_user}'.", flush=True)
+                return conn, fallback_user
+            except Exception as e2:
+                print(f"[ERROR] Fallback '{fallback_user}' also failed: {e2}", flush=True)
+                raise
+        else:
+            print(f"[ERROR] SAP connection failed for user '{primary_user}': {e1}", flush=True)
+            raise
+
 
 # ---------- Util ----------
 def get_sap_credentials_from_headers() -> Tuple[str, str]:
@@ -726,12 +744,13 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
         return {"ok": False, "error": "No mapping pairs found for given filter.", "pairs": []}
 
     try:
-        print("[INFO] Connecting to SAP...", flush=True)
-        sap = connect_sap(username, password)
-        print("[INFO] SAP connected.", flush=True)
+        print("[INFO] Connecting to SAP (with fallback if needed)...", flush=True)
+        sap, used_user = connect_sap_with_fallback(username, password)
+        print(f"[INFO] Using SAP user '{used_user}' for RFC {RFC_NAME_SO}.", flush=True)
     except Exception as e:
         print(f"[ERROR] SAP connection failed: {e}", flush=True)
         return {"ok": False, "error": f"SAP connection failed: {e}", "pairs": []}
+
 
     t1_buf: List[tuple] = []
     t2_buf: List[tuple] = []
@@ -816,6 +835,7 @@ def do_sync(filter_werks=None, filter_auart=None, limit: Optional[int] = None, t
 
     return {
         "ok": True,
+        "sap_user_used": used_user,
         "totals": {"t1": total_t1, "t2": total_t2, "t3": total_t3, "t4": total_t4},
         "inserted": {"t1": inserted_t1, "t2": inserted_t2, "t3": inserted_t3, "t4": inserted_t4},
         "pairs": summary, "started_at": start_ts.isoformat(), "finished_at": done_ts.isoformat(),
@@ -836,12 +856,13 @@ def do_sync_stock(timeout_sec: int = 3000):
     print(f"[INFO] Using RFC: {RFC_NAME_STOCK}", flush=True)
 
     try:
-        print("[INFO] Connecting to SAP...", flush=True)
-        sap = connect_sap(username, password)
-        print("[INFO] SAP connected.", flush=True)
+        print("[INFO] Connecting to SAP (with fallback if needed)...", flush=True)
+        sap, used_user = connect_sap_with_fallback(username, password)
+        print(f"[INFO] Using SAP user '{used_user}' for RFC {RFC_NAME_STOCK}.", flush=True)
     except Exception as e:
         print(f"[ERROR] SAP connection failed: {e}", flush=True)
         return {"ok": False, "error": f"SAP connection failed: {e}", "summary": []}
+
 
     # 🌟 PARAMETER SYNC DIPERBARUI (IV_SIPM Ditambahkan)
     sync_params = {"IV_SIAD": "X", "IV_SIPD": "X", "IV_SIPP": "X", "IV_SIPM": "X"}
@@ -908,8 +929,12 @@ def do_sync_stock(timeout_sec: int = 3000):
     print(f"[INFO] Done Stock sync. totals: {inserted_counts} @ {done_ts:%Y-%m-%d %H:%M:%S}", flush=True)
 
     return {
-        "ok": True, "inserted": inserted_counts, "summary": summary,
-        "started_at": start_ts.isoformat(), "finished_at": done_ts.isoformat(),
+        "ok": True,
+        "sap_user_used": used_user,
+        "inserted": inserted_counts,
+        "summary": summary,
+        "started_at": start_ts.isoformat(),
+        "finished_at": done_ts.isoformat(),
     }
 
 # ---------- Endpoints (opsional) ----------
