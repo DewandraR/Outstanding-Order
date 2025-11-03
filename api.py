@@ -66,8 +66,8 @@ DEFAULT_SAP = {
 DB_CFG = {
     "host": os.environ.get("DB_HOST", "localhost"),
     "user": os.environ.get("DB_USER", "root"),
-    "password": os.environ.get("DB_PASS", ""),
-    "database": os.environ.get("DB_NAME", "outstanding_yppr"),
+    "password": os.environ.get("DB_PASS", "singgampang"),
+    "database": os.environ.get("DB_NAME", "oso_yppr"),
 }
 RFC_NAME_SO     = "Z_FM_YPPR079_SO"
 RFC_NAME_STOCK  = "Z_FM_YSDR048"

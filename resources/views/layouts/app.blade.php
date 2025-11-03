@@ -25,7 +25,7 @@
     <aside class="sidebar d-flex flex-column min-vh-100">
         {{-- HEADER BRANDING --}}
         <a href="{{ route('dashboard') }}" class="sidebar-header">
-            <img src="{{ asset('images/KMI.png') }}" alt="Logo KMI" class="sidebar-logo">
+            <img src="{{ asset('Images/KMI.png') }}" alt="Logo KMI" class="sidebar-logo">
             <div class="sidebar-title-wrapper">
                 <h5 class="sidebar-app-name">{{ config('app.name', 'Laravel') }}</h5>
                 <span class="sidebar-app-subtitle">PT Kayu Mabel Indonesia</span>

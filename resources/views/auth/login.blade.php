@@ -30,7 +30,7 @@
             {{-- Kolom Kiri: Ilustrasi / Logo --}}
             <div class="hidden lg:flex flex-col items-center justify-center p-12 bg-white">
                 <div class="text-center">
-                    <img src="{{ asset('images/KMI.png') }}"
+                    <img src="{{ asset('Images/KMI.png') }}"
                         alt="Company Logo"
                         class="max-h-64 w-auto object-contain mx-auto transition-transform duration-500 hover:scale-105">
                     <h2 class="mt-8 text-2xl font-bold text-green-800">

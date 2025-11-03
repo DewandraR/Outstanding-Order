@@ -140,7 +140,7 @@
             {{-- LOGO OVAL KMI --}}
             <div class="logo-wrapper">
                 <div class="img-oval-wrapper">
-                    <img src="{{ asset('images/KMI.png') }}" alt="Logo KMI">
+                    <img src="{{ asset('Images/KMI.png') }}" alt="Logo KMI">
                 </div>
             </div>
 
