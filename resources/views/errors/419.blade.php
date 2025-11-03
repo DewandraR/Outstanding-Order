@@ -164,7 +164,7 @@
             {{-- LOGO PERUSAHAAN --}}
             <div class="logo-wrapper">
                 <div class="img-oval-wrapper"> {{-- Tambahkan wrapper baru --}}
-                    <img src="{{ asset('images/KMI.png') }}" alt="Logo KMI">
+                    <img src="{{ asset('Images/KMI.png') }}" alt="Logo KMI">
                 </div>
             </div>
 
