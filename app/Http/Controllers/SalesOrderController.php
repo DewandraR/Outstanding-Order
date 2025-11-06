@@ -54,6 +54,40 @@ class SalesOrderController extends Controller
     }
 
     /**
+     * Helper: decrypt token q → array terverifikasi
+     */
+    private function decryptPacked(?string $q): array
+    {
+        abort_unless($q, 400, 'Missing query.');
+        try {
+            $json = Crypt::decryptString($q);
+            $arr  = json_decode($json, true);
+            return is_array($arr) ? $arr : [];
+        } catch (\Throwable $e) {
+            abort(400, 'Invalid or expired token.');
+        }
+    }
+
+    /**
+     * Helper: map lokasi
+     */
+    private function resolveLocationName(string $werks): string
+    {
+        return [
+            '2000' => 'Surabaya',
+            '3000' => 'Semarang',
+        ][$werks] ?? $werks;
+    }
+
+    /**
+     * Helper: format nama file konsisten
+     */
+    private function buildFileName(string $base, string $ext): string
+    {
+        return sprintf('%s_%s.%s', $base, Carbon::now()->format('Ymd_His'), $ext);
+    }
+
+    /**
      * Redirector untuk parameter terenkripsi.
      */
     public function redirector(Request $request)
@@ -104,9 +138,8 @@ class SalesOrderController extends Controller
             ->filter(fn($i) => Str::contains(strtolower((string)$i->Deskription), 'replace'))
             ->pluck('IV_AUART')->unique()->toArray();
 
-        // Tentukan list AUART yang harus dikueri: jika auart saat ini adalah Export atau Replace, gabungkan keduanya.
+        // Tentukan list AUART yang harus dikueri
         $auartList = $this->resolveAuartListForContext($auart);
-
 
         // 4) LOGIC AUTO-PILIH DEFAULT AUART (Jika hanya plant yang dikirim)
         if ($request->filled('werks') && !$request->filled('auart') && !$request->has('q')) {
@@ -180,9 +213,7 @@ class SalesOrderController extends Controller
         }
 
         if ($werks && $auart) {
-
             // [PERBAIKAN DE-DUPLIKASI LEVEL 1]
-            // Subquery Item Unik (VBELN, POSNR, MATNR) untuk agregasi nilai dan quantity
             $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
                 ->select(
                     't1a.VBELN',
@@ -197,7 +228,6 @@ class SalesOrderController extends Controller
                 ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
                 ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
 
-
             /** Subquery A: agregat SEMUA outstanding (qty & value) per customer dari item unik */
             $allAggSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
                 ->select(
@@ -208,7 +238,7 @@ class SalesOrderController extends Controller
                 )
                 ->groupBy('t_u.KUNNR');
 
-            /** Subquery B: agregat hanya OVERDUE value per customer, DIPISAH PER CURRENCY, dari item unik */
+            /** Subquery B: agregat hanya OVERDUE value per customer */
             $overdueValueSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
                 ->select(
                     't_u.KUNNR',
@@ -233,7 +263,6 @@ class SalesOrderController extends Controller
                 ->select(
                     't2c.KUNNR',
                     DB::raw('COUNT(DISTINCT t2c.VBELN) AS SO_TOTAL_COUNT'),
-                    // PERBAIKAN: Mengganti alias t2.EDATU menjadi t2c.EDATU di sini
                     DB::raw("COUNT(DISTINCT CASE WHEN COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2c.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2c.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')) < CURDATE() THEN t2c.VBELN ELSE NULL END) AS SO_LATE_COUNT")
                 )
                 ->groupBy('t2c.KUNNR');
@@ -262,8 +291,7 @@ class SalesOrderController extends Controller
                 ->orderBy('NAME1', 'asc')
                 ->get();
 
-
-            // Total untuk footer (menggunakan hasil rows yang sudah diperbaiki)
+            // Total untuk footer
             $pageTotalsAll = [
                 'USD' => $rows->sum('TOTAL_ALL_VALUE_USD'),
                 'IDR' => $rows->sum('TOTAL_ALL_VALUE_IDR'),
@@ -274,7 +302,7 @@ class SalesOrderController extends Controller
             ];
             $grandTotals = $pageTotalsOverdue;
 
-            // Mengambil Data Small Qty untuk tampilan awal Blade
+            // Small Qty untuk tampilan awal Blade
             $smallQtyByCustomer = DB::table('so_yppr079_t1 as t1')
                 ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
                 ->where('t1.IV_WERKS_PARAM', $werks)
@@ -359,7 +387,6 @@ class SalesOrderController extends Controller
             ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
             ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.EDATU');
 
-
         // Query utama: Agregasi dari subquery item unik untuk mendapatkan total per SO
         $rows = DB::table('so_yppr079_t2 as t2')
             ->joinSub($uniqueItemsAgg, 'item_agg', function ($j) {
@@ -368,20 +395,19 @@ class SalesOrderController extends Controller
             ->leftJoinSub($remarksSub, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't2.VBELN'))
             ->select(
                 't2.VBELN',
-                DB::raw('MAX(t2.EDATU) as EDATU'), // Ambil EDATU dari t2 (untuk konsistensi)
-                DB::raw('MAX(item_agg.WAERK) as WAERK'), // Ambil WAERK dari item_agg
-                DB::raw('CAST(ROUND(SUM(CAST(item_agg.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as total_value'), // SUM dari item unik
-                DB::raw('SUM(CAST(item_agg.item_outs_qty AS DECIMAL(18,3))) as outs_qty'),                                     // SUM dari item unik
-                DB::raw('COUNT(DISTINCT CONCAT(item_agg.VBELN, "-", t2.KUNNR)) as so_count'), // Ini hanya 1 karena group by VBELN
-                DB::raw('COUNT(DISTINCT CONCAT(item_agg.VBELN, "-", item_agg.POSNR, "-", item_agg.MATNR)) as item_count'), // Hitung item unik
+                DB::raw('MAX(t2.EDATU) as EDATU'),
+                DB::raw('MAX(item_agg.WAERK) as WAERK'),
+                DB::raw('CAST(ROUND(SUM(CAST(item_agg.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as total_value'),
+                DB::raw('SUM(CAST(item_agg.item_outs_qty AS DECIMAL(18,3))) as outs_qty'),
+                DB::raw('COUNT(DISTINCT CONCAT(item_agg.VBELN, "-", t2.KUNNR)) as so_count'),
+                DB::raw('COUNT(DISTINCT CONCAT(item_agg.VBELN, "-", item_agg.POSNR, "-", item_agg.MATNR)) as item_count'),
                 DB::raw('COALESCE(MAX(rk.remark_count),0) AS remark_count')
             )
             ->where('t2.KUNNR', $request->kunnr)
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->whereIn('t2.IV_AUART_PARAM', $auartList)
-            ->groupBy('t2.VBELN', 't2.EDATU') // Grouping berdasarkan SO (VBELN)
+            ->groupBy('t2.VBELN', 't2.EDATU')
             ->get();
-
 
         // hitung overdue & format tanggal
         $today = now()->startOfDay();
@@ -548,9 +574,15 @@ class SalesOrderController extends Controller
         return response()->json(['ok' => true, 'data' => $items]);
     }
     /**
-     * Export PDF / Excel untuk item terpilih.
+     * =================== EXPORT DATA (ITEM TERPILIH) ===================
+     * Pola: POST (start) → 303 → GET (show)
      */
-    public function exportData(Request $request)
+
+    /**
+     * POST starter: validasi & redirect 303 ke GET untuk preview/unduh.
+     * Tetap gunakan nama route lama (compat) 'so.exportData'
+     */
+    public function exportDataStart(Request $request)
     {
         $validated = $request->validate([
             'item_ids'      => 'required|array',
@@ -560,12 +592,25 @@ class SalesOrderController extends Controller
             'auart'         => 'required|string',
         ]);
 
-        $itemIds    = $validated['item_ids'];
-        $exportType = $validated['export_type'];
-        $werks      = $validated['werks'];
-        $auart      = $validated['auart'];
+        // packing ke token q
+        $q = Crypt::encryptString(json_encode($validated));
 
-        // Hormati konteks Export+Replace (agar remark tidak hilang)
+        return redirect()->route('so.export.show', ['q' => $q], 303);
+    }
+
+    /**
+     * GET streamer: bangun file & kirim response.
+     */
+    public function exportDataShow(Request $request)
+    {
+        $payload = $this->decryptPacked($request->query('q'));
+
+        $itemIds    = $payload['item_ids']      ?? [];
+        $exportType = $payload['export_type']   ?? 'pdf';
+        $werks      = (string)($payload['werks'] ?? '');
+        $auart      = (string)($payload['auart'] ?? '');
+
+        // Hormati konteks Export+Replace
         $auartList = $this->resolveAuartListForContext($auart);
 
         // Ambil VBELN & POSNR & MATNR dari Item ID yang dipilih
@@ -613,13 +658,10 @@ class SalesOrderController extends Controller
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksConcat, 'rc', function ($j) {
                 $j->on('rc.VBELN', '=', 't1.VBELN')
-                    // pastikan join POSNR ke format 6 digit
                     ->on('rc.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
             })
-            // jaga konsistensi plant & auart (mengikuti konteks)
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
-            // batasi item hanya ke triplet yang dipilih
             ->where(function ($query) use ($vbelnPosnrMatnrPairs) {
                 foreach ($vbelnPosnrMatnrPairs as $pair) {
                     $query->orWhere(function ($q) use ($pair) {
@@ -656,8 +698,7 @@ class SalesOrderController extends Controller
             ->get();
 
         // Info header per VBELN
-        $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName   = $locationMap[$werks] ?? $werks;
+        $locationName   = $this->resolveLocationName($werks);
         $auartDesc      = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
         $vbelns = $items->pluck('VBELN')->unique();
@@ -673,14 +714,14 @@ class SalesOrderController extends Controller
 
         // Nama file
         $fileExtension = $exportType === 'excel' ? 'xlsx' : 'pdf';
-        $fileName = "Outstanding_SO_{$locationName}_{$auart}_" . date('Ymd_His') . ".{$fileExtension}";
+        $fileName = $this->buildFileName("Outstanding_SO_{$locationName}_{$auart}", $fileExtension);
 
-        // Export Excel
+        // Export Excel → langsung download (attachment)
         if ($exportType === 'excel') {
             return Excel::download(new SoItemsExport($items), $fileName);
         }
 
-        // Export PDF
+        // Export PDF → STREAM INLINE (preview + tombol Download berfungsi + nama file benar)
         $dataForPdf = [
             'items'              => $items,
             'locationName'       => $locationName,
@@ -688,11 +729,18 @@ class SalesOrderController extends Controller
             'auartDescription'   => $auartDesc,
             'auart'              => $auart,
         ];
+        $pdfBinary = Pdf::loadView('sales_order.so_pdf_template', $dataForPdf)
+            ->setPaper('a4', 'landscape')
+            ->output();
 
-        $pdf = Pdf::loadView('sales_order.so_pdf_template', $dataForPdf)
-            ->setPaper('a4', 'landscape');
-
-        return $pdf->stream($fileName);
+        return response()->stream(function () use ($pdfBinary) {
+            echo $pdfBinary;
+        }, 200, [
+            'Content-Type'            => 'application/pdf',
+            'Content-Disposition'     => 'inline; filename="' . $fileName . '"',
+            'X-Content-Type-Options'  => 'nosniff',
+            'Cache-Control'           => 'private, max-age=60, must-revalidate',
+        ]);
     }
 
     /**
@@ -740,6 +788,7 @@ class SalesOrderController extends Controller
 
     /**
      * Export ringkasan customer (PDF).
+     * Diseragamkan: gunakan stream inline agar preview + download name benar.
      */
     public function exportCustomerSummary(Request $request)
     {
@@ -763,15 +812,13 @@ class SalesOrderController extends Controller
         $auartList = $this->resolveAuartListForContext($auart);
 
         // Deskripsi SO Type & lokasi
-        $locationMap    = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName   = $locationMap[$werks] ?? $werks;
+        $locationName   = $this->resolveLocationName($werks);
         $auartDesc      = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
         // Aman-kan parsing tanggal untuk t2
         $safeEdatu = "COALESCE(STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'), STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'))";
 
         // [PERBAIKAN DE-DUPLIKASI LEVEL 1]
-        // Subquery Item Unik (VBELN, POSNR, MATNR) untuk agregasi nilai
         $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
             ->select(
                 't1a.VBELN',
@@ -785,7 +832,6 @@ class SalesOrderController extends Controller
             ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
             ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
 
-
         // Total value OVERDUE per customer, dari item unik
         $overdueValueSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
             ->select(
@@ -795,7 +841,6 @@ class SalesOrderController extends Controller
             )
             ->whereRaw($this->getSafeEdatuForUniqueItem('t_u') . ' < CURDATE()')
             ->groupBy('t_u.KUNNR');
-
 
         $rows = DB::table('so_yppr079_t2 as t2')
             ->leftJoinSub($overdueValueSubquery, 'overdue_values', fn($j) => $j->on('t2.KUNNR', '=', 'overdue_values.KUNNR'))
@@ -830,11 +875,20 @@ class SalesOrderController extends Controller
             'today'            => now(),
         ];
 
-        $fileName = "Overview_Customer_{$locationName}_{$auart}_" . date('Ymd_His') . ".pdf";
+        $fileName = $this->buildFileName("Overview_Customer_{$locationName}_{$auart}", "pdf");
 
-        $pdf = Pdf::loadView('sales_order.so_customer_summary_pdf', $data)->setPaper('a4', 'landscape');
+        $pdfBinary = Pdf::loadView('sales_order.so_customer_summary_pdf', $data)
+            ->setPaper('a4', 'landscape')
+            ->output();
 
-        return $pdf->stream($fileName);
+        return response()->stream(function () use ($pdfBinary) {
+            echo $pdfBinary;
+        }, 200, [
+            'Content-Type'            => 'application/pdf',
+            'Content-Disposition'     => 'inline; filename="' . $fileName . '"',
+            'X-Content-Type-Options'  => 'nosniff',
+            'Cache-Control'           => 'private, max-age=60, must-revalidate',
+        ]);
     }
 
     /**
@@ -910,10 +964,12 @@ class SalesOrderController extends Controller
 
         return response()->json(['ok' => true, 'data' => $items]);
     }
+
     /**
-     * Export PDF Small Quantity (≤5) Outstanding per Customer.
+     * ============= SMALL QTY PDF (POST→GET) =============
+     * POST starter: pakai nama route lama (compat) 'so.exportSmallQtyPdf'
      */
-    public function exportSmallQtyPdf(Request $request)
+    public function exportSmallQtyStart(Request $request)
     {
         $validated = $request->validate([
             'customerName' => 'required|string',
@@ -921,9 +977,20 @@ class SalesOrderController extends Controller
             'auart' => 'required|string',
         ]);
 
-        $customerName = $validated['customerName'];
-        $werks = $validated['werks'];
-        $auart = $validated['auart'];
+        $q = Crypt::encryptString(json_encode($validated));
+        return redirect()->route('so.export.small_qty_pdf.show', ['q' => $q], 303);
+    }
+
+    /**
+     * GET streamer: Small Qty PDF inline
+     */
+    public function exportSmallQtyShow(Request $request)
+    {
+        $payload = $this->decryptPacked($request->query('q'));
+
+        $customerName = (string)($payload['customerName'] ?? '');
+        $werks        = (string)($payload['werks'] ?? '');
+        $auart        = (string)($payload['auart'] ?? '');
 
         $auartList = $this->resolveAuartListForContext($auart);
 
@@ -950,18 +1017,25 @@ class SalesOrderController extends Controller
             ->groupBy('t2.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderBy('t2.VBELN', 'asc')->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')->get();
 
-        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName = $locationMap[$werks] ?? $werks;
+        $locationName = $this->resolveLocationName($werks);
 
-        $pdf = Pdf::loadView('sales_order.small-qty-pdf', [
+        $pdfBinary = Pdf::loadView('sales_order.small-qty-pdf', [
             'items'        => $items,
             'customerName' => $customerName,
             'locationName' => $locationName,
             'generatedAt'  => now()->format('d-m-Y'),
-        ])->setPaper('a4', 'portrait');
+        ])->setPaper('a4', 'portrait')->output();
 
-        $filename = 'SO_SmallQty_' . $locationName . '_' . Str::slug($customerName) . '.pdf';
-        return $pdf->stream($filename);
+        $filename = $this->buildFileName('SO_SmallQty_' . $locationName . '_' . Str::slug($customerName), 'pdf');
+
+        return response()->stream(function () use ($pdfBinary) {
+            echo $pdfBinary;
+        }, 200, [
+            'Content-Type'            => 'application/pdf',
+            'Content-Disposition'     => 'inline; filename="' . $filename . '"',
+            'X-Content-Type-Options'  => 'nosniff',
+            'Cache-Control'           => 'private, max-age=60, must-revalidate',
+        ]);
     }
 
     /**
@@ -990,7 +1064,7 @@ class SalesOrderController extends Controller
             ->select(
                 'ir.id',
                 'ir.user_id',
-                DB::raw('COALESCE(u.name, "Guest") as user_name'), // Ubah "User" menjadi "Guest" jika user_id NULL
+                DB::raw('COALESCE(u.name, "Guest") as user_name'),
                 'ir.remark',
                 'ir.created_at',
                 'ir.updated_at'
@@ -1095,6 +1169,7 @@ class SalesOrderController extends Controller
 
         return response()->json(['ok' => true, 'message' => 'Remark berhasil diubah.']);
     }
+
     public function apiMachiningLines(Request $request)
     {
         $validated = $request->validate([
@@ -1107,13 +1182,10 @@ class SalesOrderController extends Controller
         $werks = $validated['werks'];
         $auart = $validated['auart'];
         $vbeln = trim((string)$validated['vbeln']);
-        // pastikan 6 digit (sama seperti POSNR_KEY di Tabel-3)
         $posnrKey = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
 
-        // Hormati logika export/replace yang kamu pakai di tempat lain
         $auartList = $this->resolveAuartListForContext($auart);
 
-        // Ambil baris dari t4 dgn match KDAUF (VBELN) & KDPOS (POSNR 6 digit)
         $rows = DB::table('so_yppr079_t4 as t4')
             ->where('t4.IV_WERKS_PARAM', $werks)
             ->whereIn('t4.IV_AUART_PARAM', $auartList)
@@ -1132,6 +1204,7 @@ class SalesOrderController extends Controller
 
         return response()->json(['ok' => true, 'data' => $rows], 200);
     }
+
     public function apiPembahananLines(Request $request)
     {
         $validated = $request->validate([
@@ -1156,9 +1229,9 @@ class SalesOrderController extends Controller
             ->select(
                 DB::raw("CASE WHEN t4.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t4.MATNR) ELSE t4.MATNR END AS MATNR"),
                 't4.MAKTX',
-                DB::raw('CAST(t4.TOTREQ AS DECIMAL(18,3)) AS TOTREQ'), // Order pembahanan
-                DB::raw('CAST(t4.TOTTP  AS DECIMAL(18,3)) AS TOTTP'),  // GR pembahanan
-                DB::raw('CAST(t4.PRSN2  AS DECIMAL(18,3)) AS PRSN2')   // Progress pembahanan
+                DB::raw('CAST(t4.TOTREQ AS DECIMAL(18,3)) AS TOTREQ'),
+                DB::raw('CAST(t4.TOTTP  AS DECIMAL(18,3)) AS TOTTP'),
+                DB::raw('CAST(t4.PRSN2  AS DECIMAL(18,3)) AS PRSN2')
             )
             ->orderBy('t4.MATNR')
             ->get();

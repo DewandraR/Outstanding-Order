@@ -1141,54 +1141,86 @@ class DashboardController extends Controller
 
     public function exportSmallQtyPdf(Request $request)
     {
+        return $this->exportSmallQtyStart($request);
+    }
+
+
+    public function exportSmallQtyStart(Request $request)
+    {
         $validated = $request->validate([
             'customerName' => 'required|string',
             'locationName' => 'required|string|in:Semarang,Surabaya',
-            'type'          => 'nullable|string', // Mengubah validasi menjadi nullable string
+            'type'         => 'nullable|string',
+            'auart'        => 'nullable|string',
         ]);
 
-        $customerName = $validated['customerName'];
-        $locationName = $validated['locationName'];
-        $type           = $validated['type'] ?? null;
-        $werks          = $locationName === 'Semarang' ? '3000' : '2000';
+        // simpan auart bila ada (dipakai logika Export+Replace)
+        $payload = [
+            'customerName' => $validated['customerName'],
+            'locationName' => $validated['locationName'],
+            'type'         => $validated['type'] ?? null,
+            'auart'        => $validated['auart'] ?? null,
+        ];
 
-        // --- LOGIKA PENGGABUNGAN ---
-        $mapping = DB::table('maping')->get();
-        $exportAuartCodes = $mapping->filter(function ($item) {
-            $d = strtolower($item->Deskription);
-            return Str::contains($d, 'export')
-                && !Str::contains($d, 'local')
-                && !Str::contains($d, 'replace');
-        })->pluck('IV_AUART')->unique()->toArray();
-        $replaceAuartCodes = $mapping->filter(function ($item) {
-            return Str::contains(strtolower($item->Deskription), 'replace');
-        })->pluck('IV_AUART')->unique()->toArray();
+        $q = Crypt::encryptString(json_encode($payload));
+        return redirect()->route('dashboard.export.smallQtyPdf.show', ['q' => $q], 303);
+    }
 
-        // Tentukan AUART List: Gabungkan Export + Replace jika AUART yang dikirim termasuk Export codes.
-        $auartFromRequest = $request->input('auart');
-        $auartList = [$auartFromRequest];
+    // GET -> bangun PDF & stream inline (viewer bisa Download)
+    public function exportSmallQtyShow(Request $request)
+    {
+        if (!$request->filled('q')) abort(400, 'Missing token.');
 
-        if (!empty($auartList[0]) && in_array($auartList[0], $exportAuartCodes)) {
-            $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+        try {
+            $p = json_decode(Crypt::decryptString($request->query('q')), true) ?: [];
+        } catch (DecryptException $e) {
+            abort(400, 'Invalid token.');
         }
-        $auartList = array_unique(array_filter($auartList));
+
+        $customerName = (string)($p['customerName'] ?? '');
+        $locationName = (string)($p['locationName'] ?? '');
+        $type         = $p['type'] ?? null;
+        $auartReq     = $p['auart'] ?? null;
+
+        if ($customerName === '' || !in_array($locationName, ['Semarang', 'Surabaya'], true)) {
+            abort(422, 'Bad parameters.');
+        }
+
+        $werks = $locationName === 'Semarang' ? '3000' : '2000';
+
+        // --- LOGIKA PENGGABUNGAN (Export + Replace) ---
+        $mapping = DB::table('maping')->get();
+        $exportAuartCodes = $mapping->filter(function ($i) {
+            $d = strtolower($i->Deskription);
+            return str_contains($d, 'export') && !str_contains($d, 'local') && !str_contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+        $replaceAuartCodes = $mapping->filter(fn($i) => str_contains(strtolower($i->Deskription), 'replace'))
+            ->pluck('IV_AUART')->unique()->toArray();
+
+        $auartList = array_filter([$auartReq]);
+        if (!empty($auartList) && in_array($auartList[0], $exportAuartCodes, true)) {
+            $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
+        }
         // --- END LOGIKA PENGGABUNGAN ---
 
-
-        // Query export
+        // Query data (sama dengan exportSmallQtyPdf Anda)
         $q = DB::table('so_yppr079_t1 as t1')
-            ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
+            ->join(
+                'so_yppr079_t2 as t2',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
             ->leftJoin('maping as m', function ($j) {
                 $j->on('t2.IV_AUART_PARAM', '=', 'm.IV_AUART')
                     ->on('t2.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
             })
             ->where('t2.NAME1', $customerName)
             ->where('t2.IV_WERKS_PARAM', $werks)
-            ->where('t1.QTY_BALANCE2', '>', 0)
-            ->where('t1.QTY_BALANCE2', '<=', 5)
-            ->whereRaw('CAST(t1.QTY_GI AS DECIMAL(18,3)) > 0'); // FILTER HANYA JIKA SHIPPED > 0
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) <= 5')
+            ->whereRaw('CAST(t1.QTY_GI AS DECIMAL(18,3)) > 0');
 
-        // Tambahkan filter AUART yang relevan
         if (!empty($auartList)) {
             $q->whereIn('t2.IV_AUART_PARAM', $auartList);
         }
@@ -1201,48 +1233,38 @@ class DashboardController extends Controller
             't1.KWMENG',
             't1.QTY_GI',
             't1.QTY_BALANCE2',
-            't1.KALAB', // <<< BARU
-            't1.KALAB2' // <<< BARU
+            't1.KALAB',
+            't1.KALAB2'
         )
             ->orderBy('t2.VBELN')
             ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
             ->get();
 
-        $totals = [
-            'total_item' => $items->count(),
-            'total_po'   => $items->pluck('PO')->filter()->unique()->count(),
-        ];
-
         $meta = [
             'customerName' => $customerName,
             'locationName' => $locationName,
-            'type'       => $type,
-            'generatedAt'      => now()->format('d-m-Y'),
+            'type'         => $type,
+            'generatedAt'  => now()->format('d-m-Y'),
         ];
 
-        if (class_exists(\Barryvdh\DomPDF\Facade\Pdf::class)) {
-            if ($items->isEmpty()) {
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po_report.small-qty-pdf', [
-                    'items' => collect(),
-                    'meta' => $meta,
-                    'totals' => ['total_item' => 0, 'total_po' => 0],
-                ])->setPaper('a4', 'portrait');
-            } else {
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('po_report.small-qty-pdf', [
-                    'items' => $items,
-                    'meta' => $meta,
-                    'totals' => $totals,
-                ])->setPaper('a4', 'portrait');
-            }
+        $pdfBinary = Pdf::loadView('po_report.small-qty-pdf', [
+            'items'  => $items,
+            'meta'   => $meta,
+            'totals' => [
+                'total_item' => $items->count(),
+                'total_po'   => $items->pluck('PO')->filter()->unique()->count(),
+            ],
+        ])->setPaper('a4', 'portrait')->output();
 
-            $filename = 'SmallQty_' . $locationName . '_' . Str::slug($customerName) . '.pdf';
-            return $pdf->stream($filename);
-        }
+        $filename = 'SmallQty_' . $locationName . '_' . Str::slug($customerName) . '_' . now()->format('Ymd_His') . '.pdf';
 
-        return view('po_report.small-qty-pdf', [
-            'items' => $items,
-            'meta' => $meta,
-            'totals' => $totals,
+        return response()->stream(function () use ($pdfBinary) {
+            echo $pdfBinary;
+        }, 200, [
+            'Content-Type'           => 'application/pdf',
+            'Content-Disposition'    => 'inline; filename="' . $filename . '"',
+            'Cache-Control'          => 'private, max-age=60, must-revalidate',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 

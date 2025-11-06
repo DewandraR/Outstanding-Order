@@ -140,7 +140,7 @@ class StockController extends Controller
         $type = $request->type === 'fg' ? 'fg' : 'whfg';
 
         $rows = DB::table('so_yppr079_t1 as t1')
-            // ✅ JOIN AMAN (TRIM/CAST) untuk antisipasi tipe kolom berbeda/padding
+            // ✅ JOIN AMAN (TRIM/CAST)
             ->leftJoin(
                 'so_yppr079_t2 as t2',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
@@ -180,7 +180,7 @@ class StockController extends Controller
             $formattedEdatu = '';
             if (!empty($row->EDATU) && $row->EDATU !== '0000-00-00') {
                 try {
-                    $edatuDate = \Carbon\Carbon::parse($row->EDATU);
+                    $edatuDate = Carbon::parse($row->EDATU);
                     $formattedEdatu = $edatuDate->format('d-m-Y');
                     $overdue = $today->diffInDays($edatuDate->startOfDay(), false);
                 } catch (\Exception $e) {
@@ -231,26 +231,76 @@ class StockController extends Controller
         return response()->json(['ok' => true, 'data' => $items]);
     }
 
+    /* ============================== EXPORT ============================== */
+
     /**
-     * Export PDF / Excel untuk item terpilih (Stock).
+     * POST starter: validasi & bungkus payload -> redirect ke GET streamer.
+     * (Nama route Blade tetap: stock.export)
      */
-    public function exportData(Request $request)
+    public function exportDataStart(Request $request)
     {
         $validated = $request->validate([
-            'item_ids'    => 'required|array',
-            'item_ids.*'  => 'integer',
+            'item_ids'    => 'required|array|min:1',
             'export_type' => 'required|string|in:pdf,excel',
             'werks'       => 'required|string',
-            'type'        => 'required|string',
+            'type'        => 'required|string|in:whfg,fg',
         ]);
 
-        $itemIds    = $validated['item_ids'];
-        $exportType = $validated['export_type'];
-        $werks      = $validated['werks'];
-        $type       = $validated['type'];
+        // Sanitasi ID -> integer unik > 0
+        $ids = collect($validated['item_ids'])
+            ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
+            ->filter(fn($v) => $v > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($ids)) {
+            return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
+        }
+
+        $payload = [
+            'item_ids'    => $ids,
+            'export_type' => $validated['export_type'],
+            'werks'       => $validated['werks'],
+            'type'        => $validated['type'] === 'fg' ? 'fg' : 'whfg',
+        ];
+
+        $q = Crypt::encrypt($payload);
+        return redirect()->route('stock.export.show', ['q' => $q], 303);
+    }
+
+    /**
+     * GET streamer: decrypt payload & kirim file (Excel/PDF).
+     * (Route name: stock.export.show)
+     */
+    public function exportDataShow(Request $request)
+    {
+        if (!$request->filled('q')) {
+            return back()->withErrors('Payload export tidak ditemukan.');
+        }
+
+        try {
+            $data = Crypt::decrypt($request->query('q'));
+        } catch (DecryptException $e) {
+            return back()->withErrors('Token export tidak valid.');
+        }
+
+        $werks      = (string)($data['werks'] ?? '');
+        $type       = (string)($data['type'] ?? 'whfg');
+        $exportType = (string)($data['export_type'] ?? 'pdf');
+
+        $ids = collect($data['item_ids'] ?? [])
+            ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
+            ->filter(fn($v) => $v > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty() || $werks === '' || !in_array($type, ['whfg', 'fg'], true) || !in_array($exportType, ['pdf', 'excel'], true)) {
+            return back()->withErrors('Parameter export tidak lengkap/valid.');
+        }
 
         $items = DB::table('so_yppr079_t1 as t1')
-            ->whereIn('t1.id', $itemIds)
+            ->whereIn('t1.id', $ids->all())
             ->select(
                 't1.VBELN',
                 't1.KUNNR',
@@ -271,14 +321,16 @@ class StockController extends Controller
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
+        if ($items->isEmpty()) {
+            return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
+        }
+
         $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locationName = $locationMap[$werks] ?? $werks;
         $stockType    = $type === 'whfg' ? 'WHFG' : 'PACKING';
 
-        $fileExtension = $exportType === 'excel' ? 'xlsx' : 'pdf';
-        $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".{$fileExtension}";
-
         if ($exportType === 'excel') {
+            $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".xlsx";
             return Excel::download(new StockItemsExport($items, $type), $fileName);
         }
 
@@ -290,6 +342,7 @@ class StockController extends Controller
             'today'        => now(),
         ];
 
+        $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".pdf";
         $pdf = Pdf::loadView('sales_order.stock_pdf_template', $dataForPdf)
             ->setPaper('a4', 'landscape');
 

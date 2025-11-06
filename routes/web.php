@@ -15,9 +15,8 @@ use App\Http\Controllers\SalesOrderController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\StockDashboardController;
 use App\Http\Controllers\PoReportController;
-use App\Http\Controllers\SoItemRemarkController;
-// [BARU] Tambahkan StockIssueController
-use App\Http\Controllers\StockIssueController;
+// use App\Http\Controllers\SoItemRemarkController; // <- tidak dipakai, hapus
+use App\Http\Controllers\StockIssueController;      // [BARU]
 
 // === Breeze controllers yang dipakai ===
 use App\Http\Controllers\Auth\RegisteredUserController;
@@ -110,18 +109,20 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	// Detail Item Qty Kecil
 	Route::get('/dashboard/api/small-qty-details', [DashboardController::class, 'apiSmallQtyDetails'])->name('dashboard.api.smallQtyDetails');
 
+	// Small Qty PDF (PO Dashboard) — pola POST -> GET (starter -> streamer)
+	Route::post('/dashboard/export/small-qty-pdf', [DashboardController::class, 'exportSmallQtyStart'])->name('dashboard.export.smallQtyPdf');
+	Route::get('/dashboard/export/small-qty-pdf',  [DashboardController::class, 'exportSmallQtyShow'])->name('dashboard.export.smallQtyPdf.show');
+
 	// PO Status Details (Doughnut Chart Click)
 	Route::get('/dashboard/api/po-status-details', [DashboardController::class, 'apiPoStatusDetails'])->name('dashboard.api.poStatusDetails');
 
 	// Overdue Details di tabel Performance
 	Route::get('/api/po/overdue-details', [DashboardController::class, 'apiPoOverdueDetails'])->name('dashboard.api.poOverdueDetails');
 
-	// Export PDF Small Qty (jika dipakai)
-	Route::post('/dashboard/export/small-qty-pdf', [DashboardController::class, 'exportSmallQtyPdf'])->name('dashboard.export.smallQtyPdf');
-
 	// PO remark (dashboard)
 	Route::get('/po/api/remark-items',  [DashboardController::class, 'apiPoRemarkItems'])->name('po.api.remark_items');
-	Route::delete('/po/api/remark-delete', [DashboardController::class, 'apiPoRemarkDelete'])->name('po.api.remark_delete');
+	// NOTE: pastikan method apiPoRemarkDelete ada; jika belum, komentar baris berikut
+	// Route::delete('/po/api/remark-delete', [DashboardController::class, 'apiPoRemarkDelete'])->name('po.api.remark_delete');
 
 	/*
     |--------------------------- SO Dashboard ---------------------------
@@ -141,17 +142,15 @@ Route::middleware(['auth', 'nocache'])->group(function () {
     |----------------------------- PO Report ----------------------------
     */
 	Route::get('/po-report', [PoReportController::class, 'index'])->name('po.report');
-	Route::post('/po/export-data', [PoReportController::class, 'exportData'])->name('po.export');
+	Route::post('/po/export-data', [PoReportController::class, 'exportDataStart'])->name('po.export');
+	Route::get('/po/export-data',  [PoReportController::class, 'exportDataShow'])->name('po.export.show');
 	Route::get('/api/po/performance-by-customer', [PoReportController::class, 'apiPerformanceByCustomer'])->name('po.api.performanceByCustomer');
+
 	Route::post('/api/po/remark/save', [PoReportController::class, 'apiSavePoRemark'])->name('api.po.remark.save');
-	Route::get('/po/remark/list', [App\Http\Controllers\PoReportController::class, 'apiListPoRemarks'])
-		->name('api.po.remark.list');
-	Route::post('/po/remark', [App\Http\Controllers\PoReportController::class, 'apiCreatePoRemark'])
-		->name('api.po.remark.create');
-	Route::put('/po/remark/{id}', [App\Http\Controllers\PoReportController::class, 'apiUpdatePoRemark'])
-		->name('api.po.remark.update');
-	Route::delete('/po/remark/{id}', [App\Http\Controllers\PoReportController::class, 'apiDeletePoRemark'])
-		->name('api.po.remark.delete');
+	Route::get('/po/remark/list', [PoReportController::class, 'apiListPoRemarks'])->name('api.po.remark.list');
+	Route::post('/po/remark', [PoReportController::class, 'apiCreatePoRemark'])->name('api.po.remark.create');
+	Route::put('/po/remark/{id}', [PoReportController::class, 'apiUpdatePoRemark'])->name('api.po.remark.update');
+	Route::delete('/po/remark/{id}', [PoReportController::class, 'apiDeletePoRemark'])->name('api.po.remark.delete');
 
 	/*
     |------------------------- Outstanding SO Report --------------------
@@ -163,26 +162,31 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::get('/api/so-by-customer', [SalesOrderController::class, 'apiGetSoByCustomer'])->name('so.api.by_customer');
 	Route::get('/api/items-by-so', [SalesOrderController::class, 'apiGetItemsBySo'])->name('so.api.by_items');
 
-	// Export (items / summary / small qty)
-	Route::post('/outstanding-so/export', [SalesOrderController::class, 'exportData'])->name('so.export');
+	// Export items: POST starter -> GET streamer
+	Route::post('/outstanding-so/export', [SalesOrderController::class, 'exportDataStart'])->name('so.export');
+	Route::get('/outstanding-so/export',  [SalesOrderController::class, 'exportDataShow'])->name('so.export.show');
+
+	// Summary (inline stream)
 	Route::get('/outstanding-so/export/summary', [SalesOrderController::class, 'exportCustomerSummary'])->name('so.export.summary');
+
+	// Small Qty chart data
 	Route::get('/api/so/small-qty-by-customer', [SalesOrderController::class, 'apiSmallQtyByCustomer'])->name('so.api.small_qty_by_customer');
 	Route::get('/api/so/small-qty-details', [SalesOrderController::class, 'apiSmallQtyDetails'])->name('so.api.small_qty_details');
-	Route::post('/outstanding-so/export/small-qty-pdf', [SalesOrderController::class, 'exportSmallQtyPdf'])->name('so.export.small_qty_pdf');
+
+	// Small Qty PDF (SO): POST starter -> GET streamer
+	Route::post('/outstanding-so/export/small-qty-pdf', [SalesOrderController::class, 'exportSmallQtyStart'])->name('so.export.small_qty_pdf');
+	Route::get('/outstanding-so/export/small-qty-pdf',  [SalesOrderController::class, 'exportSmallQtyShow'])->name('so.export.small_qty_pdf.show');
 
 	// (LEGACY) Simpan remark tunggal — dipertahankan
 	Route::post('/api/so-save-remark', [SalesOrderController::class, 'apiSaveRemark'])->name('so.api.save_remark');
 
 	// ====== BARU: Multi-remark per item (SO) ======
-	// List semua remark untuk satu item
 	Route::get('/api/so/item-remarks', [SalesOrderController::class, 'apiListItemRemarks'])->name('so.api.item_remarks');
-	// Tambah remark baru (selalu INSERT)
 	Route::post('/api/so/item-remarks', [SalesOrderController::class, 'apiAddItemRemark'])->name('so.api.item_remarks.store');
-	// Hapus satu remark (hanya pemilik)
 	Route::delete('/api/so/item-remarks/{id}', [SalesOrderController::class, 'apiDeleteItemRemark'])->name('so.api.item_remarks.delete');
-	Route::put('/so/api/item-remarks/{id}', [SalesOrderController::class, 'apiUpdateItemRemark'])->name('so.api.item_remarks.update');
-	Route::get('/so/api/machining-lines', [SalesOrderController::class, 'apiMachiningLines'])
-		->name('so.api.machining_lines');
+	Route::put('/api/so/item-remarks/{id}', [SalesOrderController::class, 'apiUpdateItemRemark'])->name('so.api.item_remarks.update'); // <- diseragamkan (bukan /so/api/..)
+
+	Route::get('/so/api/machining-lines', [SalesOrderController::class, 'apiMachiningLines'])->name('so.api.machining_lines');
 	Route::get('/so/api/pembahanan-lines', [SalesOrderController::class, 'apiPembahananLines'])->name('so.api.pembahanan_lines');
 
 	/*
@@ -192,10 +196,14 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::get('/api/stock/so-by-customer', [StockController::class, 'getSoByCustomer'])->name('stock.api.by_customer');
 	Route::get('/api/stock/items-by-so', [StockController::class, 'getItemsBySo'])->name('stock.api.by_items');
 	Route::post('/stock-report/redirect', [StockController::class, 'redirector'])->name('stock.redirector');
-	Route::post('/stock-report/export', [StockController::class, 'exportData'])->name('stock.export');
+
+	// Export (Stock): POST starter -> GET streamer
+	Route::post('/stock-report/export', [StockController::class, 'exportDataStart'])->name('stock.export');
+	Route::get('/stock-report/export',  [StockController::class, 'exportDataShow'])->name('stock.export.show');
+
 	Route::get('/stock-dashboard', [StockDashboardController::class, 'index'])->name('stock.dashboard');
 
-	// [MODIFIKASI] Tambahkan Route untuk Stock Issue
+	// [BARU] Stock Issue
 	Route::get('/stock-issue', [StockIssueController::class, 'index'])->name('stock.issue');
 
 	/*
