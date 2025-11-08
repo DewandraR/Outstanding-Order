@@ -10,9 +10,51 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\StockItemsExport;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+
 
 class StockController extends Controller
 {
+
+    private int $exportTokenTtlMinutes = 15;
+
+    private function packToToken(array $payload): string
+    {
+        $t = (string) Str::ulid();
+        Cache::put("stockexp:$t", [
+            'uid'  => Auth::id(),
+            'data' => $payload,
+        ], now()->addMinutes($this->exportTokenTtlMinutes));
+        return $t;
+    }
+
+    private function unpackFromToken(?string $t): array
+    {
+        abort_unless($t, 400, 'Missing token');
+        $bag = Cache::get("stockexp:$t"); // multi-use, tidak dihapus
+        abort_if(!$bag, 410, 'Token expired or not found');
+        abort_if(($bag['uid'] ?? null) !== Auth::id(), 403, 'Token owner mismatch');
+        // refresh TTL supaya tombol Download di viewer tetap hidup
+        Cache::put("stockexp:$t", $bag, now()->addMinutes($this->exportTokenTtlMinutes));
+        return (array) ($bag['data'] ?? []);
+    }
+
+    private function resolveLocationName(string $werks): string
+    {
+        return ['2000' => 'Surabaya', '3000' => 'Semarang'][$werks] ?? $werks;
+    }
+
+    private function stockTypeLabel(string $type): string
+    {
+        return $type === 'fg' ? 'PACKING' : 'WHFG';
+    }
+
+    private function buildFileName(string $base, string $ext): string
+    {
+        return sprintf('%s_%s.%s', $base, now()->format('Ymd_His'), $ext);
+    }
     public function index(Request $request)
     {
         // ⬅️ DECRYPT ?q jika ada lalu merge ke request
@@ -265,8 +307,11 @@ class StockController extends Controller
             'type'        => $validated['type'] === 'fg' ? 'fg' : 'whfg',
         ];
 
-        $q = Crypt::encrypt($payload);
-        return redirect()->route('stock.export.show', ['q' => $q], 303);
+        // >>> token cache (multi-use)
+        $t = $this->packToToken($payload);
+
+        // Redirect 303 ke GET streamer (pakai t)
+        return redirect()->route('stock.export.show', ['t' => $t], 303);
     }
 
     /**
@@ -275,16 +320,21 @@ class StockController extends Controller
      */
     public function exportDataShow(Request $request)
     {
-        if (!$request->filled('q')) {
-            return back()->withErrors('Payload export tidak ditemukan.');
+        // 1) Ambil payload: prioritas token 't', fallback ke legacy 'q'
+        if ($request->filled('t')) {
+            $data = $this->unpackFromToken($request->query('t'));
+        } else {
+            if (!$request->filled('q')) {
+                return back()->withErrors('Payload export tidak ditemukan.');
+            }
+            try {
+                $data = Crypt::decrypt($request->query('q'));
+            } catch (DecryptException $e) {
+                return back()->withErrors('Token export tidak valid.');
+            }
         }
 
-        try {
-            $data = Crypt::decrypt($request->query('q'));
-        } catch (DecryptException $e) {
-            return back()->withErrors('Token export tidak valid.');
-        }
-
+        // 2) Validasi & normalisasi
         $werks      = (string)($data['werks'] ?? '');
         $type       = (string)($data['type'] ?? 'whfg');
         $exportType = (string)($data['export_type'] ?? 'pdf');
@@ -299,6 +349,7 @@ class StockController extends Controller
             return back()->withErrors('Parameter export tidak lengkap/valid.');
         }
 
+        // 3) Query item
         $items = DB::table('so_yppr079_t1 as t1')
             ->whereIn('t1.id', $ids->all())
             ->select(
@@ -312,7 +363,7 @@ class StockController extends Controller
                 't1.KALAB2',
                 't1.NETPR',
                 't1.WAERK',
-                // Info header tambahan (Customer Name, PO)
+                // Info header tambahan
                 DB::raw("(SELECT NAME1 FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS NAME1"),
                 DB::raw("(SELECT BSTNK FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS BSTNK")
             )
@@ -325,27 +376,40 @@ class StockController extends Controller
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName = $locationMap[$werks] ?? $werks;
-        $stockType    = $type === 'whfg' ? 'WHFG' : 'PACKING';
+        // 4) Nama lokasi & tipe stock
+        $locationName = $this->resolveLocationName($werks);
+        $stockType    = $this->stockTypeLabel($type);
 
+        // 5) Excel langsung download (tetap)
         if ($exportType === 'excel') {
-            $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".xlsx";
-            return Excel::download(new StockItemsExport($items, $type), $fileName);
+            $fileName = $this->buildFileName("Stock_{$locationName}_{$stockType}", 'xlsx');
+            return Excel::download(new \App\Exports\StockItemsExport($items, $type), $fileName);
         }
 
-        $dataForPdf = [
+        // 6) PDF: render -> stream dengan header aman (inline / attachment)
+        $pdfBinary = Pdf::loadView('sales_order.stock_pdf_template', [
             'items'        => $items,
             'locationName' => $locationName,
             'werks'        => $werks,
             'stockType'    => $stockType,
             'today'        => now(),
-        ];
+        ])
+            ->setPaper('a4', 'landscape')
+            ->output();
 
-        $fileName = "Stock_{$locationName}_{$stockType}_" . date('Ymd_His') . ".pdf";
-        $pdf = Pdf::loadView('sales_order.stock_pdf_template', $dataForPdf)
-            ->setPaper('a4', 'landscape');
+        $fileBase = 'Stock_' . $locationName . '_' . $stockType;
+        $fileName = $this->buildFileName($fileBase, 'pdf');
 
-        return $pdf->stream($fileName);
+        // default inline; paksa unduh dengan ?download=1
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return response()->stream(function () use ($pdfBinary) {
+            echo $pdfBinary;
+        }, 200, [
+            'Content-Type'           => 'application/pdf',
+            'Content-Disposition'    => $disposition . '; filename="' . $fileName . '"; filename*=UTF-8\'\'' . rawurlencode($fileName),
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control'          => 'private, max-age=60, must-revalidate',
+        ]);
     }
 }

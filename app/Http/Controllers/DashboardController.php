@@ -9,9 +9,44 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
 {
+
+    private int $exportTokenTtlMinutes = 15;
+
+    private function packToToken(array $payload): string
+    {
+        $t = (string) \Illuminate\Support\Str::ulid();
+        Cache::put("smqty:$t", [
+            'uid'  => Auth::id(),
+            'data' => $payload,
+        ], now()->addMinutes($this->exportTokenTtlMinutes));
+        return $t;
+    }
+
+    private function unpackFromToken(?string $t): array
+    {
+        abort_unless($t, 400, 'Missing token');
+        $bag = Cache::get("smqty:$t"); // multi-use: GET (bukan pull)
+        abort_if(!$bag, 410, 'Token expired or not found');
+        abort_if(($bag['uid'] ?? null) !== Auth::id(), 403, 'Token owner mismatch');
+        // refresh TTL supaya tombol "Download" di viewer tetap hidup
+        Cache::put("smqty:$t", $bag, now()->addMinutes($this->exportTokenTtlMinutes));
+        return (array) ($bag['data'] ?? []);
+    }
+
+    private function resolveLocationName(string $werks): string
+    {
+        return ['2000' => 'Surabaya', '3000' => 'Semarang'][$werks] ?? $werks;
+    }
+
+    private function buildFileName(string $base, string $ext): string
+    {
+        return sprintf('%s_%s.%s', $base, \Carbon\Carbon::now()->format('Ymd_His'), $ext);
+    }
     private function getSafeEdatuForUniqueItem(string $alias): string
     {
         return "COALESCE(
@@ -1154,7 +1189,6 @@ class DashboardController extends Controller
             'auart'        => 'nullable|string',
         ]);
 
-        // simpan auart bila ada (dipakai logika Export+Replace)
         $payload = [
             'customerName' => $validated['customerName'],
             'locationName' => $validated['locationName'],
@@ -1162,19 +1196,26 @@ class DashboardController extends Controller
             'auart'        => $validated['auart'] ?? null,
         ];
 
-        $q = Crypt::encryptString(json_encode($payload));
-        return redirect()->route('dashboard.export.smallQtyPdf.show', ['q' => $q], 303);
-    }
+        // Token cache (multi-use)
+        $t = $this->packToToken($payload);
 
+        // Redirect 303 ke GET streamer (pakai t)
+        return redirect()->route('dashboard.export.smallQtyPdf.show', ['t' => $t], 303);
+    }
     // GET -> bangun PDF & stream inline (viewer bisa Download)
     public function exportSmallQtyShow(Request $request)
     {
-        if (!$request->filled('q')) abort(400, 'Missing token.');
-
-        try {
-            $p = json_decode(Crypt::decryptString($request->query('q')), true) ?: [];
-        } catch (DecryptException $e) {
-            abort(400, 'Invalid token.');
+        // 1) Ambil payload
+        if ($request->filled('t')) {
+            $p = $this->unpackFromToken($request->query('t'));
+        } else {
+            // Fallback legacy "q"
+            if (!$request->filled('q')) abort(400, 'Missing token.');
+            try {
+                $p = json_decode(\Illuminate\Support\Facades\Crypt::decryptString($request->query('q')), true) ?: [];
+            } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+                abort(400, 'Invalid token.');
+            }
         }
 
         $customerName = (string)($p['customerName'] ?? '');
@@ -1188,22 +1229,22 @@ class DashboardController extends Controller
 
         $werks = $locationName === 'Semarang' ? '3000' : '2000';
 
-        // --- LOGIKA PENGGABUNGAN (Export + Replace) ---
+        // 2) Logika gabung Export + Replace (konsisten)
         $mapping = DB::table('maping')->get();
         $exportAuartCodes = $mapping->filter(function ($i) {
             $d = strtolower($i->Deskription);
             return str_contains($d, 'export') && !str_contains($d, 'local') && !str_contains($d, 'replace');
         })->pluck('IV_AUART')->unique()->toArray();
+
         $replaceAuartCodes = $mapping->filter(fn($i) => str_contains(strtolower($i->Deskription), 'replace'))
             ->pluck('IV_AUART')->unique()->toArray();
 
-        $auartList = array_filter([$auartReq]);
+        $auartList = array_filter([(string)$auartReq]);
         if (!empty($auartList) && in_array($auartList[0], $exportAuartCodes, true)) {
             $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
         }
-        // --- END LOGIKA PENGGABUNGAN ---
 
-        // Query data (sama dengan exportSmallQtyPdf Anda)
+        // 3) Query data
         $q = DB::table('so_yppr079_t1 as t1')
             ->join(
                 'so_yppr079_t2 as t2',
@@ -1240,6 +1281,7 @@ class DashboardController extends Controller
             ->orderByRaw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, "0")')
             ->get();
 
+        // 4) Render PDF (binary) + header aman
         $meta = [
             'customerName' => $customerName,
             'locationName' => $locationName,
@@ -1254,17 +1296,22 @@ class DashboardController extends Controller
                 'total_item' => $items->count(),
                 'total_po'   => $items->pluck('PO')->filter()->unique()->count(),
             ],
-        ])->setPaper('a4', 'portrait')->output();
+        ])
+            ->setPaper('a4', 'portrait')
+            ->output();
 
-        $filename = 'SmallQty_' . $locationName . '_' . Str::slug($customerName) . '_' . now()->format('Ymd_His') . '.pdf';
+        // Nama file konsisten + aman di semua browser
+        $fileBase = 'SmallQty_' . $locationName . '_' . \Illuminate\Support\Str::slug($customerName);
+        $fileName = $this->buildFileName($fileBase, 'pdf');
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
 
         return response()->stream(function () use ($pdfBinary) {
             echo $pdfBinary;
         }, 200, [
             'Content-Type'           => 'application/pdf',
-            'Content-Disposition'    => 'inline; filename="' . $filename . '"',
-            'Cache-Control'          => 'private, max-age=60, must-revalidate',
+            'Content-Disposition'    => $disposition . '; filename="' . $fileName . '"; filename*=UTF-8\'\'' . rawurlencode($fileName),
             'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control'          => 'private, max-age=60, must-revalidate',
         ]);
     }
 

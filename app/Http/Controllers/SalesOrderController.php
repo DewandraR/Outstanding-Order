@@ -12,9 +12,41 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class SalesOrderController extends Controller
 {
+
+    private int $exportTokenTtlMinutes = 15;
+
+    private function packToToken(array $payload): string
+    {
+        $t = (string) \Illuminate\Support\Str::ulid();
+        Cache::put("soexp:$t", [
+            'uid'  => \Illuminate\Support\Facades\Auth::id(),
+            'data' => $payload,
+        ], now()->addMinutes($this->exportTokenTtlMinutes));
+        return $t;
+    }
+
+    private function unpackFromToken(?string $t, bool $consume = false): array
+    {
+        abort_unless($t, 400, 'Missing token');
+
+        $key = "soexp:$t";
+        $bag = $consume ? Cache::pull($key) : Cache::get($key);
+
+        abort_if(!$bag, 410, 'Token expired or not found');
+        abort_if(($bag['uid'] ?? null) !== \Illuminate\Support\Facades\Auth::id(), 403, 'Token owner mismatch');
+
+        // refresh TTL agar tetap hidup untuk klik Download berikutnya
+        if (!$consume) {
+            Cache::put($key, $bag, now()->addMinutes($this->exportTokenTtlMinutes));
+        }
+
+        return (array) ($bag['data'] ?? []);
+    }
+
     /**
      * Helper: Aman-kan parsing EDATU untuk subquery item unik.
      * Mengambil EDATU dari t1 (yang merupakan subquery item unik)
@@ -593,9 +625,8 @@ class SalesOrderController extends Controller
         ]);
 
         // packing ke token q
-        $q = Crypt::encryptString(json_encode($validated));
-
-        return redirect()->route('so.export.show', ['q' => $q], 303);
+        $t = $this->packToToken($validated);
+        return redirect()->route('so.export.show', ['t' => $t], 303);
     }
 
     /**
@@ -603,17 +634,34 @@ class SalesOrderController extends Controller
      */
     public function exportDataShow(Request $request)
     {
-        $payload = $this->decryptPacked($request->query('q'));
+        // ---- 1) Ambil payload (token cache "t" prioritas; fallback "q") ----
+        $payload = [];
+        if ($request->filled('t')) {
+            $t        = (string) $request->query('t');
+            $cacheKey = "soexp:$t";
 
-        $itemIds    = $payload['item_ids']      ?? [];
-        $exportType = $payload['export_type']   ?? 'pdf';
-        $werks      = (string)($payload['werks'] ?? '');
-        $auart      = (string)($payload['auart'] ?? '');
+            // Ambil TANPA menghapus (multi-use); refresh TTL agar klik Download tetap hidup
+            $bag = Cache::get($cacheKey);
+            abort_if(!$bag, 410, 'Token expired or not found');
+            abort_if(($bag['uid'] ?? null) !== Auth::id(), 403, 'Token owner mismatch');
+            Cache::put($cacheKey, $bag, now()->addMinutes($this->exportTokenTtlMinutes)); // refresh TTL
+
+            $payload = (array) ($bag['data'] ?? []);
+        } else {
+            // Kompatibilitas lama: payload terenkripsi "q"
+            $payload = $this->decryptPacked($request->query('q'));
+        }
+
+        // ---- 2) Baca parameter dari payload ----
+        $itemIds    = (array)   ($payload['item_ids']    ?? []);
+        $exportType = (string)  ($payload['export_type'] ?? 'pdf'); // 'pdf' | 'excel'
+        $werks      = (string)  ($payload['werks']       ?? '');
+        $auart      = (string)  ($payload['auart']       ?? '');
 
         // Hormati konteks Export+Replace
         $auartList = $this->resolveAuartListForContext($auart);
 
-        // Ambil VBELN & POSNR & MATNR dari Item ID yang dipilih
+        // ---- 3) Ambil key item unik dari id yang dipilih ----
         $itemKeys = DB::table('so_yppr079_t1')
             ->whereIn('id', $itemIds)
             ->select('VBELN', 'POSNR', 'MATNR')
@@ -635,7 +683,7 @@ class SalesOrderController extends Controller
             return response()->json(['error' => 'No unique items found for export.'], 400);
         }
 
-        // Subquery agregasi remark (nama user + teks) — SELARASKAN AUART dg konteks
+        // ---- 4) Remark gabungan per item (nama user + teks), selaraskan AUART ----
         $remarksConcat = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
             ->where('ir.IV_WERKS_PARAM', $werks)
@@ -654,7 +702,7 @@ class SalesOrderController extends Controller
             )
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
-        // Query utama: Ambil data item, DENGAN DEDUPLIKASI & filter plant/konteks AUART
+        // ---- 5) Query utama: data item (deduplikasi per VBELN, POSNR, MATNR) ----
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksConcat, 'rc', function ($j) {
                 $j->on('rc.VBELN', '=', 't1.VBELN')
@@ -683,7 +731,7 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.KALAB)  as KALAB'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
 
-                // GR by process (bukan persentase)
+                // GR by process
                 DB::raw('MAX(t1.MACHI)  as MACHI'),
                 DB::raw('MAX(t1.ASSYM)  as ASSYM'),
                 DB::raw('MAX(t1.PAINTM) as PAINTM'),
@@ -697,11 +745,14 @@ class SalesOrderController extends Controller
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
-        // Info header per VBELN
-        $locationName   = $this->resolveLocationName($werks);
-        $auartDesc      = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
+        // ---- 6) Header info per VBELN (PO/Customer) ----
+        $locationName = $this->resolveLocationName($werks);
+        $auartDesc    = DB::table('maping')
+            ->where('IV_WERKS', $werks)
+            ->where('IV_AUART', $auart)
+            ->value('Deskription');
 
-        $vbelns = $items->pluck('VBELN')->unique();
+        $vbelns  = $items->pluck('VBELN')->unique();
         $headers = DB::table('so_yppr079_t2')
             ->whereIn('VBELN', $vbelns)
             ->select('VBELN', 'BSTNK', 'NAME1')
@@ -712,32 +763,34 @@ class SalesOrderController extends Controller
             $item->headerInfo = $headers->get($item->VBELN);
         }
 
-        // Nama file
+        // ---- 7) Nama file konsisten ----
         $fileExtension = $exportType === 'excel' ? 'xlsx' : 'pdf';
-        $fileName = $this->buildFileName("Outstanding_SO_{$locationName}_{$auart}", $fileExtension);
+        $fileName      = $this->buildFileName("Outstanding_SO_{$locationName}_{$auart}", $fileExtension);
 
-        // Export Excel → langsung download (attachment)
+        // ---- 8) Excel: langsung download ----
         if ($exportType === 'excel') {
             return Excel::download(new SoItemsExport($items), $fileName);
         }
 
-        // Export PDF → STREAM INLINE (preview + tombol Download berfungsi + nama file benar)
+        // ---- 9) PDF: render & kirim (inline/attachment) ----
         $dataForPdf = [
-            'items'              => $items,
-            'locationName'       => $locationName,
-            'werks'              => $werks,
-            'auartDescription'   => $auartDesc,
-            'auart'              => $auart,
+            'items'            => $items,
+            'locationName'     => $locationName,
+            'werks'            => $werks,
+            'auartDescription' => $auartDesc,
+            'auart'            => $auart,
         ];
+
         $pdfBinary = Pdf::loadView('sales_order.so_pdf_template', $dataForPdf)
             ->setPaper('a4', 'landscape')
             ->output();
 
-        return response()->stream(function () use ($pdfBinary) {
-            echo $pdfBinary;
-        }, 200, [
+        // Jika ?download=1 maka paksa unduh
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return response($pdfBinary, 200, [
             'Content-Type'            => 'application/pdf',
-            'Content-Disposition'     => 'inline; filename="' . $fileName . '"',
+            'Content-Disposition'     => $disposition . '; filename="' . $fileName . '"; filename*=UTF-8\'\'' . rawurlencode($fileName),
             'X-Content-Type-Options'  => 'nosniff',
             'Cache-Control'           => 'private, max-age=60, must-revalidate',
         ]);
@@ -977,8 +1030,8 @@ class SalesOrderController extends Controller
             'auart' => 'required|string',
         ]);
 
-        $q = Crypt::encryptString(json_encode($validated));
-        return redirect()->route('so.export.small_qty_pdf.show', ['q' => $q], 303);
+        $t = $this->packToToken($validated);
+        return redirect()->route('so.export.small_qty_pdf.show', ['t' => $t], 303);
     }
 
     /**
@@ -986,7 +1039,7 @@ class SalesOrderController extends Controller
      */
     public function exportSmallQtyShow(Request $request)
     {
-        $payload = $this->decryptPacked($request->query('q'));
+        $payload = $this->unpackFromToken($request->query('t'));
 
         $customerName = (string)($payload['customerName'] ?? '');
         $werks        = (string)($payload['werks'] ?? '');

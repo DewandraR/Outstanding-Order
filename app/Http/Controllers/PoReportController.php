@@ -11,9 +11,47 @@ use App\Exports\PoItemsExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class PoReportController extends Controller
 {
+
+    private int $exportTokenTtlMinutes = 15;
+
+    private function packToToken(array $payload): string
+    {
+        $t = (string) \Illuminate\Support\Str::ulid();
+        Cache::put("poexp:$t", [
+            'uid'  => \Illuminate\Support\Facades\Auth::id(),
+            'data' => $payload,
+        ], now()->addMinutes($this->exportTokenTtlMinutes));
+        return $t;
+    }
+
+    private function unpackFromToken(?string $t): array
+    {
+        abort_unless($t, 400, 'Missing token');
+        $bag = Cache::get("poexp:$t");                        // multi-use: get (bukan pull)
+        abort_if(!$bag, 410, 'Token expired or not found');
+        abort_if(($bag['uid'] ?? null) !== Auth::id(), 403, 'Token owner mismatch');
+        // refresh TTL biar tombol Download di viewer tetap hidup
+        Cache::put("poexp:$t", $bag, now()->addMinutes($this->exportTokenTtlMinutes));
+        return (array) ($bag['data'] ?? []);
+    }
+
+    private function resolveLocationName(string $werks): string
+    {
+        return [
+            '2000' => 'Surabaya',
+            '3000' => 'Semarang',
+        ][$werks] ?? $werks;
+    }
+
+    private function buildFileName(string $base, string $ext): string
+    {
+        return sprintf('%s_%s.%s', $base, Carbon::now()->format('Ymd_His'), $ext);
+    }
     /** Halaman report (tabel) */
     public function index(Request $request)
     {
@@ -322,7 +360,7 @@ class PoReportController extends Controller
             'auart'       => 'required|string',
         ]);
 
-        // Sanitasi ID → hanya digit
+        // Sanitasi ID → hanya angka
         $ids = collect($validated['item_ids'])
             ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
             ->filter(fn($v) => $v > 0)
@@ -334,17 +372,16 @@ class PoReportController extends Controller
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        // Packing ke token q
-        $payload = [
+        // Packing ke token "t" (cache)
+        $t = $this->packToToken([
             'item_ids'    => $ids,
             'export_type' => $validated['export_type'],
             'werks'       => $validated['werks'],
             'auart'       => $validated['auart'],
-        ];
-        $q = Crypt::encrypt($payload);
+        ]);
 
         // Redirect 303 ke GET streamer
-        return redirect()->route('po.export.show', ['q' => $q], 303);
+        return redirect()->route('po.export.show', ['t' => $t], 303);
     }
 
     /**
@@ -352,20 +389,25 @@ class PoReportController extends Controller
      */
     public function exportDataShow(Request $request)
     {
-        if (!$request->filled('q')) {
-            return back()->withErrors('Payload export tidak ditemukan.');
+        // 1) Ambil payload dari token "t" (prioritas). Fallback kompat "q" terenkripsi.
+        if ($request->filled('t')) {
+            $data = $this->unpackFromToken($request->query('t'));
+        } else {
+            if (!$request->filled('q')) {
+                return back()->withErrors('Payload export tidak ditemukan.');
+            }
+            try {
+                $data = \Illuminate\Support\Facades\Crypt::decrypt($request->query('q'));
+            } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+                return back()->withErrors('Token export tidak valid.');
+            }
         }
 
-        try {
-            $data = Crypt::decrypt($request->query('q'));
-        } catch (DecryptException $e) {
-            return back()->withErrors('Token export tidak valid.');
-        }
-
-        // Ambil & sanitasi ulang
+        // 2) Ambil & sanitasi ulang
         $werks      = (string)($data['werks'] ?? '');
         $auart      = (string)($data['auart'] ?? '');
         $exportType = (string)($data['export_type'] ?? 'pdf');
+
         $ids = collect($data['item_ids'] ?? [])
             ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
             ->filter(fn($v) => $v > 0)
@@ -376,7 +418,7 @@ class PoReportController extends Controller
             return back()->withErrors('Parameter export tidak lengkap/valid.');
         }
 
-        // ===== AUART context: gabungkan Export + Replace bila konteks Export =====
+        // 3) Konteks AUART: gabungkan Export + Replace bila konteks Export aktif
         $rawMapping = DB::table('maping')->select('IV_AUART', 'Deskription')->get();
 
         $exportAuartCodes = $rawMapping
@@ -393,26 +435,26 @@ class PoReportController extends Controller
             ? array_unique(array_merge($exportAuartCodes, $replaceAuartCodes))
             : [$auart];
 
-        // Ambil triplet (VBELN, POSNR, MATNR) dari id yang dipilih
+        // 4) Ambil triplet (VBELN, POSNR, MATNR) dari ID pilihan
         $itemKeys = DB::table('so_yppr079_t1')
             ->whereIn('id', $ids->all())
             ->select('VBELN', 'POSNR', 'MATNR')
             ->get();
 
-        $vbelnPosnrMatnrPairs = $itemKeys->map(fn($r) => [
+        $triples = $itemKeys->map(fn($r) => [
             'VBELN' => $r->VBELN,
             'POSNR' => $r->POSNR,
             'MATNR' => $r->MATNR,
         ])->unique();
 
-        if ($vbelnPosnrMatnrPairs->isEmpty()) {
+        if ($triples->isEmpty()) {
             if ($exportType === 'excel') {
                 return Excel::download(new PoItemsExport(collect()), 'PO_Items_Empty_' . date('Ymd_His') . '.xlsx');
             }
-            return back()->withErrors('Tidak ada item unik untuk diekspor.');
+            return response()->json(['error' => 'No unique items found for export.'], 400);
         }
 
-        // ===== Subquery remark (gabung multi user, buang remark kosong) =====
+        // 5) Subquery remark gabungan
         $remarksConcat = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
             ->where('ir.IV_WERKS_PARAM', $werks)
@@ -422,16 +464,16 @@ class PoReportController extends Controller
                 'ir.VBELN',
                 'ir.POSNR',
                 DB::raw("
-                    GROUP_CONCAT(
-                        DISTINCT CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
-                        ORDER BY ir.created_at
-                        SEPARATOR '\n'
-                    ) AS REMARKS
-                ")
+                GROUP_CONCAT(
+                    DISTINCT CONCAT(COALESCE(u.name,'Guest'), ': ', TRIM(ir.remark))
+                    ORDER BY ir.created_at
+                    SEPARATOR '\n'
+                ) AS REMARKS
+            ")
             )
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
-        // ===== Query utama: de-dup per (VBELN, POSNR, MATNR) + join remark =====
+        // 6) Query utama: de-dup per (VBELN, POSNR, MATNR) + join remark
         $items = DB::table('so_yppr079_t1 as t1')
             ->leftJoin(
                 'so_yppr079_t2 as t2',
@@ -445,12 +487,12 @@ class PoReportController extends Controller
             })
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->whereIn('t1.IV_AUART_PARAM', $auartList)
-            ->where(function ($query) use ($vbelnPosnrMatnrPairs) {
-                foreach ($vbelnPosnrMatnrPairs as $pair) {
-                    $query->orWhere(function ($q) use ($pair) {
-                        $q->where('t1.VBELN', $pair['VBELN'])
-                            ->where('t1.POSNR', $pair['POSNR'])
-                            ->where('t1.MATNR', $pair['MATNR']);
+            ->where(function ($query) use ($triples) {
+                foreach ($triples as $p) {
+                    $query->orWhere(function ($q) use ($p) {
+                        $q->where('t1.VBELN', $p['VBELN'])
+                            ->where('t1.POSNR', $p['POSNR'])
+                            ->where('t1.MATNR', $p['MATNR']);
                     });
                 }
             })
@@ -479,27 +521,39 @@ class PoReportController extends Controller
             return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
         }
 
-        // ===== Nama file & metadata =====
-        $locationMap  = ['2000' => 'Surabaya', '3000' => 'Semarang'];
-        $locationName = $locationMap[$werks] ?? $werks;
+        // 7) Nama file & render
+        $locationName = $this->resolveLocationName($werks);
         $auartDesc    = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
+        // Excel → langsung attachment
         if ($exportType === 'excel') {
-            $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".xlsx";
+            $fileName = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'xlsx');
             return Excel::download(new PoItemsExport($items), $fileName);
         }
 
-        $fileName = "PO_Items_{$locationName}_{$auart}_" . date('Ymd_His') . ".pdf";
-        $pdf = Pdf::loadView('po_report.po_pdf_template', [
+        // PDF → stream inline (atau attachment jika ?download=1)
+        $pdfBinary = Pdf::loadView('po_report.po_pdf_template', [
             'items'            => $items,
             'locationName'     => $locationName,
             'auartDescription' => $auartDesc,
             'werks'            => $werks,
             'auart'            => $auart,
             'today'            => now(),
-        ])->setPaper('a4', 'landscape');
+        ])
+            ->setPaper('a4', 'landscape')
+            ->output();
 
-        return $pdf->stream($fileName);
+        $fileName    = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'pdf');
+        $disposition = $request->boolean('download') ? 'attachment' : 'inline';
+
+        return response()->stream(function () use ($pdfBinary) {
+            echo $pdfBinary;
+        }, 200, [
+            'Content-Type'            => 'application/pdf',
+            'Content-Disposition'     => $disposition . '; filename="' . $fileName . '"; filename*=UTF-8\'\'' . rawurlencode($fileName),
+            'X-Content-Type-Options'  => 'nosniff',
+            'Cache-Control'           => 'private, max-age=60, must-revalidate',
+        ]);
     }
 
     /**
