@@ -36,6 +36,8 @@ class PoItemsExport implements
 
     public function __construct(Collection $items)
     {
+        // Menerima koleksi $items dari PoReportController
+        // Koleksi ini sekarang berisi EDATU_FORMATTED dan QTY_PO
         $this->items = $items;
     }
 
@@ -67,6 +69,9 @@ class PoItemsExport implements
         return $final;
     }
 
+    /**
+     * Mengganti header kolom 'Net Price' menjadi 'Req. Deliv. Date'.
+     */
     public function headings(): array
     {
         // tidak ada kolom “Customer”; pakai header group
@@ -81,11 +86,14 @@ class PoItemsExport implements
             'Outs. Ship',
             'WHFG',
             'Packing',
-            'Net Price',
-            'Remark', // <<< NEW (kolom L)
+            'Req. Deliv. Date', // <<< DIUBAH (sebelumnya 'Net Price')
+            'Remark',
         ];
     }
 
+    /**
+     * Menyesuaikan pemetaan data ke kolom.
+     */
     public function map($it): array
     {
         // header customer: isi kolom A saja, total 12 kolom (A..L)
@@ -95,18 +103,18 @@ class PoItemsExport implements
 
         // data item; REMARK diambil dari controller (alias REMARK)
         return [
-            (string)($it->PO ?? ''),                 // A
-            (string)($it->SO ?? ''),                 // B
-            (int)   ($it->POSNR ?? 0),               // C
-            (string)($it->MATNR ?? ''),              // D
-            (string)($it->MAKTX ?? ''),              // E
-            (int)   ($it->KWMENG ?? 0),              // F
-            (int)   ($it->QTY_GI ?? 0),              // G
-            (int)   ($it->QTY_BALANCE2 ?? 0),        // H
-            (int)   ($it->KALAB ?? 0),               // I
-            (int)   ($it->KALAB2 ?? 0),              // J
-            (float) ($it->NETPR ?? 0),               // K
-            (string)($it->REMARK ?? ''),             // L
+            (string)($it->PO ?? ''),            // A
+            (string)($it->SO ?? ''),            // B
+            (int)   ($it->POSNR ?? 0),           // C
+            (string)($it->MATNR ?? ''),         // D
+            (string)($it->MAKTX ?? ''),         // E
+            (int)   ($it->QTY_PO ?? 0),          // F (DIUBAH dari KWMENG)
+            (int)   ($it->QTY_GI ?? 0),          // G
+            (int)   ($it->QTY_BALANCE2 ?? 0),    // H
+            (int)   ($it->KALAB ?? 0),           // I
+            (int)   ($it->KALAB2 ?? 0),          // J
+            (string)($it->EDATU_FORMATTED ?? ''), // K (DIUBAH dari NETPR)
+            (string)($it->REMARK ?? ''),        // L
         ];
     }
 
@@ -117,6 +125,7 @@ class PoItemsExport implements
         ];
 
         // merge baris “Customer: …” dari A sampai L (12 kolom)
+        // Jumlah kolom tidak berubah, jadi 'A{$r}:L{$r}' tetap valid.
         foreach ($this->customerRows as $r) {
             $sheet->mergeCells("A{$r}:L{$r}");
             $styles[$r] = [
@@ -137,19 +146,25 @@ class PoItemsExport implements
         return $styles;
     }
 
+    /**
+     * Mengganti format kolom K (Net Price) menjadi format Teks (untuk Tanggal).
+     */
     public function columnFormats(): array
     {
-        // integer untuk qty; 2 desimal untuk Net Price
+        // integer untuk qty; Teks untuk Tanggal (Kolom K)
         return [
             'F' => NumberFormat::FORMAT_NUMBER,        // Qty PO
             'G' => NumberFormat::FORMAT_NUMBER,        // Shipped
             'H' => NumberFormat::FORMAT_NUMBER,        // Outs. Ship
             'I' => NumberFormat::FORMAT_NUMBER,        // WHFG
-            'J' => NumberFormat::FORMAT_NUMBER,        // FG
-            'K' => NumberFormat::FORMAT_NUMBER_00,     // Net Price
+            'J' => NumberFormat::FORMAT_NUMBER,        // Packing
+            'K' => NumberFormat::FORMAT_TEXT,          // Req. Deliv. Date (DIUBAH)
         ];
     }
 
+    /**
+     * Event untuk styling (tidak perlu diubah).
+     */
     public function registerEvents(): array
     {
         return [
@@ -157,7 +172,7 @@ class PoItemsExport implements
                 $sheet = $event->sheet->getDelegate();
                 $highestRow = $sheet->getHighestRow();
 
-                // wrap & top align untuk kolom Remark
+                // wrap & top align untuk kolom Remark (Kolom L, masih sama)
                 $sheet->getStyle("L2:L{$highestRow}")
                     ->getAlignment()
                     ->setWrapText(true)
@@ -165,6 +180,11 @@ class PoItemsExport implements
 
                 // lebar kolom Remark yang nyaman (override autosize)
                 $sheet->getColumnDimension('L')->setWidth(60);
+
+                // (Opsional) Pusatkan kolom K (Tanggal)
+                $sheet->getStyle("K2:K{$highestRow}")
+                    ->getAlignment()
+                    ->setHorizontal(Alignment::HORIZONTAL_CENTER);
             },
         ];
     }

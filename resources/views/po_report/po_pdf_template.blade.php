@@ -168,7 +168,8 @@
                     <th style="width:7%;">Outs. Ship</th>
                     <th style="width:6%;">WHFG</th>
                     <th style="width:6%;">Packing</th>
-                    <th style="width:10%;">Net Price</th>
+                    {{-- KOLOM BARU --}}
+                    <th style="width:10%;">Req. Deliv. Date</th>
                     <th style="width:16%;">Remark</th>
                 </tr>
             </thead>
@@ -178,9 +179,7 @@
                 @foreach ($rows->sortBy(['SO', 'POSNR']) as $r)
                     @php
                         $i++;
-                        // Semua kolom sudah disiapkan di controller:
-                        // PO: $r->PO, SO: $r->SO, POSNR, MATNR, MAKTX, KWMENG (Qty PO),
-                        // QTY_GI (Shipped), QTY_BALANCE2 (Outs. Ship), KALAB (WHFG), KALAB2 (FG), NETPR (Net Price), WAERK
+                        // QTY_PO adalah alias baru untuk KWMENG
                     @endphp
                     <tr class="item-row">
                         <td class="text-center">{{ $i }}</td>
@@ -189,12 +188,13 @@
                         <td class="text-center">{{ (int) $r->POSNR }}</td>
                         <td>{{ $r->MATNR }}</td>
                         <td class="text-left">{{ $r->MAKTX }}</td>
-                        <td class="text-right">{{ $formatNumber($r->KWMENG) }}</td>
+                        <td class="text-right">{{ $formatNumber($r->QTY_PO) }}</td>
                         <td class="text-right">{{ $formatNumber($r->QTY_GI) }}</td>
                         <td class="text-right">{{ $formatNumber($r->QTY_BALANCE2) }}</td>
                         <td class="text-right">{{ $formatNumber($r->KALAB) }}</td>
                         <td class="text-right">{{ $formatNumber($r->KALAB2) }}</td>
-                        <td class="text-right">{{ $formatMoney($r->NETPR, $r->WAERK ?? $currency) }}</td>
+                        {{-- NILAI BARU --}}
+                        <td class="text-center">{{ $r->EDATU_FORMATTED }}</td>
                         <td class="remark-cell">{{ $r->REMARK }}</td>
                     </tr>
                 @endforeach

@@ -454,6 +454,12 @@ class PoReportController extends Controller
             return response()->json(['error' => 'No unique items found for export.'], 400);
         }
 
+        // TENTUKAN PARSER TANGGAL YANG AMAN (Diambil dari fungsi index)
+        $safeEdatu = "COALESCE(
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d'),
+            STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
+        )";
+
         // 5) Subquery remark gabungan
         $remarksConcat = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
@@ -497,18 +503,21 @@ class PoReportController extends Controller
                 }
             })
             ->select(
-                't1.VBELN as SO',
+                // ================== INI PERBAIKANNYA ==================
+                DB::raw('t1.VBELN as SO'), // Dibungkus dengan DB::raw()
+                // ======================================================
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
                 DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
                 DB::raw('MAX(t2.BSTNK)  as PO'),
                 DB::raw('MAX(t2.NAME1)  as CUSTOMER'),
                 DB::raw('MAX(t1.MAKTX)       as MAKTX'),
-                DB::raw('MAX(t1.KWMENG)      as KWMENG'),
+                DB::raw('MAX(t1.KWMENG)      as QTY_PO'), // Diubah dari KWMENG
                 DB::raw('MAX(t1.QTY_GI)      as QTY_GI'),
                 DB::raw('MAX(t1.QTY_BALANCE2) as QTY_BALANCE2'),
                 DB::raw('MAX(t1.KALAB)       as KALAB'),
                 DB::raw('MAX(t1.KALAB2)      as KALAB2'),
-                DB::raw('MAX(t1.NETPR)       as NETPR'),
+                // KOLOM BARU: EDATU (Req. Deliv. Date) menggantikan NETPR
+                DB::raw("MAX(DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')) AS EDATU_FORMATTED"),
                 DB::raw('MAX(t1.WAERK)       as WAERK'),
                 DB::raw("COALESCE(MAX(rc.REMARKS), '') AS REMARK")
             )
@@ -523,36 +532,37 @@ class PoReportController extends Controller
 
         // 7) Nama file & render
         $locationName = $this->resolveLocationName($werks);
-        $auartDesc    = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
+        $auartDesc  = DB::table('maping')->where('IV_WERKS', $werks)->where('IV_AUART', $auart)->value('Deskription');
 
         // Excel → langsung attachment
         if ($exportType === 'excel') {
             $fileName = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'xlsx');
+            // Catatan: Pastikan class PoItemsExport Anda mengambil kolom EDATU_FORMATTED
             return Excel::download(new PoItemsExport($items), $fileName);
         }
 
         // PDF → stream inline (atau attachment jika ?download=1)
         $pdfBinary = Pdf::loadView('po_report.po_pdf_template', [
-            'items'            => $items,
-            'locationName'     => $locationName,
+            'items' => $items,
+            'locationName' => $locationName,
             'auartDescription' => $auartDesc,
-            'werks'            => $werks,
-            'auart'            => $auart,
-            'today'            => now(),
+            'werks' => $werks,
+            'auart' => $auart,
+            'today' => now(),
         ])
             ->setPaper('a4', 'landscape')
             ->output();
 
-        $fileName    = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'pdf');
+        $fileName = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'pdf');
         $disposition = $request->boolean('download') ? 'attachment' : 'inline';
 
         return response()->stream(function () use ($pdfBinary) {
             echo $pdfBinary;
         }, 200, [
-            'Content-Type'            => 'application/pdf',
-            'Content-Disposition'     => $disposition . '; filename="' . $fileName . '"; filename*=UTF-8\'\'' . rawurlencode($fileName),
-            'X-Content-Type-Options'  => 'nosniff',
-            'Cache-Control'           => 'private, max-age=60, must-revalidate',
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => $disposition . '; filename="' . $fileName . '"; filename*=UTF-8\'\'' . rawurlencode($fileName),
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, max-age=60, must-revalidate',
         ]);
     }
 
