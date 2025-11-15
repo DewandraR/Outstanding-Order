@@ -649,3 +649,7 @@ a.js-open-so:hover {
 .yz-toggle-btn:not(.active):hover {
     color: #3182ce;
 }
+
+tr.yz-item-search-hit {
+    background-color: #fff3cd !important; /* kuning lembut */
+}

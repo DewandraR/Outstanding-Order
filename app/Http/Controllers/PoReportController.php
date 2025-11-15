@@ -52,6 +52,218 @@ class PoReportController extends Controller
     {
         return sprintf('%s_%s.%s', $base, Carbon::now()->format('Ymd_His'), $ext);
     }
+
+    private function parsePoSearch(string $q): array
+    {
+        $q = strtoupper(trim($q));
+
+        $res = [
+            'kunnr' => null,
+            'vbeln' => null,
+            'bstnk' => null,
+            'posnr' => null,
+        ];
+
+        // Pisah berdasarkan spasi, koma, titik koma, slash
+        $tokens = preg_split('/[\s,;\/]+/', $q);
+
+        $mode = null;
+        foreach ($tokens as $t) {
+            if ($t === '') continue;
+
+            // Keyword penanda
+            if (in_array($t, ['CUST', 'CUSTOMER'])) {
+                $mode = 'kunnr';
+                continue;
+            }
+            if ($t === 'SO') {
+                $mode = 'vbeln';
+                continue;
+            }
+            if ($t === 'PO') {
+                $mode = 'bstnk';
+                continue;
+            }
+            if (in_array($t, ['ITEM', 'IT'])) {
+                $mode = 'posnr';
+                continue;
+            }
+
+            $digits = preg_replace('/\D+/', '', $t);
+            if ($digits === '') {
+                // non-digit, mungkin PO alfanumerik → kalau mode bstnk, simpan apa adanya
+                if ($mode === 'bstnk' && !$res['bstnk']) {
+                    $res['bstnk'] = $t;
+                }
+                continue;
+            }
+
+            switch ($mode) {
+                case 'kunnr':
+                    $res['kunnr'] = str_pad($digits, 10, '0', STR_PAD_LEFT);
+                    break;
+                case 'vbeln':
+                    $res['vbeln'] = str_pad($digits, 10, '0', STR_PAD_LEFT);
+                    break;
+                case 'bstnk':
+                    // PO sering alfanumerik → jangan dipaksa padding digit
+                    $res['bstnk'] = $t;
+                    break;
+                case 'posnr':
+                    $res['posnr'] = str_pad($digits, 6, '0', STR_PAD_LEFT);
+                    break;
+                default:
+                    // fallback: kalau cuma angka tunggal
+                    if (!$res['vbeln'] && strlen($digits) >= 8) {
+                        $res['vbeln'] = str_pad($digits, 10, '0', STR_PAD_LEFT);
+                    } elseif (!$res['posnr'] && strlen($digits) <= 6) {
+                        $res['posnr'] = str_pad($digits, 6, '0', STR_PAD_LEFT);
+                    }
+            }
+        }
+
+        return [
+            $res['kunnr'],
+            $res['vbeln'],
+            $res['bstnk'],
+            $res['posnr'],
+        ];
+    }
+
+    public function apiItemSearch(Request $request)
+    {
+        $request->validate([
+            'q'     => 'required|string',
+            'werks' => 'nullable|string',
+            'auart' => 'nullable|string',
+        ]);
+
+        $keyword = trim((string) $request->query('q', ''));
+        $werks   = $request->query('werks');
+        $auart   = $request->query('auart');
+
+        if ($keyword === '') {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Kata kunci kosong.',
+            ], 400);
+        }
+
+        // --- Samakan logika AUART list (Export + Replace) dengan index() ---
+        $auartList = [];
+        if ($auart) {
+            $rawMapping = DB::table('maping')
+                ->select('IV_AUART', 'Deskription')
+                ->get();
+
+            $exportAuartCodes = $rawMapping
+                ->filter(
+                    fn($i) =>
+                    Str::contains(strtolower((string) $i->Deskription), 'export') &&
+                        !Str::contains(strtolower((string) $i->Deskription), 'local') &&
+                        !Str::contains(strtolower((string) $i->Deskription), 'replace')
+                )
+                ->pluck('IV_AUART')->unique()->toArray();
+
+            $replaceAuartCodes = $rawMapping
+                ->filter(
+                    fn($i) =>
+                    Str::contains(strtolower((string) $i->Deskription), 'replace')
+                )
+                ->pluck('IV_AUART')->unique()->toArray();
+
+            $auartList = [$auart];
+            if (in_array($auart, $exportAuartCodes, true) && !in_array($auart, $replaceAuartCodes, true)) {
+                $auartList = array_merge($exportAuartCodes, $replaceAuartCodes);
+            }
+            $auartList = array_unique(array_filter($auartList));
+        }
+
+        // --- Query dasar: item outstanding saja ---
+        $q = DB::table('so_yppr079_t1 as t1')
+            ->join(
+                'so_yppr079_t2 as t2',
+                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
+                '=',
+                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
+            )
+            ->select(
+                't1.VBELN',
+                DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0') AS POSNR_DB"),
+                't2.KUNNR',
+                't2.NAME1 as CUSTOMER_NAME',
+                't1.MATNR',
+                't1.MAKTX'
+            )
+            ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0'); // hanya item outstanding
+
+        if ($werks) {
+            $q->where('t1.IV_WERKS_PARAM', $werks);
+        }
+
+        if (!empty($auartList)) {
+            $q->whereIn('t1.IV_AUART_PARAM', $auartList);
+        } elseif ($auart) {
+            // fallback kalau mapping gagal
+            $q->where('t1.IV_AUART_PARAM', $auart);
+        }
+
+        // --- Deteksi: ini Material FG atau Desc FG? ---
+        $onlyDigitsAndDots = preg_match('/^[0-9.]+$/', $keyword) === 1;
+
+        if ($onlyDigitsAndDots) {
+            // Anggap Material FG -> exact (abaikan titik)
+            $digits = preg_replace('/\D+/', '', $keyword);
+            if ($digits !== '') {
+                $q->whereRaw("REPLACE(t1.MATNR, '.', '') = ?", [$digits]);
+            }
+        } else {
+            // Desc FG → boleh sebagian, case-insensitive
+            $upper = Str::upper($keyword);
+            $q->whereRaw('UPPER(t1.MAKTX) LIKE ?', ['%' . $upper . '%']);
+        }
+
+        // --- Ambil SEMUA match (dibatasi biar gak kebanyakan) ---
+        $rows = $q
+            ->orderBy('t2.KUNNR')
+            ->orderBy('t1.VBELN')
+            ->orderBy('t1.POSNR')
+            ->limit(200)
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'ok'                   => true,
+                'data'                 => null,
+                'matches_for_customer' => [],
+            ]);
+        }
+
+        // Anchor pertama: dipakai buat loncat ke posisi awal
+        $first = $rows->first();
+
+        // Semua match utk customer yang sama
+        $matchesForCustomer = $rows
+            ->where('KUNNR', $first->KUNNR)
+            ->values()
+            ->map(function ($r) {
+                return [
+                    'VBELN'    => $r->VBELN,
+                    'POSNR_DB' => $r->POSNR_DB,
+                    'MATNR'    => $r->MATNR,
+                    'MAKTX'    => $r->MAKTX,
+                ];
+            })
+            ->all();
+
+        return response()->json([
+            'ok'                   => true,
+            'data'                 => $first,
+            'matches_for_customer' => $matchesForCustomer,
+        ]);
+    }
+
+
     /** Halaman report (tabel) */
     public function index(Request $request)
     {
@@ -72,6 +284,22 @@ class PoReportController extends Controller
         $auart   = $request->query('auart');                 // kode AUART
         $compact = $request->boolean('compact', true);
         $show    = filled($werks) && filled($auart);
+
+        $search = trim((string) $request->query('search', ''));
+
+        // Bisa juga datang dari query langsung (mis: dari global search)
+        $highlightKunnr = $request->query('highlight_kunnr');
+        $highlightVbeln = $request->query('highlight_vbeln');
+        $highlightBstnk = $request->query('highlight_bstnk');
+        $highlightPosnr = $request->query('highlight_posnr');
+
+        // Kalau user isi search bebas dan highlight belum diisi → parse
+        if ($search !== '' && !$highlightKunnr && !$highlightVbeln && !$highlightBstnk && !$highlightPosnr) {
+            [$highlightKunnr, $highlightVbeln, $highlightBstnk, $highlightPosnr] = $this->parsePoSearch($search);
+        }
+
+        // Flag untuk menyalakan autoOpenFromSearch di JS
+        $needAutoExpand = (bool) ($highlightKunnr || $highlightVbeln || $highlightBstnk || $highlightPosnr);
 
         // 3) Mapping AUART mentah (tanpa mem-filter 'Replace' dulu)
         $rawMapping = DB::table('maping')
@@ -344,6 +572,14 @@ class PoReportController extends Controller
             'performanceData' => $performanceData,
             'smallQtyByCustomer' => $smallQtyByCustomer,
             'totalSmallQtyOutstanding' => $totalSmallQtyOutstanding,
+
+            // 🔽 Tambahan untuk search & highlight
+            'search'          => $search,
+            'needAutoExpand'  => $needAutoExpand,
+            'highlightKunnr'  => $highlightKunnr,
+            'highlightVbeln'  => $highlightVbeln,
+            'highlightBstnk'  => $highlightBstnk,
+            'highlightPosnr'  => $highlightPosnr,
         ]);
     }
 

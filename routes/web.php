@@ -145,6 +145,8 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 	Route::post('/po/export-data', [PoReportController::class, 'exportDataStart'])->name('po.export');
 	Route::get('/po/export-data',  [PoReportController::class, 'exportDataShow'])->name('po.export.show');
 	Route::get('/api/po/performance-by-customer', [PoReportController::class, 'apiPerformanceByCustomer'])->name('po.api.performanceByCustomer');
+	Route::get('/api/po/item-search', [PoReportController::class, 'apiItemSearch'])
+		->name('po.api.item_search');
 
 	Route::post('/api/po/remark/save', [PoReportController::class, 'apiSavePoRemark'])->name('api.po.remark.save');
 	Route::get('/po/remark/list', [PoReportController::class, 'apiListPoRemarks'])->name('api.po.remark.list');

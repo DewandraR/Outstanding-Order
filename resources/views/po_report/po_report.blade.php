@@ -73,11 +73,11 @@
 
     {{-- Root state untuk JS --}}
     <div id="yz-root" data-user-id="{{ auth()->id() ?? 0 }}" data-show="{{ $show ? 1 : 0 }}" data-werks="{{ $werks ?? '' }}"
-        data-auart="{{ $auart ?? '' }}" data-is-export="{{ $isExportContext ? 1 : 0 }}"
-        data-auto-expand="{{ (int) request()->boolean('auto_expand', $selected['auto_expand'] ?? false) }}"
-        data-h-kunnr="{{ request('highlight_kunnr', '') }}" data-h-vbeln="{{ request('highlight_vbeln', '') }}"
-        data-h-bstnk="{{ request('highlight_bstnk', '') }}" data-h-posnr="{{ request('highlight_posnr', '') }}"
-        style="display:none"></div>
+        data-auart="{{ $auart ?? '' }}" data-is-export="{{ $isExportContext ? 1 : 0 }}" {{-- dipakai autoOpenFromSearch() di JS --}}
+        data-auto-expand="{{ !empty($needAutoExpand) ? 1 : 0 }}" data-h-kunnr="{{ $highlightKunnr ?? '' }}"
+        data-h-vbeln="{{ $highlightVbeln ?? '' }}" data-h-bstnk="{{ $highlightBstnk ?? '' }}"
+        data-h-posnr="{{ $highlightPosnr ?? '' }}" style="display:none"></div>
+
 
     {{-- =========================================================
 HEADER: PILIH TYPE + EXPORT
@@ -196,22 +196,38 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                 {{-- Judul Utama --}}
                 <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+
                         <h5 class="yz-table-title mb-0">
                             <i class="fas fa-file-invoice me-2"></i>Outstanding PO
                         </h5>
 
-                        <!-- Toolbar: Select-all + COLABS -->
-                        <div class="d-flex align-items-center gap-3">
-                            <div class="form-check m-0">
-                                <input class="form-check-input" type="checkbox" id="check-all-customers">
-                                <label class="form-check-label" for="check-all-customers">Pilih semua customer</label>
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+
+                            {{-- PENCARIAN LANGSUNG ITEM (Material / Desc FG) --}}
+                            <div class="d-flex flex-column" style="max-width: 360px;">
+                                <div class="input-group input-group-sm">
+                                    <input type="text" id="po-item-search-input" class="form-control"
+                                        placeholder="Cari: Material/Desc (FG)">
+                                    <button type="button" id="po-item-search-btn" class="btn btn-outline-primary">
+                                        <i class="fas fa-search me-1"></i> Cari Item
+                                    </button>
+                                </div>
                             </div>
 
-                            <button class="btn btn-colabs btn-outline-secondary btn-lg" id="btn-open-selected"
-                                type="button" style="display:none">
-                                <i class="fas fa-layer-group me-1"></i>
-                                COLABS: Open To PO Item
-                            </button>
+                            {{-- Toolbar: Select-all + COLABS (dipindah sedikit ke kanan) --}}
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="form-check m-0">
+                                    <input class="form-check-input" type="checkbox" id="check-all-customers">
+                                    <label class="form-check-label" for="check-all-customers">Pilih semua customer</label>
+                                </div>
+
+                                <button class="btn btn-colabs btn-outline-secondary btn-lg" id="btn-open-selected"
+                                    type="button" style="display:none">
+                                    <i class="fas fa-layer-group me-1"></i>
+                                    COLABS: Open To PO Item
+                                </button>
+                            </div>
+
                         </div>
                     </div>
                 </div>
@@ -834,6 +850,14 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             overflow: auto;
             /* tabelnya scroll di dalam modal */
         }
+
+        .po-item-row.yz-item-search-hit td,
+        .js-t2row.yz-item-search-hit-parent td {
+            background-color: #dbeafe !important;
+            animation: pulse-highlight 1.5s ease-in-out 2;
+            border-top: 1px solid #93c5fd !important;
+            border-bottom: 1px solid #93c5fd !important;
+        }
     </style>
 @endpush
 
@@ -1052,15 +1076,15 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 </div>
                 <div class="act d-flex gap-1 align-items-center">
                     ${isOwner ? `
-                                                                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
-                                                                                                                                                                                            title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
-                                                                                                                                                                                            <i class="fas fa-pencil-alt"></i>
-                                                                                                                                                                                        </button>` : ''}
+                                                                                                                                                                                                                                                                                                                            <button type="button" class="btn btn-sm btn-outline-primary btn-edit-remark js-edit-remark" 
+                                                                                                                                                                                                                                                                                                                                title="Edit Catatan" data-remark="${escapeHtml(r.remark || '')}">
+                                                                                                                                                                                                                                                                                                                                <i class="fas fa-pencil-alt"></i>
+                                                                                                                                                                                                                                                                                                                            </button>` : ''}
                     ${isOwner ? `
-                                                                                                                                                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
-                                                                                                                                                                                            title="Hapus Catatan">
-                                                                                                                                                                                            <i class="fas fa-trash"></i>
-                                                                                                                                                                                        </button>` : ''}
+                                                                                                                                                                                                                                                                                                                            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-remark js-del-remark" 
+                                                                                                                                                                                                                                                                                                                                title="Hapus Catatan">
+                                                                                                                                                                                                                                                                                                                                <i class="fas fa-trash"></i>
+                                                                                                                                                                                                                                                                                                                            </button>` : ''}
                 </div>
             </div>
         `;
@@ -1413,6 +1437,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         function renderT2(rows, kunnr) {
             if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
             const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ?? 0), 0);
+
             const sortedRows = [...rows].sort((a, b) => {
                 const oa = Number(a.Overdue ?? 0),
                     ob = Number(b.Overdue ?? 0);
@@ -1420,6 +1445,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 if (oa <= 0 && ob > 0) return 1;
                 return ob - oa;
             });
+
             let html = `
 <div class="table-responsive" style="width:100%">
     <table class="table table-sm mb-0 yz-mini">
@@ -1444,6 +1470,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             </tr>
         </thead>
         <tbody>`;
+
             sortedRows.forEach((r, i) => {
                 const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
                 const overdueDays = Number(r.Overdue ?? 0);
@@ -1453,19 +1480,25 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 const totalVal = r.total_value ?? r.TOTPR ?? 0;
 
                 let overdueBadge = '';
-                if (overdueDays > 0) overdueBadge =
-                    `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
-                else if (overdueDays < 0) overdueBadge =
-                    `<span class="overdue-badge-bubble bubble-track" title="${Math.abs(overdueDays)} hari tersisa">-${Math.abs(overdueDays)} DAYS LEFT</span>`;
-                else overdueBadge =
-                    `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
+                if (overdueDays > 0) {
+                    overdueBadge =
+                        `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
+                } else if (overdueDays < 0) {
+                    overdueBadge =
+                        `<span class="overdue-badge-bubble bubble-track" title="${Math.abs(overdueDays)} hari tersisa">-${Math.abs(overdueDays)} DAYS LEFT</span>`;
+                } else {
+                    overdueBadge =
+                        `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
+                }
 
                 const hasRemark = Number(r.po_remark_count || 0) > 0;
 
                 html += `
             <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}" title="Klik untuk melihat item detail">
-                <td class="text-center"><input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"
-                    onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"></td>
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"
+                        onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+                </td>
                 <td class="text-center"><span class="yz-caret">▸</span></td>
                 
                 {{-- KOLOM PO & STATUS --}}
@@ -1483,7 +1516,9 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 
                 {{-- ICON REMARK PO --}}
                 <td class="text-center">
-                    <i class="fas fa-pencil-alt po-remark-flag ${hasRemark?'active':''}" title="Ada item yang diberi catatan" style="display:${hasRemark?'inline-block':'none'};"></i>
+                    <i class="fas fa-pencil-alt po-remark-flag ${hasRemark?'active':''}"
+                       title="Ada item yang diberi catatan"
+                       style="display:${hasRemark?'inline-block':'none'};"></i>
                     <span class="po-selected-dot"></span>
                 </td>
             </tr>
@@ -1514,14 +1549,13 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         function renderT3(rows) {
             if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
 
-            // ⬇️ Tambahan: dedupe berdasarkan kunci unik item
+            // dedupe
             const uniqMap = new Map();
             for (const r of rows) {
                 const key = `${r.WERKS_KEY}|${r.AUART_KEY}|${r.VBELN}|${r.POSNR_DB}`;
                 if (!uniqMap.has(key)) {
                     uniqMap.set(key, r);
                 } else {
-                    // gabungkan info hitungan remark (ambil yang terbesar)
                     const a = uniqMap.get(key);
                     const c1 = Number(a.remark_count || a.po_remark_count || 0);
                     const c2 = Number(r.remark_count || r.po_remark_count || 0);
@@ -1531,6 +1565,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 }
             }
             rows = Array.from(uniqMap.values());
+
             let out = `
 <div class="table-responsive">
     <table class="table table-sm table-hover mb-0 yz-mini">
@@ -1546,44 +1581,58 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 <th>WHFG</th>
                 <th>Packing</th>
                 <th>Net Price</th>
-                <th style="width: 70px;">Remark</th> </tr>
+                <th style="width: 70px;">Remark</th>
+            </tr>
         </thead>
         <tbody>`;
+
             rows.forEach(r => {
                 const sid = sanitizeId(r.id);
                 const checked = sid && selectedItems.has(sid) ? 'checked' : '';
 
-                const isChecked = selectedItems.has(String(r.id));
                 const initialCount = (r.remark_count ?? r.po_remark_count);
                 const countRemarks = Number.isFinite(+initialCount) ?
                     +initialCount :
                     ((r.remark && String(r.remark).trim() !== '') ? 1 : 0);
 
-                out += `
-            <tr data-item-id="${sid ?? ''}" data-vbeln="${r.VBELN}"
-                data-werks-key="${r.WERKS_KEY}" data-auart-key="${r.AUART_KEY}" 
-                data-posnr-db="${r.POSNR_DB}">
-                <td><input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}></td>
-                <td>${r.POSNR ?? ''}</td>
-                <td>${r.MATNR ?? ''}</td>
-                <td>${r.MAKTX ?? ''}</td>
-                <td>${fmtNum(r.KWMENG)}</td>
-                <td>${fmtNum(r.QTY_GI)}</td>
-                <td>${fmtNum(r.QTY_BALANCE2)}</td>
-                <td>${fmtNum(r.KALAB)}</td>
-                <td>${fmtNum(r.KALAB2)}</td>
-                <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
-                <td class="text-center">
-  <!-- Ikon chat ala SO report -->
-  <i class="fas fa-comments remark-icon" title="Catatan PO"></i>
+                // POSNR_DB dijamin 6 digit (supaya sama dengan dari controller)
+                const posnrDb = String(r.POSNR_DB ?? r.POSNR ?? '')
+                    .replace(/\D/g, '')
+                    .padStart(6, '0');
 
-  <!-- Badge jumlah remark (hanya tampil jika >0) -->
-  <span class="remark-count-badge" style="display:${countRemarks>0 ? 'inline-flex':'none'};">
-    ${countRemarks}
-  </span>
-            </tr>`;
+                out += `
+        <tr class="po-item-row"
+            data-item-id="${sid ?? ''}"
+            data-vbeln="${r.VBELN}"
+            data-werks-key="${r.WERKS_KEY}"
+            data-auart-key="${r.AUART_KEY}"
+            data-posnr="${posnrDb}"
+            data-posnr-db="${posnrDb}">
+            <td>
+                <input class="form-check-input check-item" type="checkbox"
+                       data-id="${sid ?? ''}" ${checked}>
+            </td>
+            <td>${r.POSNR ?? ''}</td>
+            <td>${r.MATNR ?? ''}</td>
+            <td>${r.MAKTX ?? ''}</td>
+            <td>${fmtNum(r.KWMENG)}</td>
+            <td>${fmtNum(r.QTY_GI)}</td>
+            <td>${fmtNum(r.QTY_BALANCE2)}</td>
+            <td>${fmtNum(r.KALAB)}</td>
+            <td>${fmtNum(r.KALAB2)}</td>
+            <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
+            <td class="text-center">
+                <i class="fas fa-comments remark-icon" title="Catatan PO"></i>
+                <span class="remark-count-badge"
+                      style="display:${countRemarks>0 ? 'inline-flex':'none'};">
+                    ${countRemarks}
+                </span>
+            </td>
+        </tr>`;
+
                 if (sid) itemIdToSO.set(sid, String(r.VBELN));
             });
+
             out += `</tbody></table></div>`;
             return out;
         }
@@ -2559,6 +2608,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             const apiT3 = "{{ route('dashboard.api.t3') }}";
             const apiPoOverdueDetails = "{{ route('dashboard.api.poOverdueDetails') }}";
             const apiPerformanceByCustomer = "{{ route('po.api.performanceByCustomer') }}";
+            const apiPoItemSearch = "{{ route('po.api.item_search') }}";
 
             // *** HAPUS inisialisasi remark single-user lama ***
             // (bagian lama save/delete remark DIHILANGKAN dan digantikan modul remark di atas)
@@ -3123,6 +3173,172 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 });
             }
 
+            const poItemSearchInput = document.getElementById('po-item-search-input');
+            const poItemSearchBtn = document.getElementById('po-item-search-btn');
+
+
+            function highlightPoItemMatches(matches) {
+                // Bersihkan highlight sebelumnya (ITEM & PO/SO)
+                document
+                    .querySelectorAll('.po-item-row.yz-item-search-hit, .po-item-row.row-highlighted')
+                    .forEach(el => el.classList.remove('yz-item-search-hit', 'row-highlighted'));
+
+                document
+                    .querySelectorAll('.js-t2row.yz-item-search-hit-parent, .js-t2row.row-highlighted')
+                    .forEach(el => el.classList.remove('yz-item-search-hit-parent', 'row-highlighted'));
+
+                // Tambahkan highlight ke semua match baru
+                matches.forEach(m => {
+                    const selector =
+                        `.po-item-row[data-vbeln="${CSS.escape(m.VBELN)}"][data-posnr="${CSS.escape(m.POSNR_DB)}"]`;
+
+                    document.querySelectorAll(selector).forEach(itemEl => {
+                        // Highlight ITEM (Tabel 3)
+                        itemEl.classList.add('yz-item-search-hit', 'row-highlighted');
+
+                        // Highlight baris PO/SO di Tabel 2 (baris di atasnya)
+                        const soRow = itemEl.closest('.yz-nest')?.previousElementSibling;
+                        if (soRow && soRow.classList.contains('js-t2row')) {
+                            soRow.classList.add('yz-item-search-hit-parent', 'row-highlighted');
+                        }
+                    });
+                });
+            }
+
+            async function handlePoItemSearch() {
+                const keywordRaw = (poItemSearchInput?.value || '').trim();
+                if (!keywordRaw) {
+                    poItemSearchInput?.focus();
+                    return;
+                }
+
+                const root = document.getElementById('yz-root');
+                const WERKS = (root?.dataset?.werks || '').trim();
+                const AUART = (root?.dataset?.auart || '').trim();
+
+                const url = new URL(apiPoItemSearch, window.location.origin);
+                url.searchParams.set('q', keywordRaw);
+                if (WERKS) url.searchParams.set('werks', WERKS);
+                if (AUART) url.searchParams.set('auart', AUART);
+
+                if (poItemSearchBtn) {
+                    poItemSearchBtn.disabled = true;
+                    poItemSearchBtn.dataset.oldHtml = poItemSearchBtn.innerHTML;
+                    poItemSearchBtn.innerHTML =
+                        '<span class="spinner-border spinner-border-sm me-1"></span>Mencari...';
+                }
+
+                try {
+                    const res = await fetch(url.toString(), {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                    });
+                    const js = await res.json();
+
+                    if (!res.ok || !js.ok) {
+                        throw new Error(js.message || js.error || 'Gagal mencari item.');
+                    }
+
+                    const hit = js.data;
+                    const matches = js.matches_for_customer || [];
+
+                    if (!hit) {
+                        alert('Tidak ditemukan item dengan kata kunci tersebut.');
+                        return;
+                    }
+
+                    // 1) Loncat ke item pertama
+                    await jumpToSOItem(
+                        hit.VBELN,
+                        hit.POSNR_DB,
+                        hit.KUNNR || null,
+                        hit.CUSTOMER_NAME || null
+                    );
+
+                    // 2) Buka T3 untuk semua SO yang ikut match
+                    if (matches.length) {
+                        await openAllMatchSOForCustomer(matches);
+
+                        // 2a) Keluar dari fokus / collapse mode supaya semua PO/SO yang match kelihatan normal
+                        //    - hilangkan fokus satu baris saja
+                        document.querySelectorAll('table.yz-mini tbody.so-focus-mode').forEach(tbody => {
+                            tbody.classList.remove('so-focus-mode');
+                            tbody.querySelectorAll('.js-t2row').forEach(r => r.classList.remove(
+                                'is-focused'));
+                        });
+
+                        //    - matikan COLLAPSE_MODE di semua T2 yang sedang collapse
+                        for (const tbody of document.querySelectorAll('table.yz-mini tbody.collapse-mode')) {
+                            // applyCollapseView sudah ada di atas (async)
+                            await applyCollapseView(tbody, false);
+                        }
+
+                        // 3) Highlight semua baris ITEM + PO/SO (Tabel 3 dan Tabel 2)
+                        highlightPoItemMatches(matches);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert(err.message || 'Terjadi kesalahan saat mencari item.');
+                } finally {
+                    if (poItemSearchBtn) {
+                        poItemSearchBtn.disabled = false;
+                        poItemSearchBtn.innerHTML =
+                            poItemSearchBtn.dataset.oldHtml ||
+                            '<i class="fas fa-search me-1"></i> Cari Item';
+                    }
+                }
+            }
+
+            async function openAllMatchSOForCustomer(matches) {
+                const uniqueVbelns = [...new Set(matches.map(m => m.VBELN))];
+
+                // 1) Pastikan Tabel 2 yang terkait TIDAK dalam collapse-mode,
+                //    dan semua baris PO-nya kelihatan
+                const processedTbodies = new Set();
+
+                uniqueVbelns.forEach(vbeln => {
+                    const soRow = document.querySelector(
+                        `.js-t2row[data-vbeln="${CSS.escape(vbeln)}"]`
+                    );
+                    if (!soRow) return;
+                    const tbody = soRow.closest('tbody');
+                    if (tbody) processedTbodies.add(tbody);
+                });
+
+                for (const tbody of processedTbodies) {
+                    if (!tbody) continue;
+                    if (COLLAPSE_MODE || tbody.classList.contains('collapse-mode')) {
+                        // keluar dari mode kolaps → tampilkan semua PO di Tabel 2 tsb
+                        await applyCollapseView(tbody, false);
+                    }
+                }
+
+                // 2) Buka Tabel 3 untuk semua SO yang mengandung item hasil search
+                for (const vbeln of uniqueVbelns) {
+                    const soRow = document.querySelector(
+                        `.js-t2row[data-vbeln="${CSS.escape(vbeln)}"]`
+                    );
+                    if (!soRow) continue;
+                    await openItemsIfNeededForSORow(soRow);
+                }
+            }
+
+
+            if (poItemSearchInput && poItemSearchBtn) {
+                poItemSearchBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    handlePoItemSearch();
+                });
+
+                poItemSearchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handlePoItemSearch();
+                    }
+                });
+            }
+
             /* ====================== SMALL QTY CHART INITIAL ====================== */
             if (document.getElementById('chartSmallQtyByCustomer')) {
                 const smallQtySection = document.getElementById('small-qty-section');
@@ -3155,7 +3371,9 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
             /* ====================== AUTO EXPAND & HIGHLIGHT (HASIL SEARCH) ====================== */
             (function autoOpenFromSearch() {
                 const root = document.getElementById('yz-root');
-                const needAutoExpand = !!parseInt(root?.dataset.autoExpand || 0);
+                if (!root) return;
+
+                const needAutoExpand = !!parseInt(root.dataset.autoExpand || 0);
                 if (!needAutoExpand) return;
 
                 const HL_KUNNR = (root.dataset.hKunnr || '').trim();
@@ -3163,13 +3381,15 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 const HL_BSTNK = (root.dataset.hBstnk || '').trim();
                 const HL_POSNR = (root.dataset.hPosnr || '').trim();
 
-                if (!HL_KUNNR) return;
+                // kalau semua kosong, ga usah ngapa-ngapain
+                if (!HL_KUNNR && !HL_VBELN && !HL_BSTNK && !HL_POSNR) return;
 
                 const onlyDigits = s => String(s || '').replace(/\D/g, '');
                 const pad10 = s => onlyDigits(s).padStart(10, '0');
                 const pad6 = s => onlyDigits(s).padStart(6, '0');
 
                 const findCustomerCard = () => {
+                    if (!HL_KUNNR) return document.querySelector('.yz-customer-card'); // fallback
                     const d = onlyDigits(HL_KUNNR);
                     if (!d) return null;
                     return document.querySelector(
@@ -3181,15 +3401,15 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     const custCard = findCustomerCard();
                     if (!custCard) return;
 
+                    // buka kartu customer (Tabel 2 muncul)
                     custCard.click();
 
                     const slot = document.getElementById(custCard.dataset.kid);
-                    const wrap = slot?.querySelector('.yz-nest-wrap');
                     if (!slot) return;
 
+                    // tunggu T2 kebentuk
                     let tries = 0;
-                    while (tries++ < 100) {
-                        if (slot.querySelector('.js-t2row')) break;
+                    while (tries++ < 100 && !slot.querySelector('.js-t2row')) {
                         await wait(100);
                     }
 
@@ -3201,52 +3421,36 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     const byPO = p => t2Rows.find(r => (r.children[2]?.querySelector('.fw-bold')
                         ?.textContent || '').trim() === p);
 
-                    const targetRow = (HL_VBELN && byVbeln(HL_VBELN)) || (HL_BSTNK && byPO(HL_BSTNK)) ||
+                    const targetRow =
+                        (HL_VBELN && byVbeln(HL_VBELN)) ||
+                        (HL_BSTNK && byPO(HL_BSTNK)) ||
                         t2Rows[0];
+
                     if (!targetRow) return;
 
-                    document.querySelectorAll('.row-highlighted').forEach(el => el.classList.remove(
-                        'row-highlighted'));
-                    targetRow.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'center'
-                    });
+                    // === PASTIKAN TABEL 3 DIBUKA ===
+                    await openItemsIfNeededForSORow(targetRow);
 
+                    // kalau tidak ada POSNR -> highlight baris SO saja, tapi T3 tetap kebuka
                     if (!HL_POSNR) {
-                        const nest = targetRow.nextElementSibling;
-                        if (nest?.classList.contains('yz-nest')) {
-                            nest.style.display = 'none';
-                            targetRow.querySelector('.yz-caret')?.classList.remove('rot');
-                        }
-
-                        targetRow.classList.add('row-highlighted');
-                        const removeHL = () => targetRow.classList.remove('row-highlighted');
-                        targetRow.addEventListener('click', removeHL, {
-                            capture: true,
-                            once: true
-                        });
+                        scrollAndFlash(targetRow);
                         return;
                     }
 
-                    await openItemsIfNeededForSORow(targetRow);
-
+                    // kalau ada POSNR -> cari baris item di T3
                     const wantedPosnr = pad6(HL_POSNR);
                     let t3row = null;
                     let tries2 = 0;
-                    while (tries2++ < 100) {
+                    while (tries2++ < 100 && !t3row) {
                         const nest = targetRow.nextElementSibling;
                         t3row = nest?.querySelector(`tr[data-posnr-db='${CSS.escape(wantedPosnr)}']`);
-                        if (t3row) break;
-                        await wait(80);
+                        if (!t3row) await wait(80);
                     }
 
                     if (t3row) {
-                        t3row.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'center'
-                        });
                         scrollAndFlash(t3row);
                     } else {
+                        // kalau item tidak ketemu, minimal baris SO-nya kedip
                         scrollAndFlash(targetRow);
                     }
                 })();

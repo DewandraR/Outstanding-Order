@@ -145,17 +145,39 @@
                     {{-- Judul Utama --}}
                     <div class="p-3 mx-md-3 mt-md-3 yz-main-title-wrapper">
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+
+                            {{-- Judul --}}
                             <h5 class="yz-table-title mb-0">
                                 <i class="fas fa-file-invoice me-2"></i>Outstanding SO
                             </h5>
 
-                            {{-- Toolbar Tabel 1 --}}
-                            <div class="d-flex align-items-center gap-3">
+                            {{-- Kanan: Search + checkbox + COLABS (layout sama seperti PO) --}}
+                            <div class="d-flex align-items-center gap-3 flex-wrap ms-auto">
+
+                                {{-- GLOBAL SEARCH: CUST / PO / SO / Item (SAMA DENGAN REPORT PO) --}}
+                                <form id="so-global-search-form" class="d-flex align-items-center gap-2" method="GET"
+                                    action="{{ route('so.index') }}">
+
+                                    {{-- pertahankan filter plant & type --}}
+                                    <input type="hidden" name="werks" value="{{ $selectedWerks }}">
+                                    <input type="hidden" name="auart" value="{{ $selectedAuart }}">
+
+                                    <div class="input-group input-group-sm" style="min-width: 320px;">
+                                        <input type="text" name="keyword" id="so-item-search-input" class="form-control"
+                                            placeholder="Cari: Material/Desc (FG)" value="{{ request('keyword') }}">
+                                        <button class="btn btn-outline-primary" type="submit" id="so-item-search-btn">
+                                            <i class="fas fa-search"></i>
+                                        </button>
+                                    </div>
+                                </form>
+
+                                {{-- Pilih semua customer (posisinya sama seperti di PO) --}}
                                 <div class="form-check m-0">
                                     <input class="form-check-input" type="checkbox" id="check-all-customers">
                                     <label class="form-check-label" for="check-all-customers">Pilih semua customer</label>
                                 </div>
 
+                                {{-- Tombol COLABS tetap --}}
                                 <button class="btn btn-colabs btn-outline-secondary btn-lg" id="btn-open-selected"
                                     type="button" style="display:none">
                                     <i class="fas fa-layer-group me-1"></i>
@@ -802,17 +824,28 @@
                     if (tbody && tbody.dataset) tbody.dataset.collapse = on ? '1' : '0';
                 };
                 const closeAllOpenSOTables = () => {
+                    // Reset semua Tabel-2 (SO) ke kondisi normal:
+                    // - tidak collapse
+                    // - semua baris SO kelihatan
+                    // - semua Tabel-3 tertutup
                     document.querySelectorAll('table tbody').forEach(tb => {
-                        if (getCollapse(tb)) return;
-                        tb.classList.remove('so-focus-mode');
+                        if (!tb.querySelector('.js-t2row')) return; // hanya Tabel-2
+
+                        // matikan mode collapse & fokus
+                        setCollapse(tb, false);
+                        tb.classList.remove('collapse-mode', 'so-focus-mode');
+
                         tb.querySelectorAll('.js-t2row').forEach(r => {
-                            r.classList.remove('is-focused');
+                            r.style.display = ''; // tampilkan semua SO
+                            r.classList.remove('is-focused', 'so-visited');
+
                             const nest = r.nextElementSibling;
-                            if (nest && nest.style.display !== 'none') {
-                                nest.style.display = 'none';
-                                r.querySelector('.yz-caret')?.classList.remove('rot');
+                            if (nest) {
+                                nest.style.display = 'none'; // tutup Tabel-3
                             }
+                            r.querySelector('.yz-caret')?.classList.remove('rot');
                         });
+
                         updateT2FooterVisibility(tb.closest('table'));
                     });
                 };
@@ -906,36 +939,36 @@
   <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
 
   ${isMetal ? '' : `
-                  <!-- Pembahanan (popover T4) – hanya WOOD -->
-                  <td>
-                    <span class="yz-machi-pct"
-                          data-bs-toggle="popover"
-                          data-bs-placement="top"
-                          data-stage="Pembahanan"
-                          data-gr="${r.TOTTP ?? ''}"
-                          data-order="${r.TOTREQ ?? ''}"
-                          title="Progress Stage: Pembahanan">
-                      ${pembPercent}
-                    </span>
-                  </td>`}
+                                                                                                                                                                                                                                  <!-- Pembahanan (popover T4) – hanya WOOD -->
+                                                                                                                                                                                                                                  <td>
+                                                                                                                                                                                                                                    <span class="yz-machi-pct"
+                                                                                                                                                                                                                                          data-bs-toggle="popover"
+                                                                                                                                                                                                                                          data-bs-placement="top"
+                                                                                                                                                                                                                                          data-stage="Pembahanan"
+                                                                                                                                                                                                                                          data-gr="${r.TOTTP ?? ''}"
+                                                                                                                                                                                                                                          data-order="${r.TOTREQ ?? ''}"
+                                                                                                                                                                                                                                          title="Progress Stage: Pembahanan">
+                                                                                                                                                                                                                                      ${pembPercent}
+                                                                                                                                                                                                                                    </span>
+                                                                                                                                                                                                                                  </td>`}
 
         <!-- CUTING (METAL) atau MACHI (WOOD) -->
         <td>
           ${isMetal
             ? `<span class="yz-machi-pct text-decoration-none"
-                                                                                                     data-bs-toggle="popover"
-                                                                                                     data-bs-placement="top"
-                                                                                                     data-stage="Cuting"
-                                                                                                     data-gr="${r.CUTT ?? ''}"
-                                                                                                     data-order="${r.QPROC ?? ''}"
-                                                                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
+                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                     data-stage="Cuting"
+                                                                                                                                                                                                                                                                                                                     data-gr="${r.CUTT ?? ''}"
+                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROC ?? ''}"
+                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
             : `<span class="yz-machi-pct"
-                                                                                                     data-bs-toggle="popover"
-                                                                                                     data-bs-placement="top"
-                                                                                                     data-stage="Machining"
-                                                                                                     data-gr="${r.MACHI ?? ''}"
-                                                                                                     data-order="${r.QPROM ?? ''}"
-                                                                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
+                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                     data-stage="Machining"
+                                                                                                                                                                                                                                                                                                                     data-gr="${r.MACHI ?? ''}"
+                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROM ?? ''}"
+                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
         </td>
 
         <!-- ASSY -->
@@ -953,17 +986,17 @@
 
         <!-- PRIMER (hanya METAL) -->
         ${isMetal ? `
-                                                                                        <td>
-                                                                                          <span class="yz-machi-pct text-decoration-none"
-                                                                                                data-bs-toggle="popover"
-                                                                                                data-bs-placement="top"
-                                                                                                data-stage="Primer"
-                                                                                                data-gr="${r.PRIMER ?? ''}"
-                                                                                                data-order="${r.QPROIR ?? ''}"
-                                                                                                title="Progress Stage: Primer">
-                                                                                            ${primerPercent}
-                                                                                          </span>
-                                                                                        </td>` : ''}
+                                                                                                                                                                                                                                                                                                        <td>
+                                                                                                                                                                                                                                                                                                          <span class="yz-machi-pct text-decoration-none"
+                                                                                                                                                                                                                                                                                                                data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                data-stage="Primer"
+                                                                                                                                                                                                                                                                                                                data-gr="${r.PRIMER ?? ''}"
+                                                                                                                                                                                                                                                                                                                data-order="${r.QPROIR ?? ''}"
+                                                                                                                                                                                                                                                                                                                title="Progress Stage: Primer">
+                                                                                                                                                                                                                                                                                                            ${primerPercent}
+                                                                                                                                                                                                                                                                                                          </span>
+                                                                                                                                                                                                                                                                                                        </td>` : ''}
 
         <!-- PAINT -->
         <td>
@@ -2288,6 +2321,193 @@
                             exclusive
                         );
                     });
+
+                    /* =========================================================
+                     * PENCARIAN ITEM (Material FG / Desc FG)
+                     * ======================================================= */
+
+                    const itemSearchInput = document.getElementById('so-item-search-input');
+                    const itemSearchBtn = document.getElementById('so-item-search-btn');
+
+                    let isItemSearching = false;
+                    // Hapus highlight hasil search sebelumnya
+                    function clearItemSearchHighlight() {
+                        document
+                            .querySelectorAll('tr.yz-item-hit')
+                            .forEach(tr => tr.classList.remove('yz-item-hit'));
+                    }
+
+                    async function runItemSearch() {
+                        if (!itemSearchInput || isItemSearching) return;
+
+                        const raw = (itemSearchInput.value || '').trim();
+                        clearItemSearchHighlight();
+
+                        // Kalau input kosong → reset saja, jangan apa-apa
+                        if (!raw) return;
+
+                        const keyword = raw.toUpperCase();
+
+                        isItemSearching = true;
+                        if (itemSearchBtn) {
+                            itemSearchBtn.disabled = true;
+                            itemSearchBtn.innerHTML =
+                                '<span class="spinner-border spinner-border-sm me-1"></span>Mencari...';
+                        }
+                        itemSearchInput.disabled = true;
+
+                        try {
+                            const customerCards = Array.from(
+                                document.querySelectorAll('.yz-customer-card')
+                            );
+
+                            const results = []; // {kunnr, cname, vbeln, posnrKey}
+                            let firstMatchedKunnr = null;
+
+                            // LOOP CUSTOMER (Tabel 1)
+                            for (const card of customerCards) {
+                                const kunnr = card.dataset.kunnr;
+                                const cname = (card.dataset.cname || '').trim();
+
+                                // Kalau sudah ketemu customer pertama yg match,
+                                // customer lain TIDAK di-cek lagi
+                                if (firstMatchedKunnr && kunnr !== firstMatchedKunnr) {
+                                    continue;
+                                }
+
+                                // Ambil daftar SO untuk customer ini
+                                let soList = [];
+                                const kid = card.dataset.kid;
+                                const slot = document.getElementById(kid);
+                                const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                                if (wrap && wrap.dataset.loaded === '1') {
+                                    // SO sudah pernah dimuat → ambil dari DOM
+                                    wrap.querySelectorAll('.js-t2row').forEach(tr => {
+                                        soList.push({
+                                            VBELN: tr.dataset.vbeln
+                                        });
+                                    });
+                                } else {
+                                    // Belum dimuat → panggil API by_customer (background, tidak klik UI)
+                                    const url = new URL(apiSoByCustomer, window.location.origin);
+                                    url.searchParams.set('kunnr', kunnr);
+                                    url.searchParams.set('werks', WERKS);
+                                    url.searchParams.set('auart', AUART);
+
+                                    const resp = await fetch(url, {
+                                        headers: {
+                                            'Accept': 'application/json'
+                                        }
+                                    });
+                                    const js = await resp.json();
+                                    if (!js.ok) continue;
+
+                                    soList = uniqBy(js.data || [], r => `${r.VBELN}`);
+                                }
+
+                                let anyMatchForThisCustomer = false;
+
+                                // LOOP SO (Tabel 2) UNTUK CUSTOMER INI SAJA
+                                for (const so of soList) {
+                                    const vbeln = so.VBELN;
+                                    const items = await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
+
+                                    // LOOP ITEM (Tabel 3)
+                                    for (const it of items) {
+                                        const matnr = String(it.MATNR || '')
+                                            .trim()
+                                            .toUpperCase();
+                                        const maktx = String(it.MAKTX || '')
+                                            .trim()
+                                            .toUpperCase();
+
+                                        // Desc FG: CONTAINS
+                                        const matchDesc = maktx.includes(keyword);
+                                        // Material FG: EXACT
+                                        const matchMatnr = matnr === keyword;
+
+                                        if (matchDesc || matchMatnr) {
+                                            anyMatchForThisCustomer = true;
+                                            results.push({
+                                                kunnr,
+                                                cname,
+                                                vbeln,
+                                                posnrKey: it.POSNR_KEY
+                                            });
+                                        }
+                                    }
+                                }
+
+                                if (anyMatchForThisCustomer && !firstMatchedKunnr) {
+                                    // Simpan KUNNR customer pertama yang match,
+                                    // lalu berhenti cek customer lain
+                                    firstMatchedKunnr = kunnr;
+                                    break;
+                                }
+                            }
+
+                            if (!results.length) {
+                                alert('Tidak ditemukan item dengan kata kunci tersebut.');
+                                return;
+                            }
+
+                            // Tampilkan hasil:
+                            // - HANYA customer pertama yang match (firstMatchedKunnr)
+                            // - Semua SO yg berisi item match akan dibuka sampai Tabel 3
+                            const openedItemKeys = new Set();
+
+                            for (const r of results) {
+                                if (r.kunnr !== firstMatchedKunnr) continue;
+
+                                const key = `${r.vbeln}|${r.posnrKey}`;
+                                if (openedItemKeys.has(key)) continue;
+                                openedItemKeys.add(key);
+
+                                // Buka customer + SO + item menggunakan helper yg sudah ada
+                                // (tidak exclusive supaya customer lain tetap tampil normal)
+                                await window.navigateToSO(
+                                    r.vbeln,
+                                    r.cname,
+                                    r.posnrKey,
+                                    false
+                                );
+
+                                // Kasih highlight di baris item yg cocok
+                                const selector =
+                                    `tr[data-vbeln='${CSS.escape(r.vbeln)}']` +
+                                    `[data-posnr-key='${CSS.escape(r.posnrKey)}']`;
+                                const rowEl = document.querySelector(selector);
+                                if (rowEl) rowEl.classList.add('yz-item-hit');
+                            }
+                        } catch (err) {
+                            console.error('Item search error:', err);
+                            alert('Terjadi kesalahan saat melakukan pencarian item.');
+                        } finally {
+                            isItemSearching = false;
+                            if (itemSearchBtn) {
+                                itemSearchBtn.disabled = false;
+                                itemSearchBtn.innerHTML =
+                                    '<i class="fas fa-search me-1"></i> Cari';
+                            }
+                            itemSearchInput.disabled = false;
+                        }
+                    }
+
+                    // Klik tombol "Cari"
+                    itemSearchBtn?.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        runItemSearch();
+                    });
+
+                    // Tekan Enter di input
+                    itemSearchInput?.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            runItemSearch();
+                        }
+                    });
+
 
                     /* =========================================================
                      * SMALL QTY (Chart + Details + Export) — tetap
