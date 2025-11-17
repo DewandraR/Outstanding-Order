@@ -428,9 +428,9 @@
 
                         <!-- Form tambah -->
                         <div class="mb-2">
-                            <label for="remark-input" class="form-label mb-1">Tambah Catatan (maks. 60 karakter)</label>
+                            <label for="remark-input" class="form-label mb-1">Tambah Catatan (maks. 100 karakter)</label>
                             <div class="d-flex align-items-start gap-2">
-                                <textarea id="remark-input" class="form-control" rows="2" maxlength="60"
+                                <textarea id="remark-input" class="form-control" rows="2" maxlength="100"
                                     placeholder="Tulis catatan singkat..."></textarea>
                                 <button type="button" id="add-remark-btn" class="btn btn-primary">
                                     <i class="fas fa-paper-plane me-1"></i> Tambah
@@ -438,7 +438,7 @@
                             </div>
                             <div class="d-flex justify-content-between mt-1 small">
                                 <span id="remark-feedback" class="text-muted"></span>
-                                <span id="remark-counter" class="text-muted">0/60</span>
+                                <span id="remark-counter" class="text-muted">0/100</span>
                             </div>
                         </div>
                     </div>
@@ -939,36 +939,36 @@
   <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
 
   ${isMetal ? '' : `
-                                                                                                                                                                                                                                                  <!-- Pembahanan (popover T4) – hanya WOOD -->
-                                                                                                                                                                                                                                                  <td>
-                                                                                                                                                                                                                                                    <span class="yz-machi-pct"
-                                                                                                                                                                                                                                                          data-bs-toggle="popover"
-                                                                                                                                                                                                                                                          data-bs-placement="top"
-                                                                                                                                                                                                                                                          data-stage="Pembahanan"
-                                                                                                                                                                                                                                                          data-gr="${r.TOTTP ?? ''}"
-                                                                                                                                                                                                                                                          data-order="${r.TOTREQ ?? ''}"
-                                                                                                                                                                                                                                                          title="Progress Stage: Pembahanan">
-                                                                                                                                                                                                                                                      ${pembPercent}
-                                                                                                                                                                                                                                                    </span>
-                                                                                                                                                                                                                                                  </td>`}
+                                                                                                                                                                                                                                                          <!-- Pembahanan (popover T4) – hanya WOOD -->
+                                                                                                                                                                                                                                                          <td>
+                                                                                                                                                                                                                                                            <span class="yz-machi-pct"
+                                                                                                                                                                                                                                                                  data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                  data-bs-placement="top"
+                                                                                                                                                                                                                                                                  data-stage="Pembahanan"
+                                                                                                                                                                                                                                                                  data-gr="${r.TOTTP ?? ''}"
+                                                                                                                                                                                                                                                                  data-order="${r.TOTREQ ?? ''}"
+                                                                                                                                                                                                                                                                  title="Progress Stage: Pembahanan">
+                                                                                                                                                                                                                                                              ${pembPercent}
+                                                                                                                                                                                                                                                            </span>
+                                                                                                                                                                                                                                                          </td>`}
 
         <!-- CUTING (METAL) atau MACHI (WOOD) -->
         <td>
           ${isMetal
             ? `<span class="yz-machi-pct text-decoration-none"
-                                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
-                                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
-                                                                                                                                                                                                                                                                                                                                     data-stage="Cuting"
-                                                                                                                                                                                                                                                                                                                                     data-gr="${r.CUTT ?? ''}"
-                                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROC ?? ''}"
-                                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
+                                                                                                                                                                                                                                                                                                                                             data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                                             data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                                             data-stage="Cuting"
+                                                                                                                                                                                                                                                                                                                                             data-gr="${r.CUTT ?? ''}"
+                                                                                                                                                                                                                                                                                                                                             data-order="${r.QPROC ?? ''}"
+                                                                                                                                                                                                                                                                                                                                             title="Progress Stage: Cuting">${cutingPercent}</span>`
             : `<span class="yz-machi-pct"
-                                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
-                                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
-                                                                                                                                                                                                                                                                                                                                     data-stage="Machining"
-                                                                                                                                                                                                                                                                                                                                     data-gr="${r.MACHI ?? ''}"
-                                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROM ?? ''}"
-                                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
+                                                                                                                                                                                                                                                                                                                                             data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                                             data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                                             data-stage="Machining"
+                                                                                                                                                                                                                                                                                                                                             data-gr="${r.MACHI ?? ''}"
+                                                                                                                                                                                                                                                                                                                                             data-order="${r.QPROM ?? ''}"
+                                                                                                                                                                                                                                                                                                                                             title="Progress Stage: Machining">${cutingPercent}</span>`}
         </td>
 
         <!-- ASSY -->
@@ -986,17 +986,17 @@
 
         <!-- PRIMER (hanya METAL) -->
         ${isMetal ? `
-                                                                                                                                                                                                                                                                                                                        <td>
-                                                                                                                                                                                                                                                                                                                          <span class="yz-machi-pct text-decoration-none"
-                                                                                                                                                                                                                                                                                                                                data-bs-toggle="popover"
-                                                                                                                                                                                                                                                                                                                                data-bs-placement="top"
-                                                                                                                                                                                                                                                                                                                                data-stage="Primer"
-                                                                                                                                                                                                                                                                                                                                data-gr="${r.PRIMER ?? ''}"
-                                                                                                                                                                                                                                                                                                                                data-order="${r.QPROIR ?? ''}"
-                                                                                                                                                                                                                                                                                                                                title="Progress Stage: Primer">
-                                                                                                                                                                                                                                                                                                                            ${primerPercent}
-                                                                                                                                                                                                                                                                                                                          </span>
-                                                                                                                                                                                                                                                                                                                        </td>` : ''}
+                                                                                                                                                                                                                                                                                                                                <td>
+                                                                                                                                                                                                                                                                                                                                  <span class="yz-machi-pct text-decoration-none"
+                                                                                                                                                                                                                                                                                                                                        data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                                        data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                                        data-stage="Primer"
+                                                                                                                                                                                                                                                                                                                                        data-gr="${r.PRIMER ?? ''}"
+                                                                                                                                                                                                                                                                                                                                        data-order="${r.QPROIR ?? ''}"
+                                                                                                                                                                                                                                                                                                                                        title="Progress Stage: Primer">
+                                                                                                                                                                                                                                                                                                                                    ${primerPercent}
+                                                                                                                                                                                                                                                                                                                                  </span>
+                                                                                                                                                                                                                                                                                                                                </td>` : ''}
 
         <!-- PAINT -->
         <td>
@@ -1519,7 +1519,7 @@
                         posnr: null,
                         posnrKey: null
                     };
-                    const MAX_REMARK = 60;
+                    const MAX_REMARK = 100;
 
                     function updateRmCounter() {
                         if (!rmInput || !rmCounter) return;
@@ -2115,7 +2115,7 @@
                             const remarkTextEl = remarkItemEl.querySelector('.text');
                             const actionEl = remarkItemEl.querySelector('.act');
                             remarkTextEl.innerHTML =
-                                `<textarea class="form-control" rows="2" maxlength="60" id="edit-remark-${id}">${currentRemark}</textarea>`;
+                                `<textarea class="form-control" rows="2" maxlength="100" id="edit-remark-${id}">${currentRemark}</textarea>`;
                             actionEl.innerHTML = `
             <button type="button" class="btn btn-success btn-sm btn-save-edit" data-id="${id}">Save</button>
             <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-edit">Cancel</button>`;
@@ -2136,8 +2136,8 @@
                             const id = saveBtn.dataset.id;
                             const newRemarkInput = document.getElementById(`edit-remark-${id}`);
                             const newRemark = (newRemarkInput?.value || '').trim();
-                            if (!newRemark || newRemark.length > 60) {
-                                alert('Catatan tidak boleh kosong dan maksimal 60 karakter.');
+                            if (!newRemark || newRemark.length > 100) {
+                                alert('Catatan tidak boleh kosong dan maksimal 100 karakter.');
                                 return;
                             }
                             saveBtn.disabled = true;

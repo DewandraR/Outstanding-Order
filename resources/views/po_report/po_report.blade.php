@@ -650,9 +650,9 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                     </div>
 
                     <div class="mb-2">
-                        <label for="remark-text" class="form-label mb-1">Tambah Catatan (maks. 60 karakter)</label>
+                        <label for="remark-text" class="form-label mb-1">Tambah Catatan (maks.100 karakter)</label>
                         <div class="d-flex align-items-start gap-2">
-                            <textarea id="remark-text" class="form-control" rows="2" maxlength="60"
+                            <textarea id="remark-text" class="form-control" rows="2" maxlength="100"
                                 placeholder="Tulis catatan singkat..."></textarea>
                             <button type="button" id="add-remark-btn" class="btn btn-primary" style="flex-shrink: 0;">
                                 <i class="fas fa-paper-plane me-1"></i> Tambah
@@ -660,7 +660,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                         </div>
                         <div class="d-flex justify-content-between mt-1 small">
                             <span id="remark-feedback" class="text-muted"></span>
-                            <span class="text-muted"><span id="remark-count">0</span>/60</span>
+                            <span class="text-muted"><span id="remark-count">0</span>/100</span>
                         </div>
                     </div>
                 </div>
@@ -948,7 +948,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         const API_REMARK_UPDATE_BASE = "{{ route('api.po.remark.update', ['id' => 0]) }}".replace(/0$/, ''); // .../{id}
         const API_REMARK_DELETE_BASE = "{{ route('api.po.remark.delete', ['id' => 0]) }}".replace(/0$/, ''); // .../{id}
         const CSRF_TOKEN_FALLBACK = "{{ csrf_token() }}";
-        const REMARK_MAX = 60;
+        const REMARK_MAX = 100;
 
         const rootEl = document.getElementById('yz-root');
         const CURRENT_UID = parseInt(rootEl?.dataset?.userId || '0', 10) || 0;

@@ -806,7 +806,7 @@ class SalesOrderController extends Controller
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string',
-            'remark' => 'nullable|string|max:60',
+            'remark' => 'nullable|string|max:100',
         ]);
 
         $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
@@ -1151,7 +1151,7 @@ class SalesOrderController extends Controller
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string',
-            'remark' => 'required|string|max:60',
+            'remark' => 'required|string|max:100',
         ]);
 
         $userId = Auth::id();
@@ -1209,7 +1209,7 @@ class SalesOrderController extends Controller
     public function apiUpdateItemRemark(Request $request, $id)
     {
         $validated = $request->validate([
-            'remark' => 'required|string|max:60',
+            'remark' => 'required|string|max:100',
         ]);
 
         $userId = Auth::id();

@@ -906,7 +906,7 @@ class PoReportController extends Controller
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string',
-            'remark' => 'nullable|string|max:60',
+            'remark' => 'nullable|string|max:100',
         ]);
 
         $posnrDb    = str_pad(preg_replace('/\D/', '', (string)$validated['posnr']), 6, '0', STR_PAD_LEFT);
@@ -986,7 +986,7 @@ class PoReportController extends Controller
             'auart'  => 'required|string',
             'vbeln'  => 'required|string',
             'posnr'  => 'required|string',
-            'remark' => 'required|string|max:60',
+            'remark' => 'required|string|max:100',
         ]);
 
         $userId = Auth::id();
@@ -1010,7 +1010,7 @@ class PoReportController extends Controller
 
     public function apiUpdatePoRemark(Request $request, $id)
     {
-        $request->validate(['remark' => 'required|string|max:60']);
+        $request->validate(['remark' => 'required|string|max:100']);
         $userId = Auth::id();
         if (!$userId) return response()->json(['ok' => false, 'message' => 'Silakan login.'], 401);
 
