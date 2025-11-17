@@ -939,36 +939,36 @@
   <td>${formatNumberGlobal(r.KALAB2, 0)}</td>
 
   ${isMetal ? '' : `
-                                                                                                                                                                                                                                  <!-- Pembahanan (popover T4) – hanya WOOD -->
-                                                                                                                                                                                                                                  <td>
-                                                                                                                                                                                                                                    <span class="yz-machi-pct"
-                                                                                                                                                                                                                                          data-bs-toggle="popover"
-                                                                                                                                                                                                                                          data-bs-placement="top"
-                                                                                                                                                                                                                                          data-stage="Pembahanan"
-                                                                                                                                                                                                                                          data-gr="${r.TOTTP ?? ''}"
-                                                                                                                                                                                                                                          data-order="${r.TOTREQ ?? ''}"
-                                                                                                                                                                                                                                          title="Progress Stage: Pembahanan">
-                                                                                                                                                                                                                                      ${pembPercent}
-                                                                                                                                                                                                                                    </span>
-                                                                                                                                                                                                                                  </td>`}
+                                                                                                                                                                                                                                                  <!-- Pembahanan (popover T4) – hanya WOOD -->
+                                                                                                                                                                                                                                                  <td>
+                                                                                                                                                                                                                                                    <span class="yz-machi-pct"
+                                                                                                                                                                                                                                                          data-bs-toggle="popover"
+                                                                                                                                                                                                                                                          data-bs-placement="top"
+                                                                                                                                                                                                                                                          data-stage="Pembahanan"
+                                                                                                                                                                                                                                                          data-gr="${r.TOTTP ?? ''}"
+                                                                                                                                                                                                                                                          data-order="${r.TOTREQ ?? ''}"
+                                                                                                                                                                                                                                                          title="Progress Stage: Pembahanan">
+                                                                                                                                                                                                                                                      ${pembPercent}
+                                                                                                                                                                                                                                                    </span>
+                                                                                                                                                                                                                                                  </td>`}
 
         <!-- CUTING (METAL) atau MACHI (WOOD) -->
         <td>
           ${isMetal
             ? `<span class="yz-machi-pct text-decoration-none"
-                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
-                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
-                                                                                                                                                                                                                                                                                                                     data-stage="Cuting"
-                                                                                                                                                                                                                                                                                                                     data-gr="${r.CUTT ?? ''}"
-                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROC ?? ''}"
-                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
+                                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                                     data-stage="Cuting"
+                                                                                                                                                                                                                                                                                                                                     data-gr="${r.CUTT ?? ''}"
+                                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROC ?? ''}"
+                                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Cuting">${cutingPercent}</span>`
             : `<span class="yz-machi-pct"
-                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
-                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
-                                                                                                                                                                                                                                                                                                                     data-stage="Machining"
-                                                                                                                                                                                                                                                                                                                     data-gr="${r.MACHI ?? ''}"
-                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROM ?? ''}"
-                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
+                                                                                                                                                                                                                                                                                                                                     data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                                     data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                                     data-stage="Machining"
+                                                                                                                                                                                                                                                                                                                                     data-gr="${r.MACHI ?? ''}"
+                                                                                                                                                                                                                                                                                                                                     data-order="${r.QPROM ?? ''}"
+                                                                                                                                                                                                                                                                                                                                     title="Progress Stage: Machining">${cutingPercent}</span>`}
         </td>
 
         <!-- ASSY -->
@@ -986,17 +986,17 @@
 
         <!-- PRIMER (hanya METAL) -->
         ${isMetal ? `
-                                                                                                                                                                                                                                                                                                        <td>
-                                                                                                                                                                                                                                                                                                          <span class="yz-machi-pct text-decoration-none"
-                                                                                                                                                                                                                                                                                                                data-bs-toggle="popover"
-                                                                                                                                                                                                                                                                                                                data-bs-placement="top"
-                                                                                                                                                                                                                                                                                                                data-stage="Primer"
-                                                                                                                                                                                                                                                                                                                data-gr="${r.PRIMER ?? ''}"
-                                                                                                                                                                                                                                                                                                                data-order="${r.QPROIR ?? ''}"
-                                                                                                                                                                                                                                                                                                                title="Progress Stage: Primer">
-                                                                                                                                                                                                                                                                                                            ${primerPercent}
-                                                                                                                                                                                                                                                                                                          </span>
-                                                                                                                                                                                                                                                                                                        </td>` : ''}
+                                                                                                                                                                                                                                                                                                                        <td>
+                                                                                                                                                                                                                                                                                                                          <span class="yz-machi-pct text-decoration-none"
+                                                                                                                                                                                                                                                                                                                                data-bs-toggle="popover"
+                                                                                                                                                                                                                                                                                                                                data-bs-placement="top"
+                                                                                                                                                                                                                                                                                                                                data-stage="Primer"
+                                                                                                                                                                                                                                                                                                                                data-gr="${r.PRIMER ?? ''}"
+                                                                                                                                                                                                                                                                                                                                data-order="${r.QPROIR ?? ''}"
+                                                                                                                                                                                                                                                                                                                                title="Progress Stage: Primer">
+                                                                                                                                                                                                                                                                                                                            ${primerPercent}
+                                                                                                                                                                                                                                                                                                                          </span>
+                                                                                                                                                                                                                                                                                                                        </td>` : ''}
 
         <!-- PAINT -->
         <td>
@@ -2330,20 +2330,34 @@
                     const itemSearchBtn = document.getElementById('so-item-search-btn');
 
                     let isItemSearching = false;
-                    // Hapus highlight hasil search sebelumnya
-                    function clearItemSearchHighlight() {
+
+                    // RESET hasil pencarian sebelumnya:
+                    // - hilangkan highlight
+                    // - tampilkan lagi semua item yang sempat disembunyikan
+                    function resetItemSearchFilter() {
+                        // hapus highlight
                         document
                             .querySelectorAll('tr.yz-item-hit')
                             .forEach(tr => tr.classList.remove('yz-item-hit'));
+
+                        // tampilkan semua item Tabel-3 yang pernah disembunyikan oleh pencarian
+                        document
+                            .querySelectorAll('tr.yz-item-hidden-by-search')
+                            .forEach(tr => {
+                                tr.classList.remove('yz-item-hidden-by-search');
+                                tr.style.display = '';
+                            });
                     }
 
                     async function runItemSearch() {
                         if (!itemSearchInput || isItemSearching) return;
 
                         const raw = (itemSearchInput.value || '').trim();
-                        clearItemSearchHighlight();
 
-                        // Kalau input kosong → reset saja, jangan apa-apa
+                        // setiap pencarian baru → bersihkan dulu hasil filter sebelumnya
+                        resetItemSearchFilter();
+
+                        // Kalau input kosong → cukup reset, jangan lakukan pencarian
                         if (!raw) return;
 
                         const keyword = raw.toUpperCase();
@@ -2452,13 +2466,20 @@
                                 return;
                             }
 
+                            // Map: VBELN -> Set POSNR_KEY yang match
+                            const matchesBySO = new Map();
+                            const openedItemKeys = new Set();
+
                             // Tampilkan hasil:
                             // - HANYA customer pertama yang match (firstMatchedKunnr)
                             // - Semua SO yg berisi item match akan dibuka sampai Tabel 3
-                            const openedItemKeys = new Set();
-
                             for (const r of results) {
                                 if (r.kunnr !== firstMatchedKunnr) continue;
+
+                                if (!matchesBySO.has(r.vbeln)) {
+                                    matchesBySO.set(r.vbeln, new Set());
+                                }
+                                matchesBySO.get(r.vbeln).add(String(r.posnrKey));
 
                                 const key = `${r.vbeln}|${r.posnrKey}`;
                                 if (openedItemKeys.has(key)) continue;
@@ -2472,14 +2493,30 @@
                                     r.posnrKey,
                                     false
                                 );
-
-                                // Kasih highlight di baris item yg cocok
-                                const selector =
-                                    `tr[data-vbeln='${CSS.escape(r.vbeln)}']` +
-                                    `[data-posnr-key='${CSS.escape(r.posnrKey)}']`;
-                                const rowEl = document.querySelector(selector);
-                                if (rowEl) rowEl.classList.add('yz-item-hit');
                             }
+
+                            // Setelah semua SO yang mengandung item match sudah dibuka,
+                            // SEMBUNYIKAN item yang tidak match (di semua Tabel-3 yang sudah ada di DOM)
+                            const allItemRows = document.querySelectorAll(
+                                "tr[data-item-id][data-vbeln][data-posnr-key]"
+                            );
+
+                            allItemRows.forEach(tr => {
+                                const vbeln = tr.dataset.vbeln || '';
+                                const posKey = tr.dataset.posnrKey || '';
+                                const set = matchesBySO.get(vbeln);
+                                const isMatch = !!(set && set.has(posKey));
+
+                                if (isMatch) {
+                                    tr.classList.add('yz-item-hit'); // highlight hasil
+                                    tr.classList.remove('yz-item-hidden-by-search');
+                                    tr.style.display = '';
+                                } else {
+                                    tr.classList.remove('yz-item-hit');
+                                    tr.classList.add('yz-item-hidden-by-search');
+                                    tr.style.display = 'none'; // inilah yang menyembunyikan non-match
+                                }
+                            });
                         } catch (err) {
                             console.error('Item search error:', err);
                             alert('Terjadi kesalahan saat melakukan pencarian item.');
@@ -2493,6 +2530,13 @@
                             itemSearchInput.disabled = false;
                         }
                     }
+                    itemSearchInput?.addEventListener('input', () => {
+                        if (isItemSearching) return;
+                        const raw = (itemSearchInput.value || '').trim();
+                        if (!raw) {
+                            resetItemSearchFilter();
+                        }
+                    });
 
                     // Klik tombol "Cari"
                     itemSearchBtn?.addEventListener('click', (e) => {

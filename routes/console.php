@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schedule;
 
 // --- Jadwal untuk YPPR079 (Sudah Ada & Synchronous) ---
 Schedule::command('yppr:sync')
-    ->cron('0 */5 * * *')
+    ->cron('0 */1 * * *')
     ->timezone('Asia/Jakarta')
     ->before(function () {
         echo now()->format('Y-m-d H:i:s') . ' Running ["artisan" yppr:sync]' . PHP_EOL;
@@ -14,9 +14,9 @@ Schedule::command('yppr:sync')
     ->sendOutputTo(storage_path('logs/yppr_sync.log'));
 
 
-// 🌟 --- Jadwal YSDR048 (Diubah menjadi Synchronous) ---
+// ðŸŒŸ --- Jadwal YSDR048 (Diubah menjadi Synchronous) ---
 Schedule::command('stock:sync')
-    ->cron('0 */5 * * *')
+    ->cron('0 */1 * * *')
     ->timezone('Asia/Jakarta')
     ->before(function () {
         echo now()->format('Y-m-d H:i:s') . ' Running ["artisan" stock:sync]' . PHP_EOL;
