@@ -966,12 +966,12 @@ class PoReportController extends Controller
             ->where('r.IV_AUART_PARAM', $request->auart)
             ->where('r.VBELN', $request->vbeln)
             ->where('r.POSNR', $posnrDb)
-            ->orderByDesc('r.created_at')
+            ->orderByDesc(DB::raw('COALESCE(r.updated_at, r.created_at)'))
             ->select(
                 'r.id',
                 'r.remark',
                 'r.user_id',
-                DB::raw("DATE_FORMAT(r.created_at,'%Y-%m-%d %H:%i:%s') as created_at"),
+                DB::raw("DATE_FORMAT(COALESCE(r.updated_at, r.created_at),'%Y-%m-%d %H:%i:%s') as created_at"),
                 DB::raw("COALESCE(u.name, CONCAT('User#', r.user_id)) as user_name")
             )
             ->get();

@@ -1113,7 +1113,7 @@ class SalesOrderController extends Controller
             ->where('ir.IV_AUART_PARAM', $validated['auart'])
             ->where('ir.VBELN', $validated['vbeln'])
             ->where('ir.POSNR', $posnrKey)
-            ->orderBy('ir.created_at', 'desc')
+            ->orderBy('ir.updated_at', 'desc') // urut berdasarkan waktu terakhir update
             ->select(
                 'ir.id',
                 'ir.user_id',
@@ -1124,7 +1124,17 @@ class SalesOrderController extends Controller
             )
             ->get()
             ->map(function ($r) use ($currentUserId) {
+                // pilih waktu yang mau ditampilkan:
+                // utamakan updated_at (waktu terakhir edit), kalau kosong pakai created_at
+                $displayTime = $r->updated_at ?: $r->created_at;
+
+                // supaya JS tidak perlu diubah (masih pakai it.created_at),
+                // kita isi field created_at dengan waktu terakhir update
+                $r->created_at = $displayTime;
+
+                // flag apakah ini punya user yg login
                 $r->is_owner = $currentUserId !== null && (int)$r->user_id === (int)$currentUserId;
+
                 return $r;
             });
 
