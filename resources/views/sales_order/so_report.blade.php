@@ -2347,7 +2347,130 @@
                                 tr.classList.remove('yz-item-hidden-by-search');
                                 tr.style.display = '';
                             });
+                        // tampilkan kembali semua SO (Tabel-2) yang sempat disembunyikan oleh pencarian
+                        document
+                        .querySelectorAll('tr.js-t2row.yz-so-hidden-by-search')
+                        .forEach(tr => {
+                            tr.classList.remove('yz-so-hidden-by-search');
+                            tr.style.display = '';
+                            // nest (Tabel-3) ikut dikembalikan (tapi tidak dipaksa dibuka)
+                            const nest = tr.nextElementSibling;
+                            if (nest && nest.classList.contains('yz-so-hidden-by-search')) {
+                            nest.classList.remove('yz-so-hidden-by-search');
+                            // biarkan sesuai kondisi sebelumnya, jangan dipaksa buka
+                            // (kalau mau paksa tutup: nest.style.display = 'none';)
+                            }
+                        });
+
+                        // tampilkan kembali semua CUSTOMER card yang sempat disembunyikan oleh pencarian
+                        document
+                        .querySelectorAll('.yz-customer-card.yz-cust-hidden-by-search')
+                        .forEach(card => {
+                            card.classList.remove('yz-cust-hidden-by-search');
+                            card.style.display = '';
+                            const kid = card.dataset.kid;
+                            const slot = kid ? document.getElementById(kid) : null;
+                            if (slot && slot.classList.contains('yz-cust-hidden-by-search')) {
+                            slot.classList.remove('yz-cust-hidden-by-search');
+                            // jangan paksa buka/tutup, biarkan state UI
+                            }
+                        });
+
+                        // update footer/visibility biar konsisten
+                        document.querySelectorAll('.yz-nest-wrap table').forEach(tbl => {
+                        if (typeof updateT2FooterVisibility === 'function') updateT2FooterVisibility(tbl);
+                        });
+                        if (typeof updateGlobalTotalCardVisibility === 'function') updateGlobalTotalCardVisibility();
+
                     }
+
+                    async function ensureCustomerOpenAndT2Loaded_SILENT(card, kunnr, WERKS, AUART) {
+                        if (!card) return { wrap: null, slot: null };
+
+                        const kid = card.dataset.kid;
+                        const slot = kid ? document.getElementById(kid) : null;
+                        const wrap = slot?.querySelector('.yz-nest-wrap');
+
+                        // buka customer TANPA click() biar tidak ada efek fokus/scroll/close-other
+                        card.classList.add('is-open');
+                        card.querySelector('.kunnr-caret')?.classList.add('rot');
+                        if (slot) slot.style.display = 'block';
+
+                        // kalau Tabel-2 belum ada, load & render
+                        if (wrap && wrap.dataset.loaded !== '1') {
+                            wrap.innerHTML = `
+                            <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                                <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+                            </div>`;
+
+                            const url = new URL(apiSoByCustomer, window.location.origin);
+                            url.searchParams.set('kunnr', kunnr);
+                            url.searchParams.set('werks', WERKS);
+                            url.searchParams.set('auart', AUART);
+
+                            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                            const js = await res.json();
+                            if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
+
+                            const soRows = uniqBy(js.data || [], r => `${r.VBELN}`);
+                            wrap.innerHTML = renderLevel2_SO(soRows, kunnr);
+                            wrap.dataset.loaded = '1';
+
+                            // pasang handler klik SO untuk interaksi normal user (bukan untuk search)
+                            if (typeof bindSoRowClicks === 'function') bindSoRowClicks(wrap);
+
+                            const soTable = wrap.querySelector('table');
+                            const soTbody = soTable?.querySelector('tbody');
+                            if (typeof updateT2FooterVisibility === 'function') updateT2FooterVisibility(soTable);
+                            if (soTbody) syncCheckAllSoHeader(soTbody);
+                        }
+
+                        if (typeof updateGlobalTotalCardVisibility === 'function') updateGlobalTotalCardVisibility();
+                        if (typeof updateColabsButtonVisibility === 'function') updateColabsButtonVisibility();
+
+                        return { wrap, slot };
+                        }
+
+                        async function openMatchedSOsAndRenderItems_SILENT(wrap, vbelnList, WERKS, AUART) {
+                        if (!wrap || !vbelnList?.length) return;
+
+                        // preload item semua SO (parallel) biar tidak kelihatan buka satu-satu
+                        await Promise.all(
+                            vbelnList.map(v => ensureItemsLoadedForSO(v, WERKS, AUART).catch(() => []))
+                        );
+
+                        // buka semua SO + render tabel-3 sekaligus (tanpa click)
+                        vbelnList.forEach(vbeln => {
+                            const soRow = wrap.querySelector(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`);
+                            if (!soRow) return;
+
+                            const nest = soRow.nextElementSibling;            // tr.yz-nest
+                            const box  = nest?.querySelector('.yz-slot-items');
+                            if (!nest || !box) return;
+
+                            soRow.querySelector('.yz-caret')?.classList.add('rot');
+                            nest.style.display = '';                          // buka Tabel-3
+
+                            const items = itemsCache.get(vbeln) || [];
+
+                            if (nest.dataset.loaded !== '1') {
+                            box.innerHTML = renderLevel3_Items(items, materialMode);
+                            nest.dataset.loaded = '1';
+                            } else {
+                            // kalau sudah pernah render, tetap pastikan popover/checkbox sync
+                            // (optional) box.innerHTML = renderLevel3_Items(items, materialMode);
+                            }
+
+                            applySelectionsToRenderedItems(box);
+                            syncCheckAllHeader(box);
+                            attachBootstrapPopovers(box);
+                        });
+
+                        const soTable = wrap.querySelector('table');
+                        if (typeof updateT2FooterVisibility === 'function') updateT2FooterVisibility(soTable);
+                        if (typeof updateGlobalTotalCardVisibility === 'function') updateGlobalTotalCardVisibility();
+                        }
+
 
                     async function runItemSearch() {
                         if (!itemSearchInput || isItemSearching) return;
@@ -2462,61 +2585,213 @@
                             }
 
                             if (!results.length) {
-                                alert('Tidak ditemukan item dengan kata kunci tersebut.');
-                                return;
+                            alert('Tidak ditemukan item dengan kata kunci tersebut.');
+                            return;
                             }
 
-                            // Map: VBELN -> Set POSNR_KEY yang match
+                            /* =========================================================
+                            * Map: VBELN -> Set POSNR_KEY yang match (khusus customer pertama)
+                            * ======================================================= */
                             const matchesBySO = new Map();
-                            const openedItemKeys = new Set();
-
-                            // Tampilkan hasil:
-                            // - HANYA customer pertama yang match (firstMatchedKunnr)
-                            // - Semua SO yg berisi item match akan dibuka sampai Tabel 3
                             for (const r of results) {
-                                if (r.kunnr !== firstMatchedKunnr) continue;
+                            if (r.kunnr !== firstMatchedKunnr) continue;
 
-                                if (!matchesBySO.has(r.vbeln)) {
-                                    matchesBySO.set(r.vbeln, new Set());
-                                }
-                                matchesBySO.get(r.vbeln).add(String(r.posnrKey));
-
-                                const key = `${r.vbeln}|${r.posnrKey}`;
-                                if (openedItemKeys.has(key)) continue;
-                                openedItemKeys.add(key);
-
-                                // Buka customer + SO + item menggunakan helper yg sudah ada
-                                // (tidak exclusive supaya customer lain tetap tampil normal)
-                                await window.navigateToSO(
-                                    r.vbeln,
-                                    r.cname,
-                                    r.posnrKey,
-                                    false
-                                );
+                            if (!matchesBySO.has(r.vbeln)) matchesBySO.set(r.vbeln, new Set());
+                            matchesBySO.get(r.vbeln).add(String(r.posnrKey));
                             }
 
-                            // Setelah semua SO yang mengandung item match sudah dibuka,
-                            // SEMBUNYIKAN item yang tidak match (di semua Tabel-3 yang sudah ada di DOM)
-                            const allItemRows = document.querySelectorAll(
-                                "tr[data-item-id][data-vbeln][data-posnr-key]"
+                            /* =========================================================
+                            * 1) Buka CUSTOMER yang match secara SILENT (tanpa click/navigateToSO)
+                            *    dan pastikan Tabel-2 sudah ter-render
+                            * ======================================================= */
+                            const matchedCard = document.querySelector(
+                            `.yz-customer-card[data-kunnr='${CSS.escape(firstMatchedKunnr)}']`
+                            );
+
+                            const kid = matchedCard?.dataset.kid || '';
+                            const slot = kid ? document.getElementById(kid) : null;
+                            const matchedWrap = slot ? slot.querySelector('.yz-nest-wrap') : null;
+
+                            // buka customer TANPA click() (hindari efek fokus/scroll/close-other)
+                            if (matchedCard) {
+                            matchedCard.classList.add('is-open');
+                            matchedCard.querySelector('.kunnr-caret')?.classList.add('rot');
+                            }
+                            if (slot) slot.style.display = 'block';
+
+                            // kalau tabel-2 belum ada, load via API dan render
+                            if (matchedWrap && matchedWrap.dataset.loaded !== '1') {
+                            matchedWrap.innerHTML = `
+                                <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+                                <div class="spinner-border spinner-border-sm me-2"></div>Memuat data…
+                                </div>`;
+
+                            const url = new URL(apiSoByCustomer, window.location.origin);
+                            url.searchParams.set('kunnr', firstMatchedKunnr);
+                            url.searchParams.set('werks', WERKS);
+                            url.searchParams.set('auart', AUART);
+
+                            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                            const js = await res.json();
+                            if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
+
+                            const soRows = uniqBy(js.data || [], r => `${r.VBELN}`);
+                            matchedWrap.innerHTML = renderLevel2_SO(soRows, firstMatchedKunnr);
+                            matchedWrap.dataset.loaded = '1';
+
+                            // supaya klik SO normal tetap jalan setelah render
+                            if (typeof bindSoRowClicks === 'function') bindSoRowClicks(matchedWrap);
+
+                            const soTable = matchedWrap.querySelector('table');
+                            const soTbody = soTable?.querySelector('tbody');
+                            if (typeof updateT2FooterVisibility === 'function') updateT2FooterVisibility(soTable);
+                            if (soTbody) syncCheckAllSoHeader(soTbody);
+                            }
+
+                            // pastikan tidak masuk focus-mode/collapse-mode akibat state sebelumnya
+                            if (matchedWrap) {
+                            const tb = matchedWrap.querySelector('table tbody');
+                            if (tb) {
+                                tb.classList.remove('so-focus-mode', 'collapse-mode');
+                                setCollapse(tb, false);
+                            }
+                            }
+
+                            /* =========================================================
+                            * 2) Buka semua SO yang MATCH + render Tabel-3 SEKALI BATCH (SILENT)
+                            *    - prefetch items parallel
+                            *    - lalu render ke DOM tanpa click()
+                            * ======================================================= */
+                            if (matchedWrap) {
+                            const vbelnList = Array.from(matchesBySO.keys());
+
+                            // prefetch parallel (biar ga terasa buka satu-satu)
+                            await Promise.all(
+                                vbelnList.map(v => ensureItemsLoadedForSO(v, WERKS, AUART).catch(() => []))
+                            );
+
+                            // buka SO + render itemnya
+                            vbelnList.forEach(vbeln => {
+                                const soRow = matchedWrap.querySelector(
+                                `.js-t2row[data-vbeln='${CSS.escape(vbeln)}']`
+                                );
+                                if (!soRow) return;
+
+                                const nest = soRow.nextElementSibling; // tr.yz-nest
+                                const box = nest?.querySelector('.yz-slot-items');
+                                if (!nest || !box) return;
+
+                                // tampilkan SO row dan nest
+                                soRow.style.display = '';
+                                nest.style.display = '';
+                                soRow.querySelector('.yz-caret')?.classList.add('rot');
+
+                                // render item (tabel-3)
+                                const items = itemsCache.get(vbeln) || [];
+                                box.innerHTML = renderLevel3_Items(items, materialMode);
+                                nest.dataset.loaded = '1';
+
+                                // sync checkbox/popover
+                                applySelectionsToRenderedItems(box);
+                                syncCheckAllHeader(box);
+                                attachBootstrapPopovers(box);
+                            });
+
+                            const tbl = matchedWrap.querySelector('table');
+                            if (tbl && typeof updateT2FooterVisibility === 'function') updateT2FooterVisibility(tbl);
+                            }
+
+                            if (typeof updateGlobalTotalCardVisibility === 'function') updateGlobalTotalCardVisibility();
+
+                            /* =========================================================
+                            * 3) FILTERING (SAMA seperti punyamu, tapi sekarang data sudah “final”)
+                            *    - hide item tidak match
+                            *    - hide SO yang tidak punya match (biar tidak nempel)
+                            *    - hide customer lain (opsional)
+                            * ======================================================= */
+
+                            // kalau wrap tidak ada, fallback ke document (jarang)
+                            const scope = matchedWrap || document;
+
+                            // ====== 1) Sembunyikan ITEM yang tidak match (hanya di customer yang match) ======
+                            const allItemRows = scope.querySelectorAll(
+                            "tr[data-item-id][data-vbeln][data-posnr-key]"
                             );
 
                             allItemRows.forEach(tr => {
-                                const vbeln = tr.dataset.vbeln || '';
-                                const posKey = tr.dataset.posnrKey || '';
-                                const set = matchesBySO.get(vbeln);
-                                const isMatch = !!(set && set.has(posKey));
+                            const vbeln = tr.dataset.vbeln || '';
+                            const posKey = tr.dataset.posnrKey || '';
+                            const set = matchesBySO.get(vbeln);
+                            const isMatch = !!(set && set.has(posKey));
 
-                                if (isMatch) {
-                                    tr.classList.add('yz-item-hit'); // highlight hasil
-                                    tr.classList.remove('yz-item-hidden-by-search');
-                                    tr.style.display = '';
+                            if (isMatch) {
+                                tr.classList.add('yz-item-hit');
+                                tr.classList.remove('yz-item-hidden-by-search');
+                                tr.style.display = '';
+                            } else {
+                                tr.classList.remove('yz-item-hit');
+                                tr.classList.add('yz-item-hidden-by-search');
+                                tr.style.display = 'none';
+                            }
+                            });
+
+                            // ====== 2) Sembunyikan SO (Tabel-2) yang tidak punya item match ======
+                            if (matchedWrap) {
+                            matchedWrap.querySelectorAll('tr.js-t2row').forEach(soRow => {
+                                const vbeln = soRow.dataset.vbeln || '';
+                                const show = matchesBySO.has(vbeln);
+
+                                if (show) {
+                                soRow.classList.remove('yz-so-hidden-by-search');
+                                soRow.style.display = '';
+
+                                const nest = soRow.nextElementSibling;
+                                if (nest) {
+                                    nest.classList.remove('yz-so-hidden-by-search');
+                                    nest.style.display = ''; // pastikan terbuka untuk SO match
+                                }
                                 } else {
-                                    tr.classList.remove('yz-item-hit');
-                                    tr.classList.add('yz-item-hidden-by-search');
-                                    tr.style.display = 'none'; // inilah yang menyembunyikan non-match
+                                soRow.classList.add('yz-so-hidden-by-search');
+                                soRow.style.display = 'none';
+
+                                // nest ikut disembunyikan supaya tidak “nempel”
+                                const nest = soRow.nextElementSibling;
+                                if (nest) {
+                                    nest.classList.add('yz-so-hidden-by-search');
+                                    nest.style.display = 'none';
+                                    soRow.querySelector('.yz-caret')?.classList.remove('rot');
+                                }
                                 }
                             });
+
+                            // rapikan footer total di tabel SO
+                            const tbl = matchedWrap.querySelector('table');
+                            if (tbl && typeof updateT2FooterVisibility === 'function') updateT2FooterVisibility(tbl);
+                            }
+
+                            // ====== 3) Opsional: customer lain disembunyikan saat search aktif ======
+                            document.querySelectorAll('.yz-customer-card').forEach(card => {
+                            const kunnr = card.dataset.kunnr || '';
+                            const kid2 = card.dataset.kid || '';
+                            const slot2 = kid2 ? document.getElementById(kid2) : null;
+
+                            const show = (kunnr === firstMatchedKunnr);
+
+                            if (show) {
+                                card.classList.remove('yz-cust-hidden-by-search');
+                                card.style.display = '';
+                            } else {
+                                card.classList.add('yz-cust-hidden-by-search');
+                                card.style.display = 'none';
+                                if (slot2) {
+                                slot2.classList.add('yz-cust-hidden-by-search');
+                                slot2.style.display = 'none';
+                                }
+                            }
+                            });
+
+                            if (typeof updateGlobalTotalCardVisibility === 'function') updateGlobalTotalCardVisibility();
+
                         } catch (err) {
                             console.error('Item search error:', err);
                             alert('Terjadi kesalahan saat melakukan pencarian item.');
