@@ -207,6 +207,10 @@ Route::middleware(['auth', 'nocache'])->group(function () {
 
 	// [BARU] Stock Issue
 	Route::get('/stock-issue', [StockIssueController::class, 'index'])->name('stock.issue');
+	Route::get('/stock-issue/export-pdf', [StockIssueController::class, 'exportPdf'])
+    ->name('stock.issue.exportPdf');
+	Route::get('/stock-issue/export-excel', [StockIssueController::class, 'exportExcel'])
+    ->name('stock.issue.exportExcel');
 
 	/*
     |----------------------- Profil & CRUD Mapping ----------------------
