@@ -1435,59 +1435,153 @@ class DashboardController extends Controller
         $auart    = $request->query('auart');
         $vbeln    = trim((string) $request->query('vbeln'));
 
-        // Ambil mapping utk logika Export+Replace (konsisten dgn controller ini)
+        // Mapping untuk export+replace
         $mapping = DB::table('maping')->get();
+
         $exportAuartCodes = $mapping->filter(function ($item) {
-            $d = strtolower($item->Deskription);
-            return Str::contains($d, 'export') && !Str::contains($d, 'local') && !Str::contains($d, 'replace');
-        })->pluck('IV_AUART')->unique()->toArray();
-        $replaceAuartCodes = $mapping->filter(function ($item) {
-            return Str::contains(strtolower($item->Deskription), 'replace');
+            $d = strtolower((string)$item->Deskription);
+            return Str::contains($d, 'export')
+                && !Str::contains($d, 'local')
+                && !Str::contains($d, 'replace');
         })->pluck('IV_AUART')->unique()->toArray();
 
-        $rows = DB::table('item_remarks as ir')
-            // =========================================================================
-            // PERUBAHAN UTAMA: LEFT JOIN -> INNER JOIN
-            // INNER JOIN ke t1 untuk memastikan item PO/SO masih ada di so_yppr079_t1
-            // =========================================================================
-            ->join('so_yppr079_t1 as t1', function ($j) {
-                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
-                    ->on(DB::raw('LPAD(TRIM(CAST(t1.POSNR AS CHAR)),6,"0")'), '=', DB::raw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")'));
-            })
-            // LEFT JOIN ke t2 untuk mendapatkan data PO/KUNNR
-            ->leftJoin('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'))
+        $replaceAuartCodes = $mapping->filter(function ($item) {
+            return Str::contains(strtolower((string)$item->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->toArray();
+
+        $exportPlusReplace = array_values(array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)));
+
+        // ============================================================
+        // 1) DEDUP REMARKS:
+        //    1 baris per (VBELN, POSNR, WERKS, AUART, REMARK, CREATED_AT)
+        // ============================================================
+        $remarksDedup = DB::table('item_remarks as ir')
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->selectRaw("
-            TRIM(ir.VBELN) AS VBELN,
-            TRIM(ir.POSNR) AS POSNR,
-            COALESCE(t2.BSTNK,'') AS BSTNK,         -- PO
-            COALESCE(t1.MATNR,'') AS MATNR,
-            COALESCE(t1.MAKTX,'') AS MAKTX,
-            COALESCE(t1.WAERK,'') AS WAERK,
-            COALESCE(t1.TOTPR,0) AS TOTPR,
-            ir.IV_WERKS_PARAM,
-            ir.IV_AUART_PARAM,
-            ir.remark,
-            ir.created_at,
-            COALESCE(t2.KUNNR,'') AS KUNNR
-        ")
-            ->whereNotNull('ir.remark')->whereRaw('TRIM(ir.remark) <> ""')
-            ->when($location, fn($q, $v) => $q->where('ir.IV_WERKS_PARAM', $v))
-            ->when($auart,    fn($q, $v) => $q->where('ir.IV_AUART_PARAM', $v))
-            ->when($vbeln !== '', fn($q) => $q->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln]))
-            ->when($type, function ($q) use ($type, $exportAuartCodes, $replaceAuartCodes) {
+                MIN(ir.id) as id,
+                TRIM(CAST(ir.VBELN AS CHAR)) as VBELN_KEY,
+                LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0') as POSNR_KEY,
+                TRIM(CAST(ir.IV_WERKS_PARAM AS CHAR)) as WERKS_KEY,
+                TRIM(CAST(ir.IV_AUART_PARAM AS CHAR)) as AUART_KEY,
+                TRIM(ir.remark) as remark,
+                ir.created_at as created_at,
+                MAX(ir.updated_at) as updated_at
+            ")
+            ->groupBy(
+                DB::raw("TRIM(CAST(ir.VBELN AS CHAR))"),
+                DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0')"),
+                DB::raw("TRIM(CAST(ir.IV_WERKS_PARAM AS CHAR))"),
+                DB::raw("TRIM(CAST(ir.IV_AUART_PARAM AS CHAR))"),
+                DB::raw("TRIM(ir.remark)"),
+                'ir.created_at'
+            );
+
+        // ============================================================
+        // 2) DEDUP T1: 1 baris per (VBELN, POSNR) untuk data item
+        // ============================================================
+        $t1Dedup = DB::table('so_yppr079_t1 as t1')
+            ->selectRaw("
+                TRIM(CAST(t1.VBELN AS CHAR)) AS VBELN_KEY,
+                LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0') AS POSNR_KEY,
+                MAX(
+                    CASE
+                        WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR)
+                        ELSE t1.MATNR
+                    END
+                ) AS MATNR,
+                MAX(t1.MAKTX) AS MAKTX,
+                MAX(t1.WAERK) AS WAERK,
+                MAX(CAST(t1.TOTPR AS DECIMAL(18,2))) AS TOTPR
+            ")
+            ->groupBy(
+                DB::raw("TRIM(CAST(t1.VBELN AS CHAR))"),
+                DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')")
+            );
+
+        // ============================================================
+        // 3) DEDUP T2: 1 baris per (VBELN, WERKS) supaya join tidak dobel
+        // ============================================================
+        $t2Dedup = DB::table('so_yppr079_t2 as t2')
+            ->selectRaw("
+                TRIM(CAST(t2.VBELN AS CHAR)) as VBELN_KEY,
+                TRIM(CAST(t2.IV_WERKS_PARAM AS CHAR)) as WERKS_KEY,
+                MAX(TRIM(t2.BSTNK)) as BSTNK,
+                MAX(TRIM(t2.KUNNR)) as KUNNR
+            ")
+            ->groupBy(
+                DB::raw("TRIM(CAST(t2.VBELN AS CHAR))"),
+                DB::raw("TRIM(CAST(t2.IV_WERKS_PARAM AS CHAR))")
+            );
+
+        // ============================================================
+        // 4) QUERY FINAL
+        // ============================================================
+        $q = DB::query()
+            ->fromSub($remarksDedup, 'irx')
+            ->joinSub($t1Dedup, 't1d', function ($j) {
+                $j->on('irx.VBELN_KEY', '=', 't1d.VBELN_KEY')
+                ->on('irx.POSNR_KEY', '=', 't1d.POSNR_KEY');
+            })
+            ->leftJoinSub($t2Dedup, 't2d', function ($j) {
+                $j->on('irx.VBELN_KEY', '=', 't2d.VBELN_KEY')
+                ->on('irx.WERKS_KEY', '=', 't2d.WERKS_KEY');
+            })
+            ->leftJoin('maping as m', function ($j) {
+                $j->on('m.IV_AUART', '=', 'irx.AUART_KEY')
+                ->on('m.IV_WERKS', '=', 'irx.WERKS_KEY');
+            })
+
+            // filter params
+            ->when($location, fn($qq, $v) => $qq->where('irx.WERKS_KEY', $v))
+            ->when($auart,    fn($qq, $v) => $qq->where('irx.AUART_KEY', $v))
+            ->when($vbeln !== '', fn($qq) => $qq->where('irx.VBELN_KEY', $vbeln))
+
+            // filter type (lokal/export)
+            ->when($type, function ($qq) use ($type, $exportPlusReplace) {
                 if ($type === 'lokal') {
-                    $q->join('maping as m', function ($j) {
-                        $j->on('ir.IV_AUART_PARAM', '=', 'm.IV_AUART')
-                            ->on('ir.IV_WERKS_PARAM', '=', 'm.IV_WERKS');
-                    })->where('m.Deskription', 'like', '%Local%');
+                    $qq->whereExists(function ($ex) {
+                        $ex->select(DB::raw(1))
+                        ->from('maping as mm')
+                        ->whereColumn('mm.IV_AUART', 'irx.AUART_KEY')
+                        ->whereColumn('mm.IV_WERKS', 'irx.WERKS_KEY')
+                        ->where('mm.Deskription', 'like', '%Local%');
+                    });
                 } elseif ($type === 'export') {
-                    $q->whereIn('ir.IV_AUART_PARAM', array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)));
+                    $qq->whereIn('irx.AUART_KEY', $exportPlusReplace);
                 }
             })
-            ->orderBy('ir.VBELN')
-            ->orderByRaw('LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,"0")')
-            ->get();
 
+            ->selectRaw("
+                irx.id,
+                irx.VBELN_KEY as VBELN,
+                TRIM(LEADING '0' FROM irx.POSNR_KEY) as POSNR,
+                COALESCE(t2d.BSTNK,'') AS BSTNK,
+                COALESCE(t2d.KUNNR,'') AS KUNNR,
+
+                CASE irx.WERKS_KEY
+                    WHEN '2000' THEN 'Surabaya'
+                    WHEN '3000' THEN 'Semarang'
+                    ELSE irx.WERKS_KEY
+                END AS PLANT,
+
+                COALESCE(m.Deskription, irx.AUART_KEY) AS ORDER_TYPE,
+
+                COALESCE(t1d.MATNR,'') AS MATNR,
+                COALESCE(t1d.MAKTX,'') AS MAKTX,
+                COALESCE(t1d.WAERK,'') AS WAERK,
+                COALESCE(t1d.TOTPR,0)  AS TOTPR,
+
+                irx.WERKS_KEY as IV_WERKS_PARAM,
+                irx.AUART_KEY as IV_AUART_PARAM,
+                irx.remark,
+                irx.created_at,
+                irx.updated_at
+            ")
+            ->orderBy('irx.VBELN_KEY')
+            ->orderByRaw("CAST(irx.POSNR_KEY AS UNSIGNED)")
+            ->orderByDesc('irx.created_at');
+
+        $rows = $q->get();
         return response()->json(['ok' => true, 'data' => $rows]);
     }
     private function auartKeysForVbelnSubquery(string $vbeln)
