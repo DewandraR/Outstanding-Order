@@ -55,6 +55,31 @@ class StockController extends Controller
     {
         return sprintf('%s_%s.%s', $base, now()->format('Ymd_His'), $ext);
     }
+
+    private function exportAuartsForWerks(?string $werks): array
+    {
+        if (!$werks) return [];
+
+        return DB::table('maping')
+            ->where('IV_WERKS', $werks)
+            ->pluck('IV_AUART')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function applyAuartFilter($query, array $auarts, string $alias = ''): void
+    {
+        if (empty($auarts)) return;
+
+        $p = $alias ? ($alias . '.') : '';
+        $query->where(function ($q) use ($p, $auarts) {
+            $q->whereIn($p . 'AUART', $auarts)
+            ->orWhereIn($p . 'AUART2', $auarts);
+        });
+    }
+
     public function index(Request $request)
     {
         // ⬅️ DECRYPT ?q jika ada lalu merge ke request
@@ -75,82 +100,109 @@ class StockController extends Controller
             ->groupBy('IV_WERKS')
             ->map(fn($g) => $g->unique('IV_AUART')->values());
 
-        $werks = $request->query('werks');
+        $werks = (string) $request->query('werks', '');
 
-        // ✅ OPSI A: TANPA REDIRECT — default type diset langsung
+        // default type
         $type = $request->query('type') === 'fg' ? 'fg' : 'whfg';
 
-        // Data untuk pill totals (qty)
-        $pillTotals = ['whfg_qty' => 0, 'fg_qty' => 0];
-        if ($werks) {
-            $pillTotals['whfg_qty'] = (float) DB::table('so_yppr079_t1')
-                ->where('IV_WERKS_PARAM', $werks)
-                ->where('KALAB', '>', 0)
-                ->sum('KALAB');
-
-            $pillTotals['fg_qty'] = (float) DB::table('so_yppr079_t1')
-                ->where('IV_WERKS_PARAM', $werks)
-                ->where('KALAB2', '>', 0)
-                ->sum('KALAB2');
+        // default return kalau belum pilih plant/export
+        if ($werks === '') {
+            return view('stock_report', [
+                'mapping'         => $mapping,
+                'rows'            => null,
+                'selected'        => ['werks' => null, 'type' => $type],
+                'grandTotalQty'   => 0,
+                'grandTotalsCurr' => [],
+                'pillTotals'      => ['whfg_qty' => 0, 'fg_qty' => 0],
+            ]);
         }
 
+        // Ambil daftar AUART export berdasarkan werks yg dipilih
+        $auarts = $this->exportAuartsForWerks($werks);
+
+        // Kalau mapping kosong, JANGAN tampilkan semua data (mencegah “bocor”)
+        abort_if(empty($auarts), 422, "Mapping AUART untuk WERKS {$werks} belum ada.");
+
+        // =========================
+        // Pill totals (qty)
+        // =========================
+        $pillTotals = ['whfg_qty' => 0, 'fg_qty' => 0];
+
+        $qt1 = DB::table('so_yppr079_t1');
+        $this->applyAuartFilter($qt1, $auarts);
+        $pillTotals['whfg_qty'] = (float) $qt1->where('KALAB', '>', 0)->sum('KALAB');
+
+        $qt2 = DB::table('so_yppr079_t1');
+        $this->applyAuartFilter($qt2, $auarts);
+        $pillTotals['fg_qty'] = (float) $qt2->where('KALAB2', '>', 0)->sum('KALAB2');
+
+        // =========================
+        // Tabel-1 (Stock by Customer)
+        // =========================
         $rows = null;
         $grandTotalQty = 0;
         $grandTotalsCurr = [];
 
-        if ($werks && $type) {
-            $q = DB::table('so_yppr079_t1 as t1')
-                ->where('t1.IV_WERKS_PARAM', $werks)
-                ->whereNotNull('t1.NAME1')->where('t1.NAME1', '!=', '');
+        $q = DB::table('so_yppr079_t1 as t1')
+            ->whereNotNull('t1.NAME1')
+            ->where('t1.NAME1', '!=', '');
 
-            if ($type === 'whfg') {
-                $q->where('t1.KALAB', '>', 0)
-                    ->select(
-                        't1.KUNNR',
-                        't1.NAME1',
-                        't1.WAERK',
-                        DB::raw('SUM(t1.NETPR * t1.KALAB) AS TOTAL_VALUE'),
-                        DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
-                        DB::raw('SUM(t1.KALAB) AS TOTAL_QTY')
-                    );
-            } else { // fg
-                $q->where('t1.KALAB2', '>', 0)
-                    ->select(
-                        't1.KUNNR',
-                        't1.NAME1',
-                        't1.WAERK',
-                        DB::raw('SUM(t1.NETPR * t1.KALAB2) AS TOTAL_VALUE'),
-                        DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
-                        DB::raw('SUM(t1.KALAB2) AS TOTAL_QTY')
-                    );
-            }
+        $this->applyAuartFilter($q, $auarts, 't1');
 
-            $rows = $q->groupBy('t1.KUNNR', 't1.NAME1', 't1.WAERK')
-                ->orderBy('t1.NAME1', 'asc')
-                ->paginate(25);
+        if ($type === 'whfg') {
+            $q->where('t1.KALAB', '>', 0)
+            ->select(
+                't1.KUNNR',
+                't1.NAME1',
+                't1.WAERK',
+                DB::raw('SUM(t1.NETPR * t1.KALAB) AS TOTAL_VALUE'),
+                DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
+                DB::raw('SUM(t1.KALAB) AS TOTAL_QTY')
+            );
+        } else { // fg
+            $q->where('t1.KALAB2', '>', 0)
+            ->select(
+                't1.KUNNR',
+                't1.NAME1',
+                't1.WAERK',
+                DB::raw('SUM(t1.NETPR * t1.KALAB2) AS TOTAL_VALUE'),
+                DB::raw('COUNT(DISTINCT t1.VBELN) AS SO_COUNT'),
+                DB::raw('SUM(t1.KALAB2) AS TOTAL_QTY')
+            );
+        }
 
-            // ⬅️ hanya append ?q agar tidak bocor parameter lain
-            if ($request->filled('q')) {
-                $rows->appends(['q' => $request->query('q')]);
-            }
+        $rows = $q->groupBy('t1.KUNNR', 't1.NAME1', 't1.WAERK')
+            ->orderBy('t1.NAME1', 'asc')
+            ->paginate(25);
 
-            // Total Qty global (pakai pillTotals)
-            $grandTotalQty = ($type === 'whfg') ? $pillTotals['whfg_qty'] : $pillTotals['fg_qty'];
+        // hanya append ?q
+        if ($request->filled('q')) {
+            $rows->appends(['q' => $request->query('q')]);
+        }
 
-            // Total Value global per currency
-            $valueQuery = DB::table('so_yppr079_t1')
-                ->select('WAERK', DB::raw(
-                    $type === 'whfg' ? 'SUM(NETPR * KALAB) as val' : 'SUM(NETPR * KALAB2) as val'
-                ))
-                ->where('IV_WERKS_PARAM', $werks)
-                ->when($type === 'whfg', fn($qq) => $qq->where('KALAB', '>', 0))
-                ->when($type === 'fg', fn($qq) => $qq->where('KALAB2', '>', 0))
-                ->groupBy('WAERK')
-                ->get();
+        // grand qty
+        $grandTotalQty = ($type === 'whfg') ? $pillTotals['whfg_qty'] : $pillTotals['fg_qty'];
 
-            foreach ($valueQuery as $r) {
-                $grandTotalsCurr[$r->WAERK] = (float) $r->val;
-            }
+        // =========================
+        // Grand total value per currency
+        // =========================
+        $valueQuery = DB::table('so_yppr079_t1')
+            ->select('WAERK', DB::raw(
+                $type === 'whfg'
+                    ? 'SUM(NETPR * KALAB) as val'
+                    : 'SUM(NETPR * KALAB2) as val'
+            ));
+
+        $this->applyAuartFilter($valueQuery, $auarts);
+
+        $valueQuery = $valueQuery
+            ->when($type === 'whfg', fn($qq) => $qq->where('KALAB', '>', 0))
+            ->when($type === 'fg', fn($qq) => $qq->where('KALAB2', '>', 0))
+            ->groupBy('WAERK')
+            ->get();
+
+        foreach ($valueQuery as $r) {
+            $grandTotalsCurr[$r->WAERK] = (float) $r->val;
         }
 
         return view('stock_report', [
@@ -180,6 +232,8 @@ class StockController extends Controller
     {
         $request->validate(['kunnr' => 'required', 'werks' => 'required', 'type' => 'required']);
         $type = $request->type === 'fg' ? 'fg' : 'whfg';
+        $auarts = $this->exportAuartsForWerks($request->werks);
+
 
         $rows = DB::table('so_yppr079_t1 as t1')
             // ✅ JOIN AMAN (TRIM/CAST)
@@ -189,9 +243,9 @@ class StockController extends Controller
                 '=',
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
             )
-            ->where('t1.KUNNR', $request->kunnr)
-            ->where('t1.IV_WERKS_PARAM', $request->werks);
+            ->where('t1.KUNNR', $request->kunnr);
 
+        $this->applyAuartFilter($rows, $auarts, 't1');
         if ($type === 'whfg') {
             $rows->where('t1.KALAB', '>', 0)
                 ->select(
@@ -243,18 +297,25 @@ class StockController extends Controller
      */
     public function getItemsBySo(Request $request)
     {
-        $request->validate(['vbeln' => 'required', 'werks' => 'required', 'type' => 'required']);
-        $type = $request->type;
+        $request->validate([
+            'vbeln' => 'required',
+            'werks' => 'required',
+            'type'  => 'required|in:whfg,fg',
+        ]);
 
-        $items = DB::table('so_yppr079_t1')
+        $type = $request->type === 'whfg' ? 'whfg' : 'fg';
+        $auarts = $this->exportAuartsForWerks($request->werks);
+        abort_if(empty($auarts), 422, "Mapping AUART untuk WERKS {$request->werks} belum ada.");
+
+        $itemsQ = DB::table('so_yppr079_t1')
             ->select(
                 'id',
                 DB::raw("TRIM(LEADING '0' FROM POSNR) as POSNR"),
                 'MATNR',
                 'MAKTX',
                 'KWMENG',
-                'KALAB2', // Stock Packing
-                'KALAB',  // WHFG
+                'KALAB2',
+                'KALAB',
                 'NETPR',
                 'WAERK',
                 'VBELN',
@@ -263,8 +324,13 @@ class StockController extends Controller
                     ELSE (KALAB2 * NETPR)
                 END as VALUE")
             )
-            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = TRIM(?)', [$request->vbeln])
-            ->where('IV_WERKS_PARAM', $request->werks)
+            ->whereRaw('TRIM(CAST(VBELN AS CHAR)) = TRIM(?)', [$request->vbeln]);
+
+        // FILTER UTAMA: AUART/AUART2
+        $this->applyAuartFilter($itemsQ, $auarts);
+
+        // FILTER STOCK SESUAI TYPE
+        $items = $itemsQ
             ->when($type === 'whfg', fn($q) => $q->where('KALAB', '>', 0))
             ->when($type === 'fg', fn($q) => $q->where('KALAB2', '>', 0))
             ->orderByRaw('CAST(POSNR AS UNSIGNED) asc')
@@ -335,24 +401,39 @@ class StockController extends Controller
         }
 
         // 2) Validasi & normalisasi
-        $werks      = (string)($data['werks'] ?? '');
-        $type       = (string)($data['type'] ?? 'whfg');
-        $exportType = (string)($data['export_type'] ?? 'pdf');
+        $werks      = (string) ($data['werks'] ?? '');
+        $type       = ((string) ($data['type'] ?? 'whfg')) === 'fg' ? 'fg' : 'whfg';
+        $exportType = (string) ($data['export_type'] ?? 'pdf');
 
         $ids = collect($data['item_ids'] ?? [])
-            ->map(fn($v) => (int)preg_replace('/\D+/', '', (string)$v))
+            ->map(fn($v) => (int) preg_replace('/\D+/', '', (string) $v))
             ->filter(fn($v) => $v > 0)
             ->unique()
             ->values();
 
-        if ($ids->isEmpty() || $werks === '' || !in_array($type, ['whfg', 'fg'], true) || !in_array($exportType, ['pdf', 'excel'], true)) {
+        if ($ids->isEmpty() || $werks === '' || !in_array($exportType, ['pdf', 'excel'], true)) {
             return back()->withErrors('Parameter export tidak lengkap/valid.');
         }
 
-        // 3) Query item
-        $items = DB::table('so_yppr079_t1 as t1')
-            ->whereIn('t1.id', $ids->all())
-            ->select(
+        // 3) Ambil AUART export utk werks ini (dipakai sebagai “filter utama”)
+        $auarts = $this->exportAuartsForWerks($werks);
+        abort_if(empty($auarts), 422, "Mapping AUART untuk WERKS {$werks} belum ada.");
+
+        // 4) Query item: HARUS sesuai filter AUART/AUART2 + sesuai type stock
+        $itemsQ = DB::table('so_yppr079_t1 as t1')
+            ->whereIn('t1.id', $ids->all());
+
+        // Filter AUART/AUART2
+        $this->applyAuartFilter($itemsQ, $auarts, 't1');
+
+        // Filter sesuai stock type (supaya export sama persis dengan layar)
+        if ($type === 'whfg') {
+            $itemsQ->where('t1.KALAB', '>', 0);
+        } else {
+            $itemsQ->where('t1.KALAB2', '>', 0);
+        }
+
+        $items = $itemsQ->select(
                 't1.VBELN',
                 't1.KUNNR',
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
@@ -363,7 +444,6 @@ class StockController extends Controller
                 't1.KALAB2',
                 't1.NETPR',
                 't1.WAERK',
-                // Info header tambahan
                 DB::raw("(SELECT NAME1 FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS NAME1"),
                 DB::raw("(SELECT BSTNK FROM so_yppr079_t2 WHERE VBELN = t1.VBELN LIMIT 1) AS BSTNK")
             )
@@ -373,34 +453,33 @@ class StockController extends Controller
             ->get();
 
         if ($items->isEmpty()) {
-            return back()->withErrors('Tidak ada item yang valid untuk diekspor.');
+            return back()->withErrors('Tidak ada item yang valid untuk diekspor (mungkin tidak masuk filter export ini).');
         }
 
-        // 4) Nama lokasi & tipe stock
+        // 5) Nama lokasi & tipe stock (label file saja; filter utamanya tetap AUART/AUART2)
         $locationName = $this->resolveLocationName($werks);
         $stockType    = $this->stockTypeLabel($type);
 
-        // 5) Excel langsung download (tetap)
+        // 6) Excel
         if ($exportType === 'excel') {
             $fileName = $this->buildFileName("Stock_{$locationName}_{$stockType}", 'xlsx');
             return Excel::download(new \App\Exports\StockItemsExport($items, $type), $fileName);
         }
 
-        // 6) PDF: render -> stream dengan header aman (inline / attachment)
+        // 7) PDF
         $pdfBinary = Pdf::loadView('sales_order.stock_pdf_template', [
-            'items'        => $items,
-            'locationName' => $locationName,
-            'werks'        => $werks,
-            'stockType'    => $stockType,
-            'today'        => now(),
-        ])
+                'items'        => $items,
+                'locationName' => $locationName,
+                'werks'        => $werks,
+                'stockType'    => $stockType,
+                'today'        => now(),
+            ])
             ->setPaper('a4', 'landscape')
             ->output();
 
         $fileBase = 'Stock_' . $locationName . '_' . $stockType;
         $fileName = $this->buildFileName($fileBase, 'pdf');
 
-        // default inline; paksa unduh dengan ?download=1
         $disposition = $request->boolean('download') ? 'attachment' : 'inline';
 
         return response()->stream(function () use ($pdfBinary) {

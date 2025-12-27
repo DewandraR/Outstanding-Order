@@ -18,6 +18,12 @@ UNTUK STOCK
 
 Mode server (opsional):
   python api.py --serve
+
+CATATAN UPDATE:
+- Sudah ditambahkan kolom AUART2 (RFC field) ke:
+  * COMMON_SO_COLS / insert mapping
+  * DDL tabel so_yppr079_t1/t2/t3 + versi _comp
+  * Auto-migration via ALTER TABLE jika kolom belum ada
 """
 
 import os, json, decimal, datetime, math, sys, signal
@@ -219,7 +225,9 @@ def fetch_pairs_from_maping(filter_werks=None, filter_auart=None, limit: int = N
 # ---------- DEFINISI KOLOM SO ----------
 COMMON_SO_COLS = [
     "IV_WERKS_PARAM", "IV_AUART_PARAM", "VBELN", "POSNR",
-    "MANDT", "KUNNR", "NAME1", "AUART", "NETPR", "NETWR",
+    "MANDT", "KUNNR", "NAME1",
+    "AUART", "AUART2",  # <-- DITAMBAHKAN
+    "NETPR", "NETWR",
     "TOTPR", "TOTPR2", "WAERK",
     "EDATU", "WERKS", "BSTNK",
     "KWMENG", "BMENG", "VRKME", "MEINS",
@@ -268,11 +276,18 @@ T4_COL_LIST = ", ".join(T4_COLS)
 T4_PLACEHOLDERS = ", ".join(["%s"] * len(T4_COLS))
 
 # ---------- DDL TABEL SO + *_comp ----------
+def _ensure_column(cur, table: str, alter_sql: str):
+    """Helper aman: jalankan ALTER, kalau gagal (misal kolom sudah ada) -> pass."""
+    try:
+        cur.execute(alter_sql)
+    except Exception:
+        pass
+
 def ensure_tables():
     db = connect_mysql()
     cur = db.cursor()
     try:
-        # T1
+        # T1 (sudah termasuk AUART2)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS so_yppr079_t1 (
           id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -280,7 +295,9 @@ def ensure_tables():
           IV_AUART_PARAM VARCHAR(10) NOT NULL,
           VBELN VARCHAR(20), POSNR VARCHAR(10),
           MANDT VARCHAR(10), KUNNR VARCHAR(20), NAME1 VARCHAR(120),
-          AUART VARCHAR(10), NETPR DECIMAL(18,2), NETWR DECIMAL(18,2),
+          AUART VARCHAR(10),
+          AUART2 VARCHAR(10), -- <-- DITAMBAHKAN
+          NETPR DECIMAL(18,2), NETWR DECIMAL(18,2),
           TOTPR DECIMAL(18,2), TOTPR2 DECIMAL(18,2), WAERK VARCHAR(5),
           EDATU DATE, WERKS VARCHAR(10), BSTNK VARCHAR(80),
           KWMENG DECIMAL(18,3), BMENG DECIMAL(18,3), VRKME VARCHAR(6), MEINS VARCHAR(6),
@@ -330,7 +347,7 @@ def ensure_tables():
           MODIFY TYPE2 VARCHAR(25);
         """)
 
-        # T3
+        # T3 (sudah termasuk AUART2)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS so_yppr079_t3 (
           id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -338,7 +355,9 @@ def ensure_tables():
           IV_AUART_PARAM VARCHAR(10) NOT NULL,
           VBELN VARCHAR(20), POSNR VARCHAR(10),
           MANDT VARCHAR(10), KUNNR VARCHAR(20), NAME1 VARCHAR(120),
-          AUART VARCHAR(10), NETPR DECIMAL(18,2), NETWR DECIMAL(18,2),
+          AUART VARCHAR(10),
+          AUART2 VARCHAR(10), -- <-- DITAMBAHKAN
+          NETPR DECIMAL(18,2), NETWR DECIMAL(18,2),
           TOTPR DECIMAL(18,2), TOTPR2 DECIMAL(18,2), WAERK VARCHAR(5),
           EDATU DATE, WERKS VARCHAR(10), BSTNK VARCHAR(80),
           KWMENG DECIMAL(18,3), BMENG DECIMAL(18,3), VRKME VARCHAR(6), MEINS VARCHAR(6),
@@ -386,6 +405,10 @@ def ensure_tables():
             except Exception:
                 pass
 
+        # ---- AUTO MIGRASI: pastikan AUART2 ada di t1/t2/t3 (kalau DB lama belum punya) ----
+        for _tbl in ("so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3"):
+            _ensure_column(cur, _tbl, f"ALTER TABLE {_tbl} ADD COLUMN AUART2 VARCHAR(10) AFTER AUART")
+
         # Pastikan t1 tidak ada unique uq_t1
         try:
             cur.execute("ALTER TABLE so_yppr079_t1 DROP INDEX uq_t1")
@@ -426,6 +449,7 @@ def ensure_tables():
             cur.execute("ALTER TABLE so_yppr079_t4 DROP INDEX uq_t4")
         except Exception:
             pass
+
         # Pastikan PRSN2, TOTTP, TOTREQ ada
         try:
             cur.execute("ALTER TABLE so_yppr079_t4 ADD COLUMN PRSN2 DECIMAL(18,2) AFTER PRSN")
@@ -454,7 +478,6 @@ def ensure_tables():
             pass
 
         # Pastikan collation khusus untuk tabel *_comp
-        # (berlaku juga kalau tabelnya sudah ada)
         for _tbl in ("so_yppr079_t1_comp", "so_yppr079_t2_comp", "so_yppr079_t3_comp", "so_yppr079_t4_comp"):
             try:
                 cur.execute(
@@ -462,6 +485,10 @@ def ensure_tables():
                 )
             except Exception:
                 pass
+
+        # ---- AUTO MIGRASI: pastikan AUART2 ada juga di tabel _comp ----
+        for _tbl in ("so_yppr079_t1_comp", "so_yppr079_t2_comp", "so_yppr079_t3_comp"):
+            _ensure_column(cur, _tbl, f"ALTER TABLE {_tbl} ADD COLUMN AUART2 VARCHAR(10) AFTER AUART")
 
         # Unique key di t2_comp / t3_comp
         try:
@@ -507,33 +534,54 @@ def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.date
         werks, auart,
         r.get("VBELN"),
         str(r.get("POSNR")) if r.get("POSNR") is not None else None,
-        r.get("MANDT"), r.get("KUNNR"), r.get("NAME1"), r.get("AUART"),
+
+        r.get("MANDT"), r.get("KUNNR"), r.get("NAME1"),
+        r.get("AUART"),
+        r.get("AUART2"),  # <-- DITAMBAHKAN (ambil dari RFC)
+
         fnum(r.get("NETPR")), fnum(r.get("NETWR")),
         fnum(r.get("TOTPR")), fnum(r.get("TOTPR2")), r.get("WAERK"),
+
         fdate_yyyymmdd(r.get("EDATU")), r.get("WERKS"), r.get("BSTNK"),
+
         fnum(r.get("KWMENG")), fnum(r.get("BMENG")), r.get("VRKME"), r.get("MEINS"),
+
         r.get("MATNR"), r.get("MAKTX"),
+
         fnum(r.get("KALAB")), fnum(r.get("KALAB2")), fnum(r.get("QTY_DELIVERY")), fnum(r.get("QTY_GI")),
         fnum(r.get("QTY_BALANCE")), fnum(r.get("QTY_BALANCE2")),
+
         fnum(r.get("MENGX1")), fnum(r.get("MENGX2")), fnum(r.get("MENGE")),
+
         fnum(r.get("ASSYM")), fnum(r.get("PAINT")), fnum(r.get("PACKG")),
+
         fnum(r.get("QTYS")), fnum(r.get("MACHI")), fnum(r.get("EBDIN")),
+
         fnum(r.get("MACHP")), fnum(r.get("EBDIP")),
+
         r.get("TYPE1"), r.get("TYPE2"), r.get("TYPE"),
         int(r.get("DAYX") or 0),
+
         fnum(r.get("ASSY")),
         fnum(r.get("PAINTM")),
         fnum(r.get("PACKGM")),
+
         fnum(r.get("PRSM")), fnum(r.get("PRSM2")),
+
         fnum(r.get("QPROM")), fnum(r.get("QODRM")), fnum(r.get("QPROA")), fnum(r.get("QODRA")),
         fnum(r.get("PRSA")),
+
         fnum(r.get("QPROI")), fnum(r.get("QODRI")),
         fnum(r.get("PRSI")),
+
         fnum(r.get("QPROP")), fnum(r.get("QODRP")),
         fnum(r.get("PRSP")),
+
         fnum(r.get("PRSC")), fnum(r.get("PRSAM")), fnum(r.get("PRSIR")),
+
         fnum(r.get("CUTT")), fnum(r.get("QPROC")), fnum(r.get("ASSYMT")), fnum(r.get("QPROAM")), fnum(r.get("PRIMER")), fnum(r.get("QPROIR")),
         fnum(r.get("PAINTMT")), fnum(r.get("QPROIMT")), fnum(r.get("QODRIMT")), fnum(r.get("PRSIMT")),
+
         r.get("NAME4"),
         now,
     )
@@ -780,8 +828,6 @@ def do_sync(
             pass
 
     all_ok = (len(success_pairs) == len(pairs) and len(pairs) > 0)
-
-    # (Python nggak support &&, barusan cuma catatan; pakai and di bawah)
     do_full_truncate = all_ok and full_mapping_requested
 
     db = connect_mysql()
