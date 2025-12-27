@@ -706,7 +706,11 @@ class DashboardController extends Controller
         $auartSan = preg_replace('/[^A-Z0-9_]/', '', $auartRaw);
 
         // === gabungkan Export + Replace bila perlu ===
-        $mapping = DB::table('maping')->get();
+        $mappingQ = DB::table('maping');
+        if (!empty($werks)) {
+            $mappingQ->where('IV_WERKS', $werks); // ✅ batasi per plant biar ZOR1 nggak nyasar ke 3000
+        }
+        $mapping = $mappingQ->get();
 
         $exportAuartCodes = $mapping->filter(function ($item) {
             $d = strtolower((string)$item->Deskription);
@@ -720,10 +724,18 @@ class DashboardController extends Controller
         $auartList = [];
         if ($auartSan !== '') {
             $auartList = [$auartSan];
+
+            // ✅ kalau AUART export (di plant tsb), gabungkan dengan replace plant tsb saja
             if (in_array($auartSan, $exportAuartCodes, true) && !in_array($auartSan, $replaceAuartCodes, true)) {
-                $auartList = array_unique(array_merge($exportAuartCodes, $replaceAuartCodes));
+                $auartList = array_values(array_unique(array_merge([$auartSan], $replaceAuartCodes)));
             }
+
+            // opsional: kalau user klik replace, gabungkan replace + export di plant tsb (kalau memang mau)
+            // if (in_array($auartSan, $replaceAuartCodes, true)) {
+            //     $auartList = array_values(array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)));
+            // }
         }
+
 
         // ✅ AUART_KEY dipaksa = AUART request (bukan t1.IV_AUART_PARAM)
         $auartKeySelect = $auartSan !== ''
@@ -1478,4 +1490,58 @@ class DashboardController extends Controller
 
         return response()->json(['ok' => true, 'data' => $rows]);
     }
+    private function auartKeysForVbelnSubquery(string $vbeln)
+    {
+        $vbeln = trim($vbeln);
+
+        return DB::query()->fromSub(function ($u) use ($vbeln) {
+            $u->from('so_yppr079_t1 as x')
+                ->select(DB::raw('TRIM(x.IV_AUART_PARAM) as AUART'))
+                ->whereRaw('TRIM(CAST(x.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
+                ->whereNotNull('x.IV_AUART_PARAM')->whereRaw("TRIM(x.IV_AUART_PARAM) <> ''")
+            ->unionAll(
+                DB::table('so_yppr079_t1 as y')
+                    ->select(DB::raw('TRIM(y.AUART2) as AUART'))
+                    ->whereRaw('TRIM(CAST(y.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
+                    ->whereNotNull('y.AUART2')->whereRaw("TRIM(y.AUART2) <> ''")
+            );
+        }, 'uu')->select('uu.AUART');
+    }
+    public function apiItemRemarksForModal(Request $req)
+    {
+        $vbeln = trim((string) $req->query('vbeln'));
+        $posnr = trim((string) $req->query('posnr'));
+
+        if ($vbeln === '' || $posnr === '') {
+            return response()->json(['ok' => false, 'error' => 'vbeln/posnr missing'], 400);
+        }
+
+        // samakan format posnr DB: 000610
+        $posnrDb = str_pad(ltrim($posnr, '0'), 6, '0', STR_PAD_LEFT);
+
+        $auartKeys = $this->auartKeysForVbelnSubquery($vbeln);
+
+        $rows = DB::table('item_remarks as ir')
+            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->selectRaw("
+                ir.id,
+                ir.user_id,
+                COALESCE(u.name,'Admin') as user_name,
+                ir.remark,
+                ir.created_at,
+                ir.updated_at,
+                ir.IV_AUART_PARAM,
+                ir.IV_WERKS_PARAM
+            ")
+            ->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
+            ->whereRaw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,'0') = ?", [$posnrDb])
+            // ✅ tidak lihat WERKS, tapi pastikan AUART valid utk SO tsb (AUART+AUART2)
+            ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartKeys)
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+            ->orderBy('ir.created_at', 'desc')
+            ->get();
+
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
+
 }
