@@ -43,6 +43,32 @@ class DashboardController extends Controller
         return ['2000' => 'Surabaya', '3000' => 'Semarang'][$werks] ?? $werks;
     }
 
+    private function resolveAuartListForContext(?string $auart, ?string $werks = null): array
+    {
+        $auart = strtoupper(trim((string) $auart));
+        if ($auart === '') return [];
+
+        $q = DB::table('maping')->select('IV_WERKS', 'IV_AUART', 'Deskription');
+        if ($werks) $q->where('IV_WERKS', $werks);
+        $m = $q->get();
+
+        $export = $m->filter(function ($i) {
+            $d = strtolower((string) $i->Deskription);
+            return str_contains($d, 'export') && !str_contains($d, 'local') && !str_contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->values()->all();
+
+        $replace = $m->filter(function ($i) {
+            return str_contains(strtolower((string) $i->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->values()->all();
+
+        // kalau konteks export -> gabung export+replace (1 tampilan)
+        if (in_array($auart, $export, true) && !in_array($auart, $replace, true)) {
+            return array_values(array_unique(array_merge($export, $replace)));
+        }
+
+        return [$auart];
+    }
+
     private function buildFileName(string $base, string $ext): string
     {
         return sprintf('%s_%s.%s', $base, \Carbon\Carbon::now()->format('Ymd_His'), $ext);
@@ -705,72 +731,39 @@ class DashboardController extends Controller
         $auartRaw = strtoupper(trim((string) $req->query('auart', '')));
         $auartSan = preg_replace('/[^A-Z0-9_]/', '', $auartRaw);
 
-        // === gabungkan Export + Replace bila perlu ===
-        $mappingQ = DB::table('maping');
-        if (!empty($werks)) {
-            $mappingQ->where('IV_WERKS', $werks); // ✅ batasi per plant biar ZOR1 nggak nyasar ke 3000
-        }
-        $mapping = $mappingQ->get();
+        // ✅ Context AUART: kalau export -> gabung export+replace (per plant)
+        $auartList = $this->resolveAuartListForContext($auartSan, $werks);
 
-        $exportAuartCodes = $mapping->filter(function ($item) {
-            $d = strtolower((string)$item->Deskription);
-            return Str::contains($d, 'export') && !Str::contains($d, 'local') && !Str::contains($d, 'replace');
-        })->pluck('IV_AUART')->unique()->toArray();
-
-        $replaceAuartCodes = $mapping->filter(function ($item) {
-            return Str::contains(strtolower((string)$item->Deskription), 'replace');
-        })->pluck('IV_AUART')->unique()->toArray();
-
-        $auartList = [];
-        if ($auartSan !== '') {
+        // fallback kalau mapping kosong tapi auart ada
+        if (empty($auartList) && $auartSan !== '') {
             $auartList = [$auartSan];
-
-            // ✅ kalau AUART export (di plant tsb), gabungkan dengan replace plant tsb saja
-            if (in_array($auartSan, $exportAuartCodes, true) && !in_array($auartSan, $replaceAuartCodes, true)) {
-                $auartList = array_values(array_unique(array_merge([$auartSan], $replaceAuartCodes)));
-            }
-
-            // opsional: kalau user klik replace, gabungkan replace + export di plant tsb (kalau memang mau)
-            // if (in_array($auartSan, $replaceAuartCodes, true)) {
-            //     $auartList = array_values(array_unique(array_merge($exportAuartCodes, $replaceAuartCodes)));
-            // }
         }
-
 
         // ✅ AUART_KEY dipaksa = AUART request (bukan t1.IV_AUART_PARAM)
         $auartKeySelect = $auartSan !== ''
             ? DB::raw("'" . $auartSan . "' as AUART_KEY")
             : DB::raw('t1.IV_AUART_PARAM as AUART_KEY');
 
-       $auartKeysForSo = DB::query()
-        ->fromSub(function ($u) use ($vbeln) {
-            $u->from('so_yppr079_t1 as x')
-            ->select(DB::raw('TRIM(x.IV_AUART_PARAM) as AUART'))
-            ->whereRaw('TRIM(CAST(x.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
-            ->whereNotNull('x.IV_AUART_PARAM')->whereRaw("TRIM(x.IV_AUART_PARAM) <> ''")
-            ->unionAll(
-                DB::table('so_yppr079_t1 as y')
-                    ->select(DB::raw('TRIM(y.AUART2) as AUART'))
-                    ->whereRaw('TRIM(CAST(y.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
-                    ->whereNotNull('y.AUART2')->whereRaw("TRIM(y.AUART2) <> ''")
+        /**
+         * ✅ remarksAgg:
+         * - filter by WERKS (biar tidak nyasar plant)
+         * - filter by AUART konteks (export+replace)
+         * - JANGAN ambil AUART keys dari T1 (itu yang bikin ZRP miss)
+         */
+        $remarksAgg = DB::table('item_remarks as ir')
+            ->select(
+                DB::raw('TRIM(CAST(ir.VBELN AS CHAR)) as VBELN'),
+                DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0') as POSNR_DB"),
+                DB::raw('COUNT(*) as remark_count'),
+                DB::raw('MAX(ir.created_at) as last_remark_at')
+            )
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+            ->when($werks, fn($q) => $q->where('ir.IV_WERKS_PARAM', $werks))
+            ->when(!empty($auartList), fn($q) => $q->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList))
+            ->groupBy(
+                DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'),
+                DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0')")
             );
-        }, 'uu')
-        ->select('uu.AUART');
-
-    // remarksAgg: NO WERKS filter, AUART pakai AUART+AUART2 dari SO tsb
-    $remarksAgg = DB::table('item_remarks as ir')
-        ->select(
-            DB::raw('TRIM(CAST(ir.VBELN AS CHAR)) as VBELN'),
-            DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0') as POSNR_DB"),
-            DB::raw('COUNT(*) as remark_count'),
-            DB::raw('MAX(ir.created_at) as last_remark_at')
-        )
-        ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartKeysForSo)
-        ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
-        ->groupBy(
-            DB::raw('TRIM(CAST(ir.VBELN AS CHAR))'),
-            DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0')")
-        );
 
         $rows = DB::table('so_yppr079_t1 as t1')
             ->leftJoin(
@@ -1610,10 +1603,18 @@ class DashboardController extends Controller
             return response()->json(['ok' => false, 'error' => 'vbeln/posnr missing'], 400);
         }
 
+        // optional dari FE (kalau dikirim, hasilnya 100% konsisten)
+        $werks = $req->query('werks');
+        $auart = $req->query('auart');
+
         // samakan format posnr DB: 000610
         $posnrDb = str_pad(ltrim($posnr, '0'), 6, '0', STR_PAD_LEFT);
 
-        $auartKeys = $this->auartKeysForVbelnSubquery($vbeln);
+        // ✅ pakai konteks AUART kalau ada (export+replace)
+        $ctxAuarts = $this->resolveAuartListForContext($auart, $werks);
+
+        // fallback kalau FE tidak kirim auart/werks: ambil dari T1 (legacy)
+        $auartKeys = !empty($ctxAuarts) ? $ctxAuarts : $this->auartKeysForVbelnSubquery($vbeln);
 
         $rows = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
@@ -1629,7 +1630,7 @@ class DashboardController extends Controller
             ")
             ->whereRaw('TRIM(CAST(ir.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
             ->whereRaw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)),6,'0') = ?", [$posnrDb])
-            // ✅ tidak lihat WERKS, tapi pastikan AUART valid utk SO tsb (AUART+AUART2)
+            ->when($werks, fn($q) => $q->where('ir.IV_WERKS_PARAM', $werks)) // ✅ biar tidak lintas plant
             ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartKeys)
             ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->orderBy('ir.created_at', 'desc')

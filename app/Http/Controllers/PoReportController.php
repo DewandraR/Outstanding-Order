@@ -130,6 +130,32 @@ class PoReportController extends Controller
         ];
     }
 
+    private function resolveAuartListForContext(?string $auart, ?string $werks = null): array
+    {
+        $auart = strtoupper(trim((string) $auart));
+        if ($auart === '') return [];
+
+        $q = DB::table('maping')->select('IV_WERKS', 'IV_AUART', 'Deskription');
+        if ($werks) $q->where('IV_WERKS', $werks);
+        $m = $q->get();
+
+        $export = $m->filter(function ($i) {
+            $d = strtolower((string) $i->Deskription);
+            return str_contains($d, 'export') && !str_contains($d, 'local') && !str_contains($d, 'replace');
+        })->pluck('IV_AUART')->unique()->values()->all();
+
+        $replace = $m->filter(function ($i) {
+            return str_contains(strtolower((string) $i->Deskription), 'replace');
+        })->pluck('IV_AUART')->unique()->values()->all();
+
+        if (in_array($auart, $export, true) && !in_array($auart, $replace, true)) {
+            return array_values(array_unique(array_merge($export, $replace)));
+        }
+
+        return [$auart];
+    }
+
+
     // ====== AUART helper (IV_AUART_PARAM OR AUART2) ======
     private function applyAuartT1($query, string $alias, array $auarts)
     {
@@ -1041,51 +1067,35 @@ $auartKeys = DB::query()
     public function apiListPoRemarks(Request $request)
     {
         $request->validate([
-            'werks' => 'required|string',   // tetap diterima untuk kompat FE (tapi tidak dipakai filter)
-            'auart' => 'required|string',   // tetap diterima untuk kompat FE (tapi tidak dipakai filter)
+            'werks' => 'required|string',
+            'auart' => 'required|string',
             'vbeln' => 'required|string',
             'posnr' => 'required|string',
         ]);
 
+        $werks = trim((string) $request->werks);
+        $auart = trim((string) $request->auart);
         $vbeln = trim((string) $request->vbeln);
 
         // POSNR DB selalu 6 digit
         $posnrDb = str_pad(preg_replace('/\D/', '', (string) $request->posnr), 6, '0', STR_PAD_LEFT);
 
-        // === Ambil AUART keys untuk item tsb (IV_AUART_PARAM + AUART2) dari T1 ===
-        $auartKeysForItem = DB::query()
-            ->fromSub(function ($u) use ($vbeln, $posnrDb) {
-                $u->from('so_yppr079_t1 as x')
-                    ->select(DB::raw('TRIM(x.IV_AUART_PARAM) as AUART'))
-                    ->whereRaw('TRIM(CAST(x.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
-                    ->whereRaw("LPAD(TRIM(CAST(x.POSNR AS CHAR)), 6, '0') = ?", [$posnrDb])
-                    ->whereNotNull('x.IV_AUART_PARAM')
-                    ->whereRaw("TRIM(x.IV_AUART_PARAM) <> ''")
+        // ✅ konteks AUART (export+replace)
+        $ctxAuarts = $this->resolveAuartListForContext($auart, $werks);
+        if (empty($ctxAuarts) && $auart !== '') $ctxAuarts = [$auart];
 
-                    ->unionAll(
-                        DB::table('so_yppr079_t1 as y')
-                            ->select(DB::raw('TRIM(y.AUART2) as AUART'))
-                            ->whereRaw('TRIM(CAST(y.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
-                            ->whereRaw("LPAD(TRIM(CAST(y.POSNR AS CHAR)), 6, '0') = ?", [$posnrDb])
-                            ->whereNotNull('y.AUART2')
-                            ->whereRaw("TRIM(y.AUART2) <> ''")
-                    );
-            }, 'uu')
-            ->select('uu.AUART');
-
-        // === Query remark: JANGAN FILTER WERKS, hanya AUART keys ===
         $rows = DB::table('item_remarks as r')
             ->leftJoin('users as u', 'u.id', '=', 'r.user_id')
             ->whereRaw('TRIM(CAST(r.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
             ->whereRaw("LPAD(TRIM(CAST(r.POSNR AS CHAR)), 6, '0') = ?", [$posnrDb])
-            ->whereIn(DB::raw('TRIM(r.IV_AUART_PARAM)'), $auartKeysForItem)
+            ->where('r.IV_WERKS_PARAM', $werks) // ✅ jangan lintas plant
+            ->whereIn(DB::raw('TRIM(r.IV_AUART_PARAM)'), $ctxAuarts)
             ->whereRaw("TRIM(COALESCE(r.remark,'')) <> ''")
             ->orderByDesc(DB::raw('COALESCE(r.updated_at, r.created_at)'))
             ->select(
                 'r.id',
                 'r.remark',
                 'r.user_id',
-                // optional: tampilkan asalnya biar jelas lintas plant/auart
                 'r.IV_WERKS_PARAM',
                 'r.IV_AUART_PARAM',
                 DB::raw("DATE_FORMAT(COALESCE(r.updated_at, r.created_at),'%Y-%m-%d %H:%i:%s') as created_at"),

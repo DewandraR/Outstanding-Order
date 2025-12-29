@@ -419,6 +419,8 @@ class SalesOrderController extends Controller
         // remark count by VBELN saja (tanpa filter werks/auart)
         $remarksSub = DB::table('item_remarks as ir')
             ->select('ir.VBELN', DB::raw('COUNT(*) AS remark_count'))
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList)
             ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->groupBy('ir.VBELN');
 
@@ -518,8 +520,11 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(ir.created_at) as last_remark_at')
             )
             ->where('ir.VBELN', $request->vbeln)
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList)
             ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->groupBy('ir.VBELN', 'ir.POSNR');
+
 
         $t4Agg = DB::table('so_yppr079_t4 as t4')
             ->whereRaw('TRIM(CAST(t4.KDAUF AS CHAR)) = ?', [$request->vbeln])
@@ -668,6 +673,8 @@ class SalesOrderController extends Controller
 
         $remarksConcat = DB::table('item_remarks as ir')
             ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList)
             ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->select(
                 'ir.VBELN',
@@ -1086,46 +1093,51 @@ class SalesOrderController extends Controller
      * List remark per item.
      */
     public function apiListItemRemarks(Request $request)
-    {
-        $validated = $request->validate([
-            'werks' => 'required|string',
-            'auart' => 'required|string',
-            'vbeln' => 'required|string',
-            'posnr' => 'required|string',
-        ]);
+{
+    $validated = $request->validate([
+        'werks' => 'required|string',
+        'auart' => 'required|string',
+        'vbeln' => 'required|string',
+        'posnr' => 'required|string',
+    ]);
 
-        $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
-        $currentUserId = Auth::id();
+    $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
+    $currentUserId = Auth::id();
 
-        // ✅ FIX: filter remark hanya untuk AUART yang memang milik VBELN tsb (AUART/AUART2),
-        // tanpa mengunci WERKS.
-        $auartKeys = $this->auartKeysForVbelnSubquery($validated['vbeln']);
+    $werks = trim((string) $validated['werks']);
+    $auart = strtoupper(trim((string) $validated['auart']));
 
-        $rows = DB::table('item_remarks as ir')
-            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
-            ->where('ir.VBELN', $validated['vbeln'])
-            ->where('ir.POSNR', $posnrKey)
-            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
-            ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartKeys)
-            ->orderBy('ir.updated_at', 'desc')
-            ->select(
-                'ir.id',
-                'ir.user_id',
-                DB::raw('COALESCE(u.name, "Guest") as user_name'),
-                'ir.remark',
-                'ir.created_at',
-                'ir.updated_at'
-            )
-            ->get()
-            ->map(function ($r) use ($currentUserId) {
-                $displayTime = $r->updated_at ?: $r->created_at;
-                $r->created_at = $displayTime;
-                $r->is_owner = $currentUserId !== null && (int)$r->user_id === (int)$currentUserId;
-                return $r;
-            });
+    // ✅ pakai konteks AUART yang sama dengan report (EXPORT/REPLACE digabung)
+    $auartList = $this->resolveAuartListForContext($auart, $werks);
+    if (empty($auartList)) $auartList = [$auart];
 
-        return response()->json(['ok' => true, 'data' => $rows]);
-    }
+    $rows = DB::table('item_remarks as ir')
+        ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+        ->where('ir.VBELN', trim((string)$validated['vbeln']))
+        ->where('ir.POSNR', $posnrKey)
+        // ✅ rekomendasi: kunci plant supaya tidak nyasar lintas plant
+        ->where('ir.IV_WERKS_PARAM', $werks)
+        ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+        ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList)
+        ->orderBy('ir.updated_at', 'desc')
+        ->select(
+            'ir.id',
+            'ir.user_id',
+            DB::raw('COALESCE(u.name, "Guest") as user_name'),
+            'ir.remark',
+            'ir.created_at',
+            'ir.updated_at'
+        )
+        ->get()
+        ->map(function ($r) use ($currentUserId) {
+            $displayTime = $r->updated_at ?: $r->created_at;
+            $r->created_at = $displayTime;
+            $r->is_owner = $currentUserId !== null && (int)$r->user_id === (int)$currentUserId;
+            return $r;
+        });
+
+    return response()->json(['ok' => true, 'data' => $rows]);
+}
 
     /**
      * Tambah remark baru untuk item (selalu INSERT, tidak menimpa).
