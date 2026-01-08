@@ -13,6 +13,7 @@ use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
 
 class SoItemsExport implements
     FromCollection,
@@ -24,16 +25,39 @@ class SoItemsExport implements
     WithColumnFormatting
 {
     protected Collection $items;
-    protected array $customerRows = []; // baris-baris judul "Customer: ..."
+    protected array $customerRows = [];  // baris judul "Customer: ..."
+    protected string $mode;             // wood|metal
 
-    public function __construct(Collection $items)
+    public function __construct(Collection $items, string $mode = 'wood')
     {
         $this->items = $items;
+        $mode = strtolower(trim($mode));
+        $this->mode = in_array($mode, ['wood','metal'], true) ? $mode : 'wood';
+    }
+
+    protected function isMetal(): bool
+    {
+        return $this->mode === 'metal';
+    }
+
+    /**
+     * Last column letter depends on mode:
+     * wood  = 14 columns (A..N)
+     * metal = 15 columns (A..O) (add PRIMER GR)
+     */
+    protected function lastColumnLetter(): string
+    {
+        return $this->isMetal() ? 'O' : 'N';
+    }
+
+    protected function totalColumns(): int
+    {
+        return $this->isMetal() ? 15 : 14;
     }
 
     public function collection()
     {
-        $currentRow = 2; // baris 1 = heading
+        $currentRow = 2; // row 1 = headings
         $final = new Collection();
 
         $groups = $this->items->groupBy(function ($item) {
@@ -42,8 +66,8 @@ class SoItemsExport implements
         });
 
         foreach ($groups as $customerName => $rows) {
-            // baris judul customer (akan di-merge A..N)
-            $customerHeader = (object) [
+            // customer header row
+            $customerHeader = (object)[
                 'is_customer_header' => true,
                 'customer_name'      => 'Customer: ' . $customerName,
             ];
@@ -63,99 +87,161 @@ class SoItemsExport implements
 
     public function headings(): array
     {
-        // Kolom: 14 kolom total (A..N)
-        return [
-            'PO',               // A
-            'SO',               // B
-            'Item',             // C
-            'Material FG',      // D
-            'Description',      // E
-            'Qty SO',           // F
-            'Outs. SO',         // G
-            'WHFG',             // H
-            'Stock Packg.',     // I
-            'MACHI GR',         // J  (MACHI qty)
-            'ASSY GR',          // K  (ASSYM qty)
-            'PAINT GR',         // L  (PAINTM qty)
-            'PACKING GR',       // M  (PACKGM qty)
-            'Remark',           // N
+        // Base columns always same
+        $base = [
+            'PO',            // A
+            'SO',            // B
+            'Item',          // C
+            'Material FG',   // D
+            'Description',   // E
+            'Qty SO',        // F
+            'Outs. SO',      // G
+            'WHFG',          // H
+            'Stock Packg.',  // I
         ];
+
+        if ($this->isMetal()) {
+            // add 5 process columns (CUTTING, ASSY, PRIMER, PAINT, PACKING) + Remark
+            return array_merge($base, [
+                'CUTTING GR',  // J
+                'ASSY GR',     // K
+                'PRIMER GR',   // L
+                'PAINT GR',    // M
+                'PACKING GR',  // N
+                'Remark',      // O
+            ]);
+        }
+
+        // wood: 4 process columns + Remark
+        return array_merge($base, [
+            'MACHI GR',    // J
+            'ASSY GR',     // K
+            'PAINT GR',    // L
+            'PACKING GR',  // M
+            'Remark',      // N
+        ]);
     }
 
     public function map($item): array
     {
-        // baris judul customer: isi kolom A saja, sisanya kosong (A..N = 14 kolom)
+        // customer header row: fill only first cell, rest empty (must match total columns)
         if (property_exists($item, 'is_customer_header') && $item->is_customer_header) {
-            return [$item->customer_name, '', '', '', '', '', '', '', '', '', '', '', '', ''];
+            $cols = $this->totalColumns();
+            $row = array_fill(0, $cols, '');
+            $row[0] = $item->customer_name ?? '';
+            return $row;
         }
 
+        $po   = $item->headerInfo->BSTNK ?? '';
+        $so   = $item->VBELN ?? '';
+        $pos  = (int)($item->POSNR ?? 0);
+        $mat  = $item->MATNR ?? '';
+        $desc = $item->MAKTX ?? '';
+
+        $qtySo   = (float)($item->KWMENG ?? 0);
+        $outsSo  = (float)($item->PACKG  ?? 0);
+        $whfg    = (float)($item->KALAB  ?? 0);
+        $stockPk = (float)($item->KALAB2 ?? 0);
+
+        $remark = $item->remark ?? '';
+
+        if ($this->isMetal()) {
+            // METAL
+            $cut    = (float)($item->CUTT    ?? 0);
+            $assy   = (float)($item->ASSYMT  ?? 0);
+            $primer = (float)($item->PRIMER  ?? 0);
+            $paint  = (float)($item->PAINTMT ?? 0);
+            $pack   = (float)($item->PRSIMT  ?? 0);
+
+            return [
+                $po, $so, $pos, $mat, $desc,
+                $qtySo, $outsSo, $whfg, $stockPk,
+                $cut, $assy, $primer, $paint, $pack,
+                $remark,
+            ];
+        }
+
+        // WOOD
+        $machi = (float)($item->MACHI  ?? 0);
+        $assy  = (float)($item->ASSYM  ?? 0);
+        $paint = (float)($item->PAINTM ?? 0);
+        $pack  = (float)($item->PACKGM ?? 0);
+
         return [
-            $item->headerInfo->BSTNK ?? '',          // A: PO
-            $item->VBELN ?? '',                      // B: SO
-            (int)($item->POSNR ?? 0),                // C: Item
-            $item->MATNR ?? '',                      // D: Material FG
-            $item->MAKTX ?? '',                      // E: Description
-
-            (float)($item->KWMENG ?? 0),             // F: Qty SO
-            (float)($item->PACKG  ?? 0),             // G: Outs. SO
-            (float)($item->KALAB  ?? 0),             // H: WHFG
-            (float)($item->KALAB2 ?? 0),             // I: Stock Packg.
-
-            (float)($item->MACHI  ?? 0),             // J: MACHI GR
-            (float)($item->ASSYM  ?? 0),             // K: ASSY GR
-            (float)($item->PAINTM ?? 0),             // L: PAINT GR
-            (float)($item->PACKGM ?? 0),             // M: PACKING GR
-
-            $item->remark ?? '',                     // N: Remark
+            $po, $so, $pos, $mat, $desc,
+            $qtySo, $outsSo, $whfg, $stockPk,
+            $machi, $assy, $paint, $pack,
+            $remark,
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
-        $styles = [
-            1 => ['font' => ['bold' => true]], // heading tebal
-        ];
+        $lastCol = $this->lastColumnLetter();
 
-        // Merge baris judul customer melebar dari A sampai N (14 kolom)
+        // Heading row style
+        $sheet->getStyle("A1:{$lastCol}1")->applyFromArray([
+            'font' => ['bold' => true],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => 'F2F2F2']],
+            'borders' => [
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '999999']],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical'   => Alignment::VERTICAL_CENTER,
+                'wrapText'   => true,
+            ],
+        ]);
+
+        // Merge + style customer header rows
         foreach ($this->customerRows as $row) {
-            $sheet->mergeCells("A{$row}:N{$row}");
-            $styles[$row] = [
+            $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
                 'font' => ['bold' => true, 'size' => 12],
                 'fill' => ['fillType' => Fill::FILL_SOLID, 'color' => ['rgb' => 'E9ECEF']],
                 'borders' => [
-                    'allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color' => ['rgb' => '333333'],
-                    ],
+                    'allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '333333']],
                 ],
                 'alignment' => [
-                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                    'horizontal' => Alignment::HORIZONTAL_LEFT,
+                    'vertical'   => Alignment::VERTICAL_CENTER,
                 ],
-            ];
+            ]);
         }
 
-        return $styles;
+        return [];
     }
 
     public function columnFormats(): array
     {
-        // Angka bulat tanpa desimal
         $intNoDecimal = '#,##0';
-        // Angka dengan hingga 3 desimal TANPA nol ekor (53 -> "53", 1.92 -> "1.92", 1.234 -> "1.234")
-        $upTo3Decimals = '#,##0.###';
 
-        return [
-            // Kuantitas header
-            'F' => $intNoDecimal,   // Qty SO (biasanya integer)
-            'G' => $intNoDecimal,   // Outs. SO
-            'H' => $intNoDecimal,   // WHFG
-            'I' => $intNoDecimal,   // Stock Packg.
-
-            // GR per proses (qty) — tampilkan sampai 3 desimal, tanpa ",000"
-            'J' => $intNoDecimal,  // MACHI GR
-            'K' => $intNoDecimal,  // ASSY GR
-            'L' => $intNoDecimal,  // PAINT GR
-            'M' => $intNoDecimal,  // PACKING GR
+        // Base fixed columns
+        $formats = [
+            'F' => $intNoDecimal, // Qty SO
+            'G' => $intNoDecimal, // Outs SO
+            'H' => $intNoDecimal, // WHFG
+            'I' => $intNoDecimal, // Stock Packg
         ];
+
+        if ($this->isMetal()) {
+            // METAL: process columns J..N
+            $formats['J'] = $intNoDecimal; // CUTTING
+            $formats['K'] = $intNoDecimal; // ASSY
+            $formats['L'] = $intNoDecimal; // PRIMER
+            $formats['M'] = $intNoDecimal; // PAINT
+            $formats['N'] = $intNoDecimal; // PACKING
+            // Remark is O (text) -> no format needed
+            return $formats;
+        }
+
+        // WOOD: process columns J..M
+        $formats['J'] = $intNoDecimal; // MACHI
+        $formats['K'] = $intNoDecimal; // ASSY
+        $formats['L'] = $intNoDecimal; // PAINT
+        $formats['M'] = $intNoDecimal; // PACKING
+        // Remark is N (text)
+        return $formats;
     }
 }

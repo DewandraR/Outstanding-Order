@@ -615,7 +615,13 @@ class SalesOrderController extends Controller
             'export_type'   => 'required|string|in:pdf,excel',
             'werks'         => 'required|string',
             'auart'         => 'required|string',
+
+            // ✅ NEW
+            'mode'          => 'nullable|string|in:wood,metal',
         ]);
+
+        // default kalau tidak terkirim
+        $validated['mode'] = $validated['mode'] ?? 'wood';
 
         $t = $this->packToToken($validated);
         return redirect()->route('so.export.show', ['t' => $t], 303);
@@ -645,6 +651,8 @@ class SalesOrderController extends Controller
         $exportType = (string) ($payload['export_type'] ?? 'pdf');
         $werks      = (string) ($payload['werks'] ?? '');
         $auart      = (string) ($payload['auart'] ?? '');
+        $mode = strtolower((string) ($payload['mode'] ?? 'wood'));
+        if (!in_array($mode, ['wood','metal'], true)) $mode = 'wood';
 
         // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
@@ -718,10 +726,18 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PACKG)  as PACKG'),
                 DB::raw('MAX(t1.KALAB)  as KALAB'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
+                // ✅ WOOD fields (sudah ada)
                 DB::raw('MAX(t1.MACHI)  as MACHI'),
                 DB::raw('MAX(t1.ASSYM)  as ASSYM'),
                 DB::raw('MAX(t1.PAINTM) as PAINTM'),
                 DB::raw('MAX(t1.PACKGM) as PACKGM'),
+
+                // ✅ METAL fields (NEW) - pakai yang memang ada di T1 Anda (lihat apiGetItemsBySo)
+                DB::raw('MAX(t1.CUTT)    as CUTT'),
+                DB::raw('MAX(t1.ASSYMT)  as ASSYMT'),
+                DB::raw('MAX(t1.PRIMER)  as PRIMER'),
+                DB::raw('MAX(t1.PAINTMT) as PAINTMT'),
+                DB::raw('MAX(t1.PRSIMT)  as PRSIMT'),
                 DB::raw("COALESCE(MAX(rc.REMARKS), '') AS remark")
             )
             ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
@@ -754,7 +770,7 @@ class SalesOrderController extends Controller
         $fileName      = $this->buildFileName("Outstanding_SO_{$locationName}_{$auart}", $fileExtension);
 
         if ($exportType === 'excel') {
-            return Excel::download(new SoItemsExport($items), $fileName);
+            return Excel::download(new SoItemsExport($items, $mode), $fileName);
         }
 
         $dataForPdf = [
@@ -763,6 +779,7 @@ class SalesOrderController extends Controller
             'werks'            => $werks,
             'auartDescription' => $auartDesc,
             'auart'            => $auart,
+            'mode'             => $mode,
         ];
 
         $pdfBinary = Pdf::loadView('sales_order.so_pdf_template', $dataForPdf)

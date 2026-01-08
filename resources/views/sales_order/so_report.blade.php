@@ -402,6 +402,7 @@
                             <input type="hidden" name="customerName" id="exp_customerName">
                             <input type="hidden" name="werks" value="{{ $selectedWerks ?? '' }}">
                             <input type="hidden" name="auart" value="{{ $selectedAuart ?? '' }}">
+                            <input type="hidden" name="mode" id="exp_mode" value="wood">
                         </form>
                     </div>
                 </div>
@@ -1151,6 +1152,9 @@
                 function setMaterialMode(mode) {
                     if (materialMode === mode) return;
                     materialMode = mode;
+
+                    const expMode = document.getElementById('exp_mode');
+                    if (expMode) expMode.value = materialMode;
 
                     // toggle gaya tombol
                     btnWood?.classList.toggle('active', mode === 'wood');
@@ -1991,6 +1995,7 @@
                             add('export_type', exportType);
                             add('werks', WERKS);
                             add('auart', AUART);
+                            add('mode', materialMode);
                             selectedItems.forEach(id => add('item_ids[]', id));
                             document.body.appendChild(form);
                             form.submit();
