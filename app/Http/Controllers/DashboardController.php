@@ -583,7 +583,7 @@ class DashboardController extends Controller
             ->when($kunnr, fn($qq) => $qq->where('t2.KUNNR', $kunnr));
 
         // ✅ Filter AUART yang benar (header bisa nyebrang via AUART2)
-        $q = $this->applyAuartT2($q, $auartList, $werks);
+        $q = $this->applyAuartT2($q, $auartList, 'so_yppr079_t1');
 
         // ✅ hanya yang punya item outstanding dalam konteks AUART (IV_AUART atau AUART2)
         $q->whereExists(function ($ex) use ($auartList, $werks) {
@@ -852,7 +852,8 @@ class DashboardController extends Controller
                 $auartKeySelect,
                 DB::raw('t1u.POSNR_DB as POSNR_DB'),
                 DB::raw('COALESCE(ragg.remark_count, 0) as remark_count'),
-                DB::raw('ragg.last_remark_at as last_remark_at')
+                DB::raw('ragg.last_remark_at as last_remark_at'),
+                DB::raw("COALESCE(NULLIF(TRIM(t2.NAME4),''), '-') as NAME4")
             )
             ->orderByRaw('CAST(t1u.POSNR_DB AS UNSIGNED)')
             ->get();

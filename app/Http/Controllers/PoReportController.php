@@ -735,7 +735,7 @@ class PoReportController extends Controller
     {
         // ============================================================
         // 1) Ambil payload dari token "t" (cache) ATAU fallback "q"
-        //    Sekaligus tentukan MODE dan tabel yang dipakai (t1/t2)
+        //    Sekaligus tentukan MODE dan tabel yang dipakai (t1/t2/t3)
         // ============================================================
 
         $data = [];
@@ -749,6 +749,7 @@ class PoReportController extends Controller
 
             $t1Table = $mode === 'complete' ? 'so_yppr079_t1_comp' : 'so_yppr079_t1';
             $t2Table = $mode === 'complete' ? 'so_yppr079_t2_comp' : 'so_yppr079_t2';
+            $t3Table = $mode === 'complete' ? 'so_yppr079_t3_comp' : 'so_yppr079_t3';
         } else {
             // Fallback legacy "q" terenkripsi
             if (!$request->filled('q')) {
@@ -762,12 +763,13 @@ class PoReportController extends Controller
                 return back()->withErrors('Token export tidak valid.');
             }
 
-            // ✅ INI LETAKNYA: setelah decrypt q, baru set mode & table
+            // ✅ setelah decrypt q, baru set mode & table
             $mode = strtolower((string)($data['mode'] ?? 'outstanding'));
             if (!in_array($mode, ['outstanding', 'complete'], true)) $mode = 'outstanding';
 
             $t1Table = $mode === 'complete' ? 'so_yppr079_t1_comp' : 'so_yppr079_t1';
             $t2Table = $mode === 'complete' ? 'so_yppr079_t2_comp' : 'so_yppr079_t2';
+            $t3Table = $mode === 'complete' ? 'so_yppr079_t3_comp' : 'so_yppr079_t3';
         }
 
         // ============================================================
@@ -830,7 +832,6 @@ class PoReportController extends Controller
 
         // ============================================================
         // 5) Parser tanggal aman (EDATU)
-        //    ✅ Gunakan alias t2 (bukan hardcode)
         // ============================================================
 
         $safeEdatu = "COALESCE(
@@ -894,11 +895,32 @@ class PoReportController extends Controller
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
         // ============================================================
-        // 7) Query utama items
-        //    ✅ WAJIB pakai $t1Table & $t2Table (bukan hardcode)
+        // 6.1) ✅ Container number (NAME4) khusus MODE COMPLETE (t3_comp)
+        //      Kita buat 1 baris per VBELN+POSNR, hasilnya 1 kolom saja.
         // ============================================================
 
-        $items = DB::table("$t1Table as t1")
+        $containerConcat = null;
+        if ($mode === 'complete') {
+            $containerConcat = DB::table("$t3Table as t3")
+            ->selectRaw("
+                TRIM(CAST(t3.VBELN AS CHAR)) as VBELN,
+                LPAD(CAST(TRIM(t3.POSNR) AS UNSIGNED), 6, '0') as POSNR_DB,
+                GROUP_CONCAT(
+                    DISTINCT TRIM(COALESCE(t3.NAME4,''))
+                    ORDER BY TRIM(COALESCE(t3.NAME4,''))
+                    SEPARATOR '\n'
+                ) AS CONTAINER_NUMBER
+            ")
+            ->whereRaw("TRIM(COALESCE(t3.NAME4,'')) <> ''")
+            ->groupBy(DB::raw("TRIM(CAST(t3.VBELN AS CHAR))"), DB::raw("LPAD(CAST(TRIM(t3.POSNR) AS UNSIGNED), 6, '0')"));
+        }
+
+        // ============================================================
+        // 7) Query utama items
+        //    ✅ WAJIB pakai $t1Table & $t2Table
+        // ============================================================
+
+        $itemsQuery = DB::table("$t1Table as t1")
             ->leftJoin(
                 "$t2Table as t2",
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
@@ -908,7 +930,48 @@ class PoReportController extends Controller
             ->leftJoinSub($remarksConcat, 'rc', function ($j) {
                 $j->on('rc.VBELN', '=', 't1.VBELN')
                 ->on('rc.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
-            })
+            });
+
+        // ✅ join container hanya untuk COMPLETE
+        if ($mode === 'complete' && $containerConcat) {
+            $itemsQuery->leftJoinSub($containerConcat, 'cc', function ($j) {
+                $j->on('cc.VBELN', '=', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'))
+                ->on('cc.POSNR_DB', '=', DB::raw("LPAD(CAST(TRIM(t1.POSNR) AS UNSIGNED), 6, '0')"));
+            });
+        }
+
+        // select fields
+        $selects = [
+            DB::raw('t1.VBELN as SO'),
+            DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
+            DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
+            DB::raw('MAX(t2.BSTNK)  as PO'),
+            DB::raw('MAX(t2.NAME1)  as CUSTOMER'),
+            DB::raw('MAX(t1.MAKTX)  as MAKTX'),
+            DB::raw('MAX(t1.KWMENG) as QTY_PO'),
+            DB::raw('MAX(t1.QTY_GI) as QTY_GI'),
+            DB::raw('MAX(t1.QTY_BALANCE2) as QTY_BALANCE2'),
+            DB::raw('MAX(t1.KALAB)  as KALAB'),
+            DB::raw('MAX(t1.KALAB2) as KALAB2'),
+            DB::raw("MAX(DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')) AS EDATU_FORMATTED"),
+            DB::raw('MAX(t1.WAERK)  as WAERK'),
+            DB::raw("COALESCE(MAX(rc.REMARKS), '') AS REMARK"),
+        ];
+
+        if ($mode === 'complete') {
+            $selects[] = DB::raw("
+                COALESCE(
+                    NULLIF(MAX(cc.CONTAINER_NUMBER), ''),
+                    NULLIF(MAX(TRIM(t2.NAME4)), ''),
+                    ''
+                ) AS CONTAINER_NUMBER
+            ");
+        } else {
+            $selects[] = DB::raw("'' AS CONTAINER_NUMBER");
+        }
+
+
+        $items = $itemsQuery
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where(function ($w) use ($auartList) {
                 $w->whereIn('t1.IV_AUART_PARAM', $auartList)
@@ -923,22 +986,7 @@ class PoReportController extends Controller
                     });
                 }
             })
-            ->select(
-                DB::raw('t1.VBELN as SO'),
-                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
-                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END AS MATNR"),
-                DB::raw('MAX(t2.BSTNK)  as PO'),
-                DB::raw('MAX(t2.NAME1)  as CUSTOMER'),
-                DB::raw('MAX(t1.MAKTX)  as MAKTX'),
-                DB::raw('MAX(t1.KWMENG) as QTY_PO'),
-                DB::raw('MAX(t1.QTY_GI) as QTY_GI'),
-                DB::raw('MAX(t1.QTY_BALANCE2) as QTY_BALANCE2'),
-                DB::raw('MAX(t1.KALAB)  as KALAB'),
-                DB::raw('MAX(t1.KALAB2) as KALAB2'),
-                DB::raw("MAX(DATE_FORMAT({$safeEdatu}, '%d-%m-%Y')) AS EDATU_FORMATTED"),
-                DB::raw('MAX(t1.WAERK)  as WAERK'),
-                DB::raw("COALESCE(MAX(rc.REMARKS), '') AS REMARK")
-            )
+            ->select($selects)
             ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderBy('t1.VBELN')
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
@@ -957,17 +1005,19 @@ class PoReportController extends Controller
 
         if ($exportType === 'excel') {
             $fileName = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'xlsx');
-            return Excel::download(new PoItemsExport($items), $fileName);
+
+            // ✅ Kirim $mode agar PoItemsExport bisa bedakan kolom complete/outstanding
+            return Excel::download(new PoItemsExport($items, $mode), $fileName);
         }
 
         $pdfBinary = Pdf::loadView('po_report.po_pdf_template', [
-            'items'           => $items,
-            'locationName'    => $locationName,
-            'auartDescription'=> $auartDesc,
-            'werks'           => $werks,
-            'auart'           => $auart,
-            'today'           => now(),
-            'mode'            => $mode, // optional (kalau template mau tampilkan mode)
+            'items'            => $items,
+            'locationName'     => $locationName,
+            'auartDescription' => $auartDesc,
+            'werks'            => $werks,
+            'auart'            => $auart,
+            'today'            => now(),
+            'mode'             => $mode,
         ])->setPaper('a4', 'landscape')->output();
 
         $fileName = $this->buildFileName("PO_Items_{$locationName}_{$auart}", 'pdf');
@@ -982,7 +1032,6 @@ class PoReportController extends Controller
             'Cache-Control'          => 'private, max-age=60, must-revalidate',
         ]);
     }
-
     /**
      * Mendapatkan data performance (KPI) berdasarkan KUNNR (untuk klik di tabel).
      */

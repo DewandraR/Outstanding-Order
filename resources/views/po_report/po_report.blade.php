@@ -1580,93 +1580,109 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         function renderT3(rows) {
             if (!rows?.length) return `<div class="p-2 text-muted">Tidak ada item detail.</div>`;
 
+            const isCompleteMode = (getMode() === 'complete');
+
             // dedupe
             const uniqMap = new Map();
             for (const r of rows) {
                 const key = `${r.WERKS_KEY}|${r.AUART_KEY}|${r.VBELN}|${r.POSNR_DB}`;
                 if (!uniqMap.has(key)) {
-                    uniqMap.set(key, r);
+                uniqMap.set(key, r);
                 } else {
-                    const a = uniqMap.get(key);
-                    const c1 = Number(a.remark_count || a.po_remark_count || 0);
-                    const c2 = Number(r.remark_count || r.po_remark_count || 0);
-                    const mx = Math.max(c1, c2);
-                    a.remark_count = a.po_remark_count = mx;
-                    uniqMap.set(key, a);
+                const a = uniqMap.get(key);
+                const c1 = Number(a.remark_count || a.po_remark_count || 0);
+                const c2 = Number(r.remark_count || r.po_remark_count || 0);
+                const mx = Math.max(c1, c2);
+                a.remark_count = a.po_remark_count = mx;
+                uniqMap.set(key, a);
                 }
             }
             rows = Array.from(uniqMap.values());
 
-            let out = `
-<div class="table-responsive">
-    <table class="table table-sm table-hover mb-0 yz-mini">
-        <thead class="yz-header-item">
-            <tr>
-                <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-                <th>Item</th>
-                <th>Material FG</th>
-                <th>Desc FG</th>
-                <th>Qty PO</th>
-                <th>Shipped</th>
+            // === header kolom dinamis ===
+            const extraHeaders = isCompleteMode
+                ? `<th>Container Number</th>`
+                : `
                 <th>Outs. Ship</th>
                 <th>WHFG</th>
                 <th>Packing</th>
                 <th>Net Price</th>
-                <th style="width: 70px;">Remark</th>
-            </tr>
-        </thead>
-        <tbody>`;
+                `;
+
+            let out = `
+            <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 yz-mini">
+                <thead class="yz-header-item">
+                <tr>
+                    <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+                    <th>Item</th>
+                    <th>Material FG</th>
+                    <th>Desc FG</th>
+                    <th>Qty PO</th>
+                    <th>Shipped</th>
+                    ${extraHeaders}
+                    <th style="width:70px;">Remark</th>
+                </tr>
+                </thead>
+                <tbody>`;
 
             rows.forEach(r => {
                 const sid = sanitizeId(r.id);
                 const checked = sid && selectedItems.has(sid) ? 'checked' : '';
 
                 const initialCount = (r.remark_count ?? r.po_remark_count);
-                const countRemarks = Number.isFinite(+initialCount) ?
-                    +initialCount :
-                    ((r.remark && String(r.remark).trim() !== '') ? 1 : 0);
+                const countRemarks = Number.isFinite(+initialCount)
+                ? +initialCount
+                : ((r.remark && String(r.remark).trim() !== '') ? 1 : 0);
 
-                // POSNR_DB dijamin 6 digit (supaya sama dengan dari controller)
                 const posnrDb = String(r.POSNR_DB ?? r.POSNR ?? '')
-                    .replace(/\D/g, '')
-                    .padStart(6, '0');
+                .replace(/\D/g, '')
+                .padStart(6, '0');
+
+                const name4 = String(r.NAME4 ?? '').trim();
+                const showName4 = name4 || '-';
+
+                // === body kolom dinamis ===
+                const extraTds = isCompleteMode
+                ? `<td>${showName4}</td>`
+                : `
+                    <td>${fmtNum(r.QTY_BALANCE2)}</td>
+                    <td>${fmtNum(r.KALAB)}</td>
+                    <td>${fmtNum(r.KALAB2)}</td>
+                    <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
+                `;
 
                 out += `
-        <tr class="po-item-row"
-            data-item-id="${sid ?? ''}"
-            data-vbeln="${r.VBELN}"
-            data-werks-key="${r.WERKS_KEY}"
-            data-auart-key="${r.AUART_KEY}"
-            data-posnr="${posnrDb}"
-            data-posnr-db="${posnrDb}">
-            <td>
-                <input class="form-check-input check-item" type="checkbox"
-                       data-id="${sid ?? ''}" ${checked}>
-            </td>
-            <td>${r.POSNR ?? ''}</td>
-            <td>${r.MATNR ?? ''}</td>
-            <td>${r.MAKTX ?? ''}</td>
-            <td>${fmtNum(r.KWMENG)}</td>
-            <td>${fmtNum(r.QTY_GI)}</td>
-            <td>${fmtNum(r.QTY_BALANCE2)}</td>
-            <td>${fmtNum(r.KALAB)}</td>
-            <td>${fmtNum(r.KALAB2)}</td>
-            <td>${fmtMoney(r.NETPR, r.WAERK)}</td>
-            <td class="text-center">
-                <i class="fas fa-comments remark-icon" title="Catatan PO"></i>
-                <span class="remark-count-badge"
-                      style="display:${countRemarks>0 ? 'inline-flex':'none'};">
-                    ${countRemarks}
-                </span>
-            </td>
-        </tr>`;
+                <tr class="po-item-row"
+                    data-item-id="${sid ?? ''}"
+                    data-vbeln="${r.VBELN}"
+                    data-werks-key="${r.WERKS_KEY}"
+                    data-auart-key="${r.AUART_KEY}"
+                    data-posnr="${posnrDb}"
+                    data-posnr-db="${posnrDb}">
+                    <td>
+                    <input class="form-check-input check-item" type="checkbox" data-id="${sid ?? ''}" ${checked}>
+                    </td>
+                    <td>${r.POSNR ?? ''}</td>
+                    <td>${r.MATNR ?? ''}</td>
+                    <td>${r.MAKTX ?? ''}</td>
+                    <td>${fmtNum(r.KWMENG)}</td>
+                    <td>${fmtNum(r.QTY_GI)}</td>
+
+                    ${extraTds}
+
+                    <td class="text-center">
+                    <i class="fas fa-comments remark-icon" title="Catatan PO"></i>
+                    <span class="remark-count-badge" style="display:${countRemarks>0 ? 'inline-flex':'none'};">${countRemarks}</span>
+                    </td>
+                </tr>`;
 
                 if (sid) itemIdToSO.set(sid, String(r.VBELN));
             });
 
             out += `</tbody></table></div>`;
             return out;
-        }
+            }
 
         const renderModalTable = (rows, labelText) => {
             if (!rows || rows.length === 0) {
