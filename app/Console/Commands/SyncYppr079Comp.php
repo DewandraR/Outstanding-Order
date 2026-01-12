@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process as SymfonyProcess;
 class SyncYppr079Comp extends Command
 {
     protected $signature = 'yppr:sync-comp';
-    protected $description = 'Sync YPPR079 COMP via api.py';
+    protected $description = 'Sync YPPR079 COMP via api.py (--sync_comp)';
 
     public function handle(): int
     {
@@ -21,13 +21,30 @@ class SyncYppr079Comp extends Command
         $python = $this->detectPython();
         $this->info("Python: {$python}");
 
+        // ✅ Timeout untuk python (argumen ke api.py)
         // 8 jam = 28800 detik
-        $timeoutSeconds = 28800;
+        $pythonTimeoutSeconds = 8 * 3600;
 
-        $cmd = [$python, $apiPath, '--sync_comp', '--timeout', (string) $timeoutSeconds];
+        // ✅ Timeout untuk Symfony Process (Laravel) - dibuat lebih besar dari python supaya tidak memotong duluan
+        // 10 jam = 36000 detik
+        $symfonyTimeoutSeconds = 10 * 3600;
+        //$symfonyTimeoutSeconds = 12 * 3600;
 
-        // Timeout proses Symfony juga 8 jam
-        $process = new SymfonyProcess($cmd, base_path(), null, null, (float) $timeoutSeconds);
+        $cmd = [
+            $python,
+            $apiPath,
+            '--sync_comp',
+            '--timeout',
+            (string) $pythonTimeoutSeconds,
+        ];
+
+        $process = new SymfonyProcess(
+            $cmd,
+            base_path(),  // working directory
+            null,         // env
+            null,         // input
+            (float) $symfonyTimeoutSeconds
+        );
 
         $process->run(function ($type, $buffer) {
             $this->output->write($buffer);
