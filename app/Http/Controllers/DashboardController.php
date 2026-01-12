@@ -100,18 +100,17 @@ class DashboardController extends Controller
      *   ATAU
      * - ada item t1 yang VBELN match dan (t1.IV_AUART_PARAM IN auarts OR t1.AUART2 IN auarts)
      */
-    private function applyAuartT2($query, array $auarts, ?string $werks = null)
+    private function applyAuartT2($query, array $auarts, string $t1Table = 'so_yppr079_t1')
     {
         $auarts = array_values(array_filter($auarts));
         if (empty($auarts)) return $query;
 
-        return $query->where(function ($q) use ($auarts) {
+        return $query->where(function ($q) use ($auarts, $t1Table) {
             $q->whereIn('t2.IV_AUART_PARAM', $auarts)
-            ->orWhereExists(function ($ex) use ($auarts) {
+            ->orWhereExists(function ($ex) use ($auarts, $t1Table) {
                 $ex->select(DB::raw(1))
-                    ->from('so_yppr079_t1 as t1x')
+                    ->from("$t1Table as t1x")
                     ->whereColumn('t1x.VBELN', 't2.VBELN')
-                    // ❌ HAPUS SEMUA FILTER WERKS DI SINI
                     ->where(function ($w) use ($auarts) {
                         $w->whereIn('t1x.IV_AUART_PARAM', $auarts)
                         ->orWhereIn('t1x.AUART2', $auarts);
@@ -120,7 +119,41 @@ class DashboardController extends Controller
         });
     }
 
+    private function t1UniqueSub(string $t1Table, string $qtyOp, array $auartList)
+    {
+        $matnrKeyExpr = "CASE
+            WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR)
+            ELSE TRIM(t1.MATNR)
+        END";
 
+        $q = DB::table("$t1Table as t1")
+            ->whereRaw("CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0");
+
+        if (!empty($auartList)) {
+            $this->applyAuartT1($q, 't1', $auartList);
+        }
+
+        return $q->selectRaw("
+                MAX(t1.id) as id_pick,
+                TRIM(CAST(t1.VBELN AS CHAR)) as VBELN_KEY,
+                LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0') as POSNR_DB,
+                {$matnrKeyExpr} as MATNR_KEY,
+
+                MAX(t1.MAKTX) as MAKTX,
+                MAX(t1.KWMENG) as KWMENG,
+                MAX(t1.QTY_GI) as QTY_GI,
+                MAX(t1.QTY_BALANCE2) as QTY_BALANCE2,
+                MAX(t1.KALAB) as KALAB,
+                MAX(t1.KALAB2) as KALAB2,
+                MAX(t1.NETPR) as NETPR,
+                MAX(t1.WAERK) as WAERK
+            ")
+            ->groupBy(
+                DB::raw("TRIM(CAST(t1.VBELN AS CHAR))"),
+                DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"),
+                DB::raw($matnrKeyExpr)
+            );
+    }
 
     public function index(Request $request)
     {
@@ -213,7 +246,7 @@ class DashboardController extends Controller
             // Logic EXPORT: gabungkan AUART Export asli dan AUART Replace
             $auartToQuery = array_merge($exportAuartCodes, $replaceAuartCodes);
 
-            $this->applyAuartT2($baseQuery, $auartToQuery, $location);
+            $this->applyAuartT2($baseQuery, $auartToQuery); 
         }
         $baseQuery->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc));
 
@@ -601,6 +634,16 @@ class DashboardController extends Controller
         $werks = $req->query('werks');
         $auart = $req->query('auart');
 
+        $mode = strtolower((string) $req->query('mode', session('po_mode', 'outstanding')));
+        if (!in_array($mode, ['outstanding','complete'], true)) $mode = 'outstanding';
+
+        session(['po_mode' => $mode]);
+
+        $t1Table = $mode === 'complete' ? 'so_yppr079_t1_comp' : 'so_yppr079_t1';
+        $t2Table = $mode === 'complete' ? 'so_yppr079_t2_comp' : 'so_yppr079_t2';
+
+        $qtyOp = $mode === 'complete' ? '=' : '>';
+
         if ($kunnr === '') {
             return response()->json(['ok' => false, 'error' => 'kunnr missing'], 400);
         }
@@ -627,7 +670,7 @@ class DashboardController extends Controller
 
         // ====== PRE-AGREGASI (cepat) ======
         // Total nilai & outstanding qty per SO
-        $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
+        $uniqueItemsAgg = DB::table("$t1Table as t1a")
             ->select(
                 't1a.VBELN',
                 't1a.POSNR',
@@ -637,7 +680,7 @@ class DashboardController extends Controller
                 DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
                 DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
             )
-            ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0') // hanya outstanding
+            ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0")
             ->when(!empty($auartList), fn($q) => $this->applyAuartT1($q, 't1a', $auartList))
             ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK', 't1a.IV_WERKS_PARAM');
 
@@ -660,11 +703,11 @@ class DashboardController extends Controller
             ->select('ir.VBELN', DB::raw('COUNT(*) AS po_remark_count'));
 
         // ====== QUERY UTAMA ======
-        $rows = DB::table('so_yppr079_t2 as t2')
+        $rows = DB::table("$t2Table as t2")
             ->leftJoinSub($aggTotals, 'ag', fn($j) => $j->on('ag.VBELN', '=', 't2.VBELN'))
             ->leftJoinSub($remarksBySo, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't2.VBELN'))
             ->when($werks, fn($q) => $q->where('t2.IV_WERKS_PARAM', $werks))
-            ->when(!empty($auartList), fn($q) => $this->applyAuartT2($q, $auartList, $werks))
+            ->when(!empty($auartList), fn($q) => $this->applyAuartT2($q, $auartList, $t1Table))
             // toleransi format KUNNR agar kompatibel dgn data lama
             ->where(function ($q) use ($kunnr) {
                 $q->where('t2.KUNNR', $kunnr)
@@ -727,6 +770,17 @@ class DashboardController extends Controller
 
         $werks = $req->query('werks');
 
+        $mode = strtolower((string) $req->query('mode', session('po_mode', 'outstanding')));
+        if (!in_array($mode, ['outstanding','complete'], true)) $mode = 'outstanding';
+
+        session(['po_mode' => $mode]);
+
+        $t1Table = $mode === 'complete' ? 'so_yppr079_t1_comp' : 'so_yppr079_t1';
+        $t2Table = $mode === 'complete' ? 'so_yppr079_t2_comp' : 'so_yppr079_t2';
+
+        $qtyOp = $mode === 'complete' ? '=' : '>';
+
+
         // ✅ sanitasi auart untuk dipakai sebagai AUART_KEY konstan
         $auartRaw = strtoupper(trim((string) $req->query('auart', '')));
         $auartSan = preg_replace('/[^A-Z0-9_]/', '', $auartRaw);
@@ -765,40 +819,42 @@ class DashboardController extends Controller
                 DB::raw("LPAD(TRIM(CAST(ir.POSNR AS CHAR)), 6, '0')")
             );
 
-        $rows = DB::table('so_yppr079_t1 as t1')
+        $t1u = $this->t1UniqueSub($t1Table, $qtyOp, $auartList);
+
+        $rows = DB::query()
+            ->fromSub($t1u, 't1u')
             ->leftJoin(
-                'so_yppr079_t2 as t2',
+                "$t2Table as t2",
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'),
                 '=',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR))')
+                DB::raw('t1u.VBELN_KEY')
             )
             ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
-                $j->on(DB::raw('TRIM(CAST(ragg.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'))
-                ->on('ragg.POSNR_DB', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
+                $j->on(DB::raw('TRIM(CAST(ragg.VBELN AS CHAR))'), '=', DB::raw('t1u.VBELN_KEY'))
+                ->on('ragg.POSNR_DB', '=', DB::raw('t1u.POSNR_DB'));
             })
+            ->whereRaw('t1u.VBELN_KEY = TRIM(?)', [$vbeln])
+            ->when($werks, fn($q) => $q->where('t2.IV_WERKS_PARAM', $werks))
             ->select(
-                't1.id',
-                DB::raw('TRIM(CAST(t1.VBELN AS CHAR)) as VBELN'),
-                DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
-                DB::raw("CASE WHEN t1.MATNR REGEXP '^[0-9]+$' THEN TRIM(LEADING '0' FROM t1.MATNR) ELSE t1.MATNR END as MATNR"),
-                't1.MAKTX',
-                't1.KWMENG',
-                't1.QTY_GI',
-                't1.QTY_BALANCE2',
-                't1.KALAB',
-                't1.KALAB2',
-                't1.NETPR',
-                't1.WAERK',
-                't2.IV_WERKS_PARAM as WERKS_KEY',
+                DB::raw('t1u.id_pick as id'),
+                DB::raw('t1u.VBELN_KEY as VBELN'),
+                DB::raw("TRIM(LEADING '0' FROM t1u.POSNR_DB) as POSNR"),
+                DB::raw('t1u.MATNR_KEY as MATNR'),
+                't1u.MAKTX',
+                't1u.KWMENG',
+                't1u.QTY_GI',
+                't1u.QTY_BALANCE2',
+                't1u.KALAB',
+                't1u.KALAB2',
+                't1u.NETPR',
+                't1u.WAERK',
+                DB::raw('t2.IV_WERKS_PARAM as WERKS_KEY'),
                 $auartKeySelect,
-                DB::raw("LPAD(TRIM(t1.POSNR), 6, '0') as POSNR_DB"),
+                DB::raw('t1u.POSNR_DB as POSNR_DB'),
                 DB::raw('COALESCE(ragg.remark_count, 0) as remark_count'),
                 DB::raw('ragg.last_remark_at as last_remark_at')
             )
-            ->whereRaw('TRIM(CAST(t1.VBELN AS CHAR)) = TRIM(?)', [$vbeln])
-            ->when($werks, fn($q) => $q->where('t2.IV_WERKS_PARAM', $werks))
-            ->when(!empty($auartList), fn($q) => $this->applyAuartT1($q, 't1', $auartList))
-            ->orderByRaw('CAST(t1.POSNR AS UNSIGNED)')
+            ->orderByRaw('CAST(t1u.POSNR_DB AS UNSIGNED)')
             ->get();
 
         return response()->json(['ok' => true, 'data' => $rows]);
@@ -948,17 +1004,10 @@ class DashboardController extends Controller
 
             // Tambahkan whitelist 'highlight_bstnk' juga (kalau nanti diperlukan)
             $whitelist = [
-                'view',
-                'werks',
-                'auart',
-                'compact',
-                'highlight_kunnr',
-                'highlight_vbeln',
-                'highlight_bstnk',
-                'highlight_posnr',
-                'auto_expand',
-                'location',
-                'type',
+                'view','werks','auart','compact',
+                'highlight_kunnr','highlight_vbeln','highlight_bstnk','highlight_posnr',
+                'auto_expand','location','type',
+                'mode',
             ];
 
             $clean = [];
@@ -986,6 +1035,7 @@ class DashboardController extends Controller
                     'highlight_vbeln'   => $clean['highlight_vbeln'] ?? null,
                     'highlight_posnr'   => $clean['highlight_posnr'] ?? null,
                     'highlight_bstnk'   => $clean['highlight_bstnk'] ?? null,
+                    'mode' => $clean['mode'] ?? null,
                 ], fn($v) => $v !== null && $v !== '');
                 return redirect()->route('po.report', array_merge(['q' => $q], $plain));
             }

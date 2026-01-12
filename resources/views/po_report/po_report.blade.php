@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Outstanding PO')
+@section('title', ($mode ?? 'outstanding') === 'complete' ? 'Complete PO' : 'Outstanding PO')
 
 @section('content')
 
@@ -23,6 +23,7 @@
 
         $locationMap = ['2000' => 'Surabaya', '3000' => 'Semarang'];
         $locName = $locationMap[$werks] ?? $werks;
+        $isCompleteMode = (($mode ?? 'outstanding') === 'complete');
 
         // Helper URL terenkripsi ke /po-report
         $encReport = function (array $params) {
@@ -76,7 +77,8 @@
         data-auart="{{ $auart ?? '' }}" data-is-export="{{ $isExportContext ? 1 : 0 }}" {{-- dipakai autoOpenFromSearch() di JS --}}
         data-auto-expand="{{ !empty($needAutoExpand) ? 1 : 0 }}" data-h-kunnr="{{ $highlightKunnr ?? '' }}"
         data-h-vbeln="{{ $highlightVbeln ?? '' }}" data-h-bstnk="{{ $highlightBstnk ?? '' }}"
-        data-h-posnr="{{ $highlightPosnr ?? '' }}" style="display:none"></div>
+        data-h-posnr="{{ $highlightPosnr ?? '' }}" style="display:none" data-show-charts="{{ !empty($showCharts) ? 1 : 0 }}"
+        data-mode="{{ $mode ?? 'outstanding' }}"></div>
 
 
     {{-- =========================================================
@@ -126,7 +128,12 @@ HEADER: PILIH TYPE + EXPORT
                             @foreach ($pillsToShow as $auartCode => $t)
                                 @php
                                     $isActive = $highlightAuartCode === $auartCode;
-                                    $pillUrl = $encReport(['werks' => $werks, 'auart' => $auartCode, 'compact' => 1]);
+                                    $pillUrl = $encReport([
+                                        'werks' => $werks,
+                                        'auart' => $auartCode,
+                                        'mode'  => ($mode ?? 'outstanding'),
+                                        'compact' => 1
+                                    ]);
 
                                     $description = $t->Deskription;
                                     if (
@@ -198,10 +205,21 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
 
                         <h5 class="yz-table-title mb-0">
-                            <i class="fas fa-file-invoice me-2"></i>Outstanding PO
+                            <i class="fas fa-file-invoice me-2"></i>{{ ($mode ?? 'outstanding') === 'complete' ? 'Complete PO' : 'Outstanding PO' }}
                         </h5>
 
                         <div class="d-flex align-items-center gap-3 flex-wrap">
+
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Mode">
+                                <a class="btn {{ ($mode ?? 'outstanding') === 'outstanding' ? 'btn-primary' : 'btn-outline-primary' }}"
+                                href="{{ $encReport(['werks' => $werks, 'auart' => $auart, 'mode' => 'outstanding', 'compact' => 1]) }}">
+                                    Outstanding
+                                </a>
+                                <a class="btn {{ ($mode ?? 'outstanding') === 'complete' ? 'btn-primary' : 'btn-outline-primary' }}"
+                                href="{{ $encReport(['werks' => $werks, 'auart' => $auart, 'mode' => 'complete', 'compact' => 1]) }}">
+                                    Complete
+                                </a>
+                            </div>
 
                             {{-- PENCARIAN LANGSUNG ITEM (GLOBAL, PAKAI API) --}}
                             <div class="d-flex flex-column" style="max-width: 360px;">
@@ -260,7 +278,7 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                     $overdueValueUSD > 0 || $overdueValueIDR > 0 ? 'text-danger' : 'text-success';
 
                                 $isOverdue = $totalOverduePO > 0;
-                                $highlightClass = $isOverdue ? 'yz-customer-card-overdue' : '';
+                                $highlightClass = (!$isCompleteMode && $isOverdue) ? 'yz-customer-card-overdue' : '';
                             @endphp
 
                             {{-- Custom Card Row --}}
@@ -282,37 +300,39 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                     </div>
 
                                     {{-- KANAN: Metrik & Nilai --}}
-                                    <div id="metric-columns"
-                                        class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
+                                    <div id="metric-columns" class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
 
-                                        {{-- Total PO Count --}}
+                                        {{-- Total PO Count (selalu tampil) --}}
                                         <div class="metric-box mx-4" style="min-width: 100px;">
                                             <div class="metric-value fs-4 fw-bold text-primary text-end">
-                                                {{ number_format($totalPO, 0, ',', '.') }}</div>
+                                                {{ number_format($totalPO, 0, ',', '.') }}
+                                            </div>
                                             <div class="metric-label text-end">Total PO</div>
                                         </div>
 
-                                        {{-- Overdue PO Count with Visual Indicator --}}
-                                        <div class="metric-box mx-4" style="min-width: 100px;">
-                                            <div
-                                                class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
-                                                {{ number_format($totalOverduePO, 0, ',', '.') }}</div>
-                                            <div class="metric-label text-end">Overdue PO</div>
-                                        </div>
-
-                                        {{-- Outstanding Value --}}
-                                        <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fs-4 fw-bold text-dark">{{ $displayOutsValue }}</div>
-                                            <div class="metric-label">Outstanding Value</div>
-                                        </div>
-
-                                        {{-- Overdue Value --}}
-                                        <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                            <div class="metric-value fs-4 fw-bold {{ $overdueValueStyle }}">
-                                                {{ $displayOverdueValue }}
+                                        @if(!$isCompleteMode)
+                                            {{-- Overdue PO Count --}}
+                                            <div class="metric-box mx-4" style="min-width: 100px;">
+                                                <div class="metric-value fs-4 fw-bold {{ $isOverdue ? 'text-danger' : 'text-success' }} text-end">
+                                                    {{ number_format($totalOverduePO, 0, ',', '.') }}
+                                                </div>
+                                                <div class="metric-label text-end">Overdue PO</div>
                                             </div>
-                                            <div class="metric-label">Overdue Value</div>
-                                        </div>
+
+                                            {{-- Outstanding Value --}}
+                                            <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                                <div class="metric-value fs-4 fw-bold text-dark">{{ $displayOutsValue }}</div>
+                                                <div class="metric-label">Outstanding Value</div>
+                                            </div>
+
+                                            {{-- Overdue Value --}}
+                                            <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                                <div class="metric-value fs-4 fw-bold {{ $overdueValueStyle }}">
+                                                    {{ $displayOverdueValue }}
+                                                </div>
+                                                <div class="metric-label">Overdue Value</div>
+                                            </div>
+                                        @endif
 
                                     </div>
                                 </div>
@@ -347,33 +367,27 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
                                 class="d-flex align-items-center text-center flex-wrap flex-md-nowrap">
 
                                 {{-- Total PO Count --}}
-                                <div class="metric-box mx-4"
-                                    style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
-                                    <div class="fw-bold fs-4 text-primary text-end">
-                                        {{ number_format($totalSO, 0, ',', '.') }}</div>
+                                <div class="metric-box mx-4" style="min-width: 100px; border-left: none !important; padding-left: 0 !important;">
+                                    <div class="fw-bold fs-4 text-primary text-end">{{ number_format($totalSO, 0, ',', '.') }}</div>
                                     <div class="text-end">Total PO Count</div>
                                 </div>
 
-                                {{-- Total Overdue PO --}}
-                                <div class="metric-box mx-4" style="min-width: 100px;">
-                                    <div class="fw-bold fs-4 text-danger text-end">
-                                        {{ number_format($totalOverdueSO, 0, ',', '.') }}
+                                @if(!$isCompleteMode)
+                                    <div class="metric-box mx-4" style="min-width: 100px;">
+                                        <div class="fw-bold fs-4 text-danger text-end">{{ number_format($totalOverdueSO, 0, ',', '.') }}</div>
+                                        <div class="text-end">Total Overdue PO</div>
                                     </div>
-                                    <div class="text-end">Total Overdue PO</div>
-                                </div>
 
-                                {{-- Total Outs. Value --}}
-                                <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold fs-4 text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
-                                    <div class="metric-label">Total Outs. Value</div>
-                                </div>
-
-                                {{-- Total Overdue Value --}}
-                                <div class="metric-box mx-4 text-end" style="min-width: 180px;">
-                                    <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}
+                                    <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                        <div class="fw-bold fs-4 text-dark">{{ $formatTotals($pageTotalsAll ?? []) }}</div>
+                                        <div class="metric-label">Total Outs. Value</div>
                                     </div>
-                                    <div class="metric-label">Total Overdue Value</div>
-                                </div>
+
+                                    <div class="metric-box mx-4 text-end" style="min-width: 180px;">
+                                        <div class="fw-bold fs-4 text-danger">{{ $formatTotals($pageTotalsOverdue ?? []) }}</div>
+                                        <div class="metric-label">Total Overdue Value</div>
+                                    </div>
+                                @endif
 
                             </div>
                         </div>
@@ -383,11 +397,6 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
             </div>
         </div>
 
-        @if (method_exists($rows, 'hasPages') && $rows->hasPages())
-            <div class="px-3 pt-3">
-                {{ $rows->onEachSide(1)->links('pagination::bootstrap-5') }}
-            </div>
-        @endif
     @elseif ($onlyWerksSelected)
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-2"></i>
@@ -400,203 +409,206 @@ A. MODE TABEL (LAPORAN PO) - MENGGUNAKAN DESAIN SO CARD-ROW
         </div>
     @endif
 
-    {{-- =========================================================
-    B. KPI: Outstanding PO Distribution
-    ========================================================= --}}
-    <div class="row g-4 mb-4">
-        <div class="col-12">
-            <div class="card shadow-sm yz-chart-card position-relative">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <h5 class="card-title mb-0" data-help-key="po.performance_details">
-                                <i class="fas fa-tasks me-1"></i>Outstanding PO Distribution
-                            </h5>
+    @if(!empty($showCharts) && $show)
+        {{-- =========================================================
+        B. KPI: Outstanding PO Distribution
+        ========================================================= --}}
+        <div class="row g-4 mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm yz-chart-card position-relative" id="performance-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h5 class="card-title mb-0" data-help-key="po.performance_details">
+                                    <i class="fas fa-tasks me-1"></i>Outstanding PO Distribution
+                                </h5>
+                            </div>
+                            <div class="d-flex flex-wrap justify-content-end align-items-center"
+                                style="gap: 8px; flex-shrink: 0; margin-left: 1rem;">
+                                <span class="legend-badge" style="background-color: #198754;">On-Track</span>
+                                <span class="legend-badge" style="background-color: #ffc107;">1-30</span>
+                                <span class="legend-badge" style="background-color: #fd7e14;">31-60</span>
+                                <span class="legend-badge" style="background-color: #dc3545;">61-90</span>
+                                <span class="legend-badge" style="background-color: #8b0000;">&gt;90</span>
+                            </div>
                         </div>
-                        <div class="d-flex flex-wrap justify-content-end align-items-center"
-                            style="gap: 8px; flex-shrink: 0; margin-left: 1rem;">
-                            <span class="legend-badge" style="background-color: #198754;">On-Track</span>
-                            <span class="legend-badge" style="background-color: #ffc107;">1-30</span>
-                            <span class="legend-badge" style="background-color: #fd7e14;">31-60</span>
-                            <span class="legend-badge" style="background-color: #dc3545;">61-90</span>
-                            <span class="legend-badge" style="background-color: #8b0000;">&gt;90</span>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light" id="performance-table-header">
+                                    <tr>
+                                        <th scope="col" class="text-center">Distribution
+                                            (Days)
+                                            <small class="text-muted d-block">(On-Track & Overdue)</small>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="performance-table-body">
+                                    @forelse ($performanceData as $item)
+                                        @php
+                                            $totalSo = (int) $item->total_so;
+                                            $overdueSo = (int) $item->overdue_so_count;
+                                            $onTrackSo = $totalSo - $overdueSo;
+                                            $totalSoForBar = $totalSo;
+
+                                            $werks_code = $item->IV_WERKS;
+                                            $auart_code = $item->IV_AUART;
+                                            $pct = fn($n) => $totalSoForBar > 0 ? ($n / $totalSoForBar) * 100 : 0;
+
+                                            $seg = function ($count, $percent, $color, $bucket, $textTitle) use (
+                                                $werks_code,
+                                                $auart_code,
+                                            ) {
+                                                if (!$count) {
+                                                    return '';
+                                                }
+                                                return '<div class="bar-segment js-distribution-seg"
+                                                    data-werks="' .
+                                                    $werks_code .
+                                                    '"
+                                                    data-auart="' .
+                                                    $auart_code .
+                                                    '"
+                                                    data-bucket="' .
+                                                    $bucket .
+                                                    '"
+                                                    style="width:' .
+                                                    $percent .
+                                                    '%;background-color:' .
+                                                    $color .
+                                                    ';' .
+                                                    ($bucket !== 'on_track' ? 'cursor:pointer' : '') .
+                                                    '"
+                                                    data-bs-toggle="tooltip"
+                                                    title="' .
+                                                    $textTitle .
+                                                    ': ' .
+                                                    $count .
+                                                    ' PO">' .
+                                                    $count .
+                                                    '</div>';
+                                            };
+
+                                            $barChartHtml = '<div class="bar-chart-container">';
+                                            $barChartHtml .= $seg(
+                                                $onTrackSo,
+                                                $pct($onTrackSo),
+                                                '#198754',
+                                                'on_track',
+                                                'On-Track',
+                                            );
+                                            $barChartHtml .= $seg(
+                                                $item->overdue_1_30,
+                                                $pct($item->overdue_1_30),
+                                                '#ffc107',
+                                                '1_30',
+                                                '1–30 Days',
+                                            );
+                                            $barChartHtml .= $seg(
+                                                $item->overdue_31_60,
+                                                $pct($item->overdue_31_60),
+                                                '#fd7e14',
+                                                '31_60',
+                                                '31–60 Days',
+                                            );
+                                            $barChartHtml .= $seg(
+                                                $item->overdue_61_90,
+                                                $pct($item->overdue_61_90),
+                                                '#dc3545',
+                                                '61_90',
+                                                '61–90 Days',
+                                            );
+                                            $barChartHtml .= $seg(
+                                                $item->overdue_over_90,
+                                                $pct($item->overdue_over_90),
+                                                '#8b0000',
+                                                'gt_90',
+                                                '>90 Days',
+                                            );
+                                            $barChartHtml .= '</div>';
+                                        @endphp
+                                        <tr>
+                                            <td>
+                                                {!! $totalSoForBar > 0 ? $barChartHtml : '<span class="text-muted small">Tidak ada PO Outstanding</span>' !!}
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            {{-- Colspan DIUBAH MENJADI 1 --}}
+                                            <td colspan="1" class="text-center p-3 text-muted">
+                                                Tidak ada data performa untuk filter ini.
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
                         </div>
+
                     </div>
-
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light" id="performance-table-header">
-                                <tr>
-                                    <th scope="col" class="text-center">Distribution
-                                        (Days)
-                                        <small class="text-muted d-block">(On-Track & Overdue)</small>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody id="performance-table-body">
-                                @forelse ($performanceData as $item)
-                                    @php
-                                        $totalSo = (int) $item->total_so;
-                                        $overdueSo = (int) $item->overdue_so_count;
-                                        $onTrackSo = $totalSo - $overdueSo;
-                                        $totalSoForBar = $totalSo;
-
-                                        $werks_code = $item->IV_WERKS;
-                                        $auart_code = $item->IV_AUART;
-                                        $pct = fn($n) => $totalSoForBar > 0 ? ($n / $totalSoForBar) * 100 : 0;
-
-                                        $seg = function ($count, $percent, $color, $bucket, $textTitle) use (
-                                            $werks_code,
-                                            $auart_code,
-                                        ) {
-                                            if (!$count) {
-                                                return '';
-                                            }
-                                            return '<div class="bar-segment js-distribution-seg"
-                                                data-werks="' .
-                                                $werks_code .
-                                                '"
-                                                data-auart="' .
-                                                $auart_code .
-                                                '"
-                                                data-bucket="' .
-                                                $bucket .
-                                                '"
-                                                style="width:' .
-                                                $percent .
-                                                '%;background-color:' .
-                                                $color .
-                                                ';' .
-                                                ($bucket !== 'on_track' ? 'cursor:pointer' : '') .
-                                                '"
-                                                data-bs-toggle="tooltip"
-                                                title="' .
-                                                $textTitle .
-                                                ': ' .
-                                                $count .
-                                                ' PO">' .
-                                                $count .
-                                                '</div>';
-                                        };
-
-                                        $barChartHtml = '<div class="bar-chart-container">';
-                                        $barChartHtml .= $seg(
-                                            $onTrackSo,
-                                            $pct($onTrackSo),
-                                            '#198754',
-                                            'on_track',
-                                            'On-Track',
-                                        );
-                                        $barChartHtml .= $seg(
-                                            $item->overdue_1_30,
-                                            $pct($item->overdue_1_30),
-                                            '#ffc107',
-                                            '1_30',
-                                            '1–30 Days',
-                                        );
-                                        $barChartHtml .= $seg(
-                                            $item->overdue_31_60,
-                                            $pct($item->overdue_31_60),
-                                            '#fd7e14',
-                                            '31_60',
-                                            '31–60 Days',
-                                        );
-                                        $barChartHtml .= $seg(
-                                            $item->overdue_61_90,
-                                            $pct($item->overdue_61_90),
-                                            '#dc3545',
-                                            '61_90',
-                                            '61–90 Days',
-                                        );
-                                        $barChartHtml .= $seg(
-                                            $item->overdue_over_90,
-                                            $pct($item->overdue_over_90),
-                                            '#8b0000',
-                                            'gt_90',
-                                            '>90 Days',
-                                        );
-                                        $barChartHtml .= '</div>';
-                                    @endphp
-                                    <tr>
-                                        <td>
-                                            {!! $totalSoForBar > 0 ? $barChartHtml : '<span class="text-muted small">Tidak ada PO Outstanding</span>' !!}
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        {{-- Colspan DIUBAH MENJADI 1 --}}
-                                        <td colspan="1" class="text-center p-3 text-muted">
-                                            Tidak ada data performa untuk filter ini.
-                                        </td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-
                 </div>
             </div>
         </div>
-    </div>
-
+    @endif
     {{-- =========================================================
     C. KPI: Small Quantity (≤5) Outstanding Items by Customer
     ========================================================= --}}
     {{-- Memberi ID pada row luar agar mudah disembunyikan/ditampilkan --}}
-    <div class="row g-4" id="small-qty-section">
-        <div class="col-12">
-            <div class="card shadow-sm yz-chart-card">
-                <div class="card-body">
-                    <h5 class="card-title text-info-emphasis" id="small-qty-chart-title"
-                        data-help-key="po.small_qty_by_customer">
-                        <i class="fas fa-chart-line me-2"></i>Small Quantity (≤5)
-                        Outstanding Items by Customer
-                        @if ($totalSmallQtyOutstanding > 0)
-                            <small class="text-muted ms-2" id="small-qty-total-item">
-                                (Total Item: {{ number_format($totalSmallQtyOutstanding, 0, ',', '.') }})
-                            </small>
-                        @endif
-                    </h5>
-                    <hr class="mt-2">
-                    <div class="chart-container" style="height: 600px;">
-                        <canvas id="chartSmallQtyByCustomer"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Overlay detail + Export PDF --}}
-            <div id="smallQtyDetailsContainer" class="card shadow-sm yz-chart-card mt-4" style="display: none;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0 text-primary-emphasis">
-                            <i class="fas fa-list-ol me-2"></i>
-                            <span id="smallQtyDetailsTitle">Detail Item Outstanding </span>
-                            <small id="smallQtyMeta" class="text-muted ms-2"></small>
+    @if(!empty($showCharts) && $show)
+        <div class="row g-4" id="small-qty-section">
+            <div class="col-12">
+                <div class="card shadow-sm yz-chart-card">
+                    <div class="card-body">
+                        <h5 class="card-title text-info-emphasis" id="small-qty-chart-title"
+                            data-help-key="po.small_qty_by_customer">
+                            <i class="fas fa-chart-line me-2"></i>Small Quantity (≤5)
+                            Outstanding Items by Customer
+                            @if ($totalSmallQtyOutstanding > 0)
+                                <small class="text-muted ms-2" id="small-qty-total-item">
+                                    (Total Item: {{ number_format($totalSmallQtyOutstanding, 0, ',', '.') }})
+                                </small>
+                            @endif
                         </h5>
-
-                        <div class="d-flex align-items-center gap-2">
-                            {{-- tombol export PDF --}}
-                            <button type="button" class="btn btn-sm btn-outline-danger" id="exportSmallQtyPdf" disabled>
-                                <i class="fas fa-file-pdf me-1"></i> Export PDF
-                            </button>
-                            {{-- tombol close --}}
-                            <button type="button" class="btn-close" id="closeDetailsTable" aria-label="Close"></button>
+                        <hr class="mt-2">
+                        <div class="chart-container" style="height: 600px;">
+                            <canvas id="chartSmallQtyByCustomer"></canvas>
                         </div>
                     </div>
-                    <hr class="mt-2">
-                    <div id="smallQtyDetailsTable" class="mt-3"></div>
                 </div>
-                <form id="smallQtyExportForm" action="{{ route('dashboard.export.smallQtyPdf') }}" method="POST"
-                    target="_blank" class="d-none">
-                    @csrf
-                    <input type="hidden" name="customerName" id="exp_customerName">
-                    <input type="hidden" name="locationName" id="exp_locationName">
-                    <input type="hidden" name="type" id="exp_type">
-                    <input type="hidden" name="auart" id="exp_auart"> {{-- Tambahkan field AUART --}}
-                </form>
+
+                {{-- Overlay detail + Export PDF --}}
+                <div id="smallQtyDetailsContainer" class="card shadow-sm yz-chart-card mt-4" style="display: none;">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0 text-primary-emphasis">
+                                <i class="fas fa-list-ol me-2"></i>
+                                <span id="smallQtyDetailsTitle">Detail Item Outstanding </span>
+                                <small id="smallQtyMeta" class="text-muted ms-2"></small>
+                            </h5>
+
+                            <div class="d-flex align-items-center gap-2">
+                                {{-- tombol export PDF --}}
+                                <button type="button" class="btn btn-sm btn-outline-danger" id="exportSmallQtyPdf" disabled>
+                                    <i class="fas fa-file-pdf me-1"></i> Export PDF
+                                </button>
+                                {{-- tombol close --}}
+                                <button type="button" class="btn-close" id="closeDetailsTable" aria-label="Close"></button>
+                            </div>
+                        </div>
+                        <hr class="mt-2">
+                        <div id="smallQtyDetailsTable" class="mt-3"></div>
+                    </div>
+                    <form id="smallQtyExportForm" action="{{ route('dashboard.export.smallQtyPdf') }}" method="POST"
+                        target="_blank" class="d-none">
+                        @csrf
+                        <input type="hidden" name="customerName" id="exp_customerName">
+                        <input type="hidden" name="locationName" id="exp_locationName">
+                        <input type="hidden" name="type" id="exp_type">
+                        <input type="hidden" name="auart" id="exp_auart"> {{-- Tambahkan field AUART --}}
+                    </form>
+                </div>
             </div>
         </div>
-    </div>
+    @endif
 
 
     {{-- =========================================================
@@ -895,6 +907,11 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
 
         // Helper kecil
         const wait = (ms) => new Promise(res => setTimeout(res, ms));
+        const getMode = () => {
+            const root = document.getElementById('yz-root');
+            const m = (root?.dataset?.mode || 'outstanding').toString().toLowerCase();
+            return (m === 'complete') ? 'complete' : 'outstanding';
+        };
         const scrollAndFlash = (el) => {
             if (!el) return;
             try {
@@ -1437,6 +1454,9 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         // Ganti fungsi renderT2 (tidak mengubah logika lain)
         function renderT2(rows, kunnr) {
             if (!rows?.length) return `<div class="p-3 text-muted">Tidak ada data PO untuk KUNNR <b>${kunnr}</b>.</div>`;
+
+            const isCompleteMode = (getMode() === 'complete');
+            const T2_COLS = isCompleteMode ? 6 : 8; // 6 kolom (tanpa outs qty/value), 8 kolom normal
             const totalOutsQtyT2 = rows.reduce((sum, r) => sum + parseFloat(r.outs_qty ?? r.OUTS_QTY ?? 0), 0);
 
             const sortedRows = [...rows].sort((a, b) => {
@@ -1448,29 +1468,33 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             });
 
             let html = `
-<div class="table-responsive" style="width:100%">
-    <table class="table table-sm mb-0 yz-mini">
-        <thead class="yz-header-so">
-            <tr>
-                <th style="width:40px" class="text-center">
-                    <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua PO"
-                        onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
-                </th>
-                <th style="width:40px;text-align:center;">
-                    <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
-                        <span class="yz-collapse-caret">▸</span>
-                    </button>
-                </th>
-                {{-- GABUNGKAN PO/SO & STATUS --}}
-                <th class="text-start" style="min-width: 250px;">PO & Status</th>
-                <th class="text-start">SO</th>
-                <th class="text-center">Req. Deliv. Date</th>
-                <th class="text-center">Outs. Qty</th>
-                <th class="text-center">Outs. Value</th>
-                <th style="width:28px;"></th>
-            </tr>
-        </thead>
-        <tbody>`;
+                <div class="table-responsive" style="width:100%">
+                <table class="table table-sm mb-0 yz-mini">
+                    <thead class="yz-header-so">
+                    <tr>
+                        <th style="width:40px" class="text-center">
+                        <input type="checkbox" class="form-check-input check-all-sos" title="Pilih semua PO"
+                            onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+                        </th>
+                        <th style="width:40px;text-align:center;">
+                        <button type="button" class="btn btn-sm btn-light js-collapse-toggle" title="Mode Kolaps/Fokus">
+                            <span class="yz-collapse-caret">▸</span>
+                        </button>
+                        </th>
+
+                        <th class="text-start" style="min-width: 250px;">PO & Status</th>
+                        <th class="text-start">SO</th>
+                        <th class="text-center">Req. Deliv. Date</th>
+
+                        ${isCompleteMode ? '' : `
+                        <th class="text-center">Outs. Qty</th>
+                        <th class="text-center">Outs. Value</th>
+                        `}
+
+                        <th style="width:28px;"></th>
+                    </tr>
+                    </thead>
+                    <tbody>`;
 
             sortedRows.forEach((r, i) => {
                 const rid = `t3_${kunnr}_${r.VBELN}_${i}`;
@@ -1480,69 +1504,75 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 const outsQty = r.outs_qty ?? r.OUTS_QTY ?? 0;
                 const totalVal = r.total_value ?? r.TOTPR ?? 0;
 
-                let overdueBadge = '';
-                if (overdueDays > 0) {
-                    overdueBadge =
-                        `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
-                } else if (overdueDays < 0) {
-                    overdueBadge =
-                        `<span class="overdue-badge-bubble bubble-track" title="${Math.abs(overdueDays)} hari tersisa">-${Math.abs(overdueDays)} DAYS LEFT</span>`;
+                let statusBadge = '';
+
+                if (isCompleteMode) {
+                    // status saja
+                    statusBadge = `<span class="overdue-badge-bubble bubble-track" title="Status">COMPLETE</span>`;
                 } else {
-                    overdueBadge =
-                        `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
+                    // mode outstanding (tetap pakai days late/left/today)
+                    if (overdueDays > 0) {
+                        statusBadge = `<span class="overdue-badge-bubble bubble-late" title="${overdueDays} hari terlambat">${overdueDays} DAYS LATE</span>`;
+                    } else if (overdueDays < 0) {
+                        statusBadge = `<span class="overdue-badge-bubble bubble-track" title="${Math.abs(overdueDays)} hari tersisa">-${Math.abs(overdueDays)} DAYS LEFT</span>`;
+                    } else {
+                        statusBadge = `<span class="overdue-badge-bubble bubble-today" title="Jatuh tempo hari ini">TODAY</span>`;
+                    }
                 }
 
                 const hasRemark = Number(r.po_remark_count || 0) > 0;
 
                 html += `
-            <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}" title="Klik untuk melihat item detail">
-                <td class="text-center">
-                    <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"
+                    <tr class="yz-row js-t2row ${rowCls}" data-vbeln="${r.VBELN}" data-tgt="${rid}" title="Klik untuk melihat item detail">
+                    <td class="text-center">
+                        <input type="checkbox" class="form-check-input check-so" data-vbeln="${r.VBELN}"
                         onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
-                </td>
-                <td class="text-center"><span class="yz-caret">▸</span></td>
-                
-                {{-- KOLOM PO & STATUS --}}
-                <td class="text-start">
-                    <div class="fw-bold text-primary mb-1">${r.BSTNK ?? ''}</div>
-                    ${overdueBadge}
-                </td>
-                
-                {{-- KOLOM SO --}}
-                <td class="yz-t2-vbeln text-start fw-bold text-primary">${r.VBELN}</td>
-                
-                <td class="text-center fw-bold">${edatu}</td>
-                <td class="text-center fw-bold">${fmtNum(outsQty)}</td>
-                <td class="text-center fw-bold">${fmtMoney(totalVal, r.WAERK)}</td>
-                
-                {{-- ICON REMARK PO --}}
-                <td class="text-center">
-                    <i class="fas fa-pencil-alt po-remark-flag ${hasRemark?'active':''}"
-                       title="Ada item yang diberi catatan"
-                       style="display:${hasRemark?'inline-block':'none'};"></i>
-                    <span class="po-selected-dot"></span>
-                </td>
-            </tr>
-            <tr id="${rid}" class="yz-nest" style="display:none;">
-                <td colspan="8" class="p-0">
-                    <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
+                    </td>
+                    <td class="text-center"><span class="yz-caret">▸</span></td>
+
+                    <td class="text-start">
+                        <div class="fw-bold text-primary mb-1">${r.BSTNK ?? ''}</div>
+                        ${statusBadge}
+                    </td>
+
+                    <td class="yz-t2-vbeln text-start fw-bold text-primary">${r.VBELN}</td>
+                    <td class="text-center fw-bold">${edatu}</td>
+
+                    ${isCompleteMode ? '' : `
+                        <td class="text-center fw-bold">${fmtNum(outsQty)}</td>
+                        <td class="text-center fw-bold">${fmtMoney(totalVal, r.WAERK)}</td>
+                    `}
+
+                    <td class="text-center">
+                        <i class="fas fa-pencil-alt po-remark-flag ${hasRemark?'active':''}"
+                        title="Ada item yang diberi catatan"
+                        style="display:${hasRemark?'inline-block':'none'};"></i>
+                        <span class="po-selected-dot"></span>
+                    </td>
+                    </tr>
+
+                    <tr id="${rid}" class="yz-nest" style="display:none;">
+                    <td colspan="${T2_COLS}" class="p-0">
+                        <div class="yz-nest-wrap level-2" style="margin-left:0;padding:.5rem;">
                         <div class="yz-slot-t3 p-2"></div>
-                    </div>
-                </td>
-            </tr>`;
+                        </div>
+                    </td>
+                    </tr>`;
             });
 
             html += `
-        </tbody>
-        <tfoot class="t2-footer">
+            </tbody>
+            ${isCompleteMode ? '' : `
+            <tfoot class="t2-footer">
             <tr class="table-light yz-t2-total-outs" style="background-color: #e9ecef;">
                 <th colspan="5" class="text-end">Total Outstanding Qty</th>
                 <th class="text-center fw-bold">${fmtNum(totalOutsQtyT2)}</th>
                 <th colspan="2"></th>
             </tr>
-        </tfoot>
-    </table>
-</div>`;
+            </tfoot>
+            `}
+            </table>
+            </div>`;
             return html;
         }
 
@@ -1723,8 +1753,13 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             const tableBody = document.getElementById('performance-table-body');
             const tableHeader = document.getElementById('performance-table-header');
 
+            if (!tableBody || !tableHeader) {
+                // KPI section tidak ada di halaman ini (mis. page=2 / charts dimatikan)
+                return;
+            }
+
             const newTitleText = 'Outstanding PO Distribution';
-            const titleContainer = document.querySelector('.yz-chart-card .card-title');
+            const titleContainer = document.querySelector('#performance-card .card-title');
             if (titleContainer) {
                 let innerHtml = `<i class="fas fa-tasks me-2"></i>${newTitleText}`;
                 if (customerName) innerHtml += ` <small class="text-primary fw-bold">(${customerName})</small>`;
@@ -1777,7 +1812,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
         async function showSmallQtyDetails(customerName, locationName) {
             const root = document.getElementById('yz-root');
             const currentAuart = (root.dataset.auart || '').trim();
-            const exportType = currentAuart.toLowerCase().includes('export') ? 'export' : 'lokal';
+            const exportType = (root.dataset.isExport === '1') ? 'export' : 'lokal';
 
             // Sembunyikan chart, tampilkan kartu detail
             if (smallQtyChartContainer) smallQtyChartContainer.style.display = 'none';
@@ -2133,6 +2168,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             u3.searchParams.set('vbeln', vbeln);
             if (WERKS) u3.searchParams.set('werks', WERKS);
             if (AUART) u3.searchParams.set('auart', AUART);
+            u3.searchParams.set('mode', getMode());
 
             try {
                 const r3 = await fetch(u3);
@@ -2306,6 +2342,7 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                 u3.searchParams.set('vbeln', vbeln);
                 if (WERKS) u3.searchParams.set('werks', WERKS);
                 if (AUART) u3.searchParams.set('auart', AUART);
+                u3.searchParams.set('mode', getMode());
 
                 try {
                     const r3 = await fetch(u3);
@@ -2381,9 +2418,11 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
                     }
                     const tr = document.createElement('tr');
                     tr.className = 'yz-empty-selected-row';
-                    tr.innerHTML = `<td colspan="8" class="text-center p-3 text-muted">
-Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
-</td>`;
+                    const colCount = tbodyEl.closest('table')?.querySelectorAll('thead tr th')?.length || 8;
+
+                    tr.innerHTML = `<td colspan="${colCount}" class="text-center p-3 text-muted">
+                    Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
+                    </td>`;
                     tbodyEl.appendChild(tr);
                 }
             } else {
@@ -2502,6 +2541,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                                 if (WERKS) u3.searchParams.set('werks', WERKS);
                                 if (AUART) u3.searchParams.set('auart', AUART);
                                 u3.searchParams.set('vbeln', vbeln);
+                                u3.searchParams.set('mode', getMode());
 
                                 const r3 = await fetch(u3);
                                 const j3 = await r3.json();
@@ -2560,6 +2600,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                             if (WERKS) u3.searchParams.set('werks', WERKS);
                             if (AUART) u3.searchParams.set('auart', AUART);
                             u3.searchParams.set('vbeln', vbeln);
+                            u3.searchParams.set('mode', getMode());
 
                             const r3 = await fetch(u3);
                             const j3 = await r3.json();
@@ -2644,6 +2685,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
             const root = document.getElementById('yz-root');
             const showTable = root ? !!parseInt(root.dataset.show) : false;
+            const SHOW_CHARTS = !!parseInt(root.dataset.showCharts || '0');
             if (!showTable) return;
 
             const apiT2 = "{{ route('dashboard.api.t2') }}";
@@ -2774,6 +2816,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     const root = document.getElementById('yz-root');
                     const WERKS = (root.dataset.werks || '').trim();
                     const AUART = (root.dataset.auart || '').trim();
+                    url.searchParams.set('mode', getMode());
                     url.searchParams.set('kunnr', kunnr);
                     if (WERKS) url.searchParams.set('werks', WERKS);
                     if (AUART) url.searchParams.set('auart', AUART);
@@ -2948,46 +2991,52 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         activeCustomerName = customerName;
                         COLLAPSE_MODE = false;
 
-                        const performanceTableBody = document.getElementById(
-                            'performance-table-body');
-                        if (performanceTableBody && WERKS && AUART) {
-                            performanceTableBody.innerHTML = `
-                                <tr>
-                                    <td colspan="1" class="text-center p-3 text-muted">
-                                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data performa untuk ${customerName}...
-                                    </td>
-                                </tr>`;
-                            try {
-                                const perfUrl = new URL(apiPerformanceByCustomer, window
-                                    .location.origin);
-                                perfUrl.searchParams.set('werks', WERKS);
-                                perfUrl.searchParams.set('auart', AUART);
-                                perfUrl.searchParams.set('kunnr', kunnr);
-                                const res = await fetch(perfUrl);
-                                const js = await res.json();
-                                if (!res.ok || !js.ok) throw new Error(js.error ||
-                                    'Gagal memuat data performa customer.');
-                                renderPerformanceTable(js.data, js.customer_name, js
-                                    .is_export_context);
-                            } catch (err) {
+                        if (SHOW_CHARTS) {
+                            const performanceTableBody = document.getElementById(
+                                'performance-table-body');
+                            if (performanceTableBody && WERKS && AUART) {
                                 performanceTableBody.innerHTML = `
                                     <tr>
-                                        <td colspan="1" class="text-center p-3 text-danger">
-                                            <i class="fas fa-exclamation-triangle me-2"></i> ${err.message}
+                                        <td colspan="1" class="text-center p-3 text-muted">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data performa untuk ${customerName}...
                                         </td>
                                     </tr>`;
+                                try {
+                                    const perfUrl = new URL(apiPerformanceByCustomer, window
+                                        .location.origin);
+                                    perfUrl.searchParams.set('werks', WERKS);
+                                    perfUrl.searchParams.set('auart', AUART);
+                                    perfUrl.searchParams.set('kunnr', kunnr);
+                                    const res = await fetch(perfUrl);
+                                    const js = await res.json();
+                                    if (!res.ok || !js.ok) throw new Error(js.error ||
+                                        'Gagal memuat data performa customer.');
+                                    renderPerformanceTable(js.data, js.customer_name, js
+                                        .is_export_context);
+                                } catch (err) {
+                                    performanceTableBody.innerHTML = `
+                                        <tr>
+                                            <td colspan="1" class="text-center p-3 text-danger">
+                                                <i class="fas fa-exclamation-triangle me-2"></i> ${err.message}
+                                            </td>
+                                        </tr>`;
+                                }
                             }
                         }
 
-                        const hasSmallQtyData = defaultSmallQtyDataRaw.some(item => item
-                            .NAME1 === customerName);
-                        const smallQtySection = document.getElementById('small-qty-section');
-                        if (smallQtySection) smallQtySection.style.display = hasSmallQtyData ?
-                            '' : 'none';
-                        if (hasSmallQtyData) {
+                        let hasSmallQtyData = false;
+                        if (SHOW_CHARTS) {
+                            hasSmallQtyData = defaultSmallQtyDataRaw.some(item => item.NAME1 === customerName);
+
+                            const smallQtySection = document.getElementById('small-qty-section');
+                            if (smallQtySection) smallQtySection.style.display = hasSmallQtyData ? '' : 'none';
+
+                            // Kalau ada datanya, boleh langsung tampilkan detail
+                            if (hasSmallQtyData) {
                             showSmallQtyDetails(customerName, locationName);
-                        } else if (smallQtyDetailsContainer) {
+                            } else if (smallQtyDetailsContainer) {
                             smallQtyDetailsContainer.style.display = 'none';
+                            }
                         }
                     } else {
                         customerListContainer.classList.remove('customer-focus-mode');
@@ -3043,6 +3092,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                         url.searchParams.set('kunnr', kunnr);
                         if (WERKS) url.searchParams.set('werks', WERKS);
                         if (AUART) url.searchParams.set('auart', AUART);
+                        url.searchParams.set('mode', getMode());
 
                         const res = await fetch(url);
                         const js = await res.json();
@@ -3076,104 +3126,106 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                 });
             });
 
-            document.querySelector('.yz-chart-card')?.addEventListener('click', async (e) => {
-                const seg = e.target.closest('.bar-segment');
-                if (!seg) return;
+            if (SHOW_CHARTS) {
+                document.querySelector('.yz-chart-card')?.addEventListener('click', async (e) => {
+                    const seg = e.target.closest('.bar-segment');
+                    if (!seg) return;
 
-                const bucket = seg.dataset.bucket || '';
-                const werks = seg.dataset.werks || '';
-                const auart = seg.dataset.auart || '';
-                const finalAuart = auart || AUART;
+                    const bucket = seg.dataset.bucket || '';
+                    const werks = seg.dataset.werks || '';
+                    const auart = seg.dataset.auart || '';
+                    const finalAuart = auart || AUART;
 
-                const labelText =
-                    bucket === 'on_track' ? 'On-Track (Tidak Overdue)' :
-                    bucket === '1_30' ? '1–30 Days Overdue' :
-                    bucket === '31_60' ? '31–60 Days Overdue' :
-                    bucket === '61_90' ? '61–90 Days Overdue' : '>90 Days Overdue';
+                    const labelText =
+                        bucket === 'on_track' ? 'On-Track (Tidak Overdue)' :
+                        bucket === '1_30' ? '1–30 Days Overdue' :
+                        bucket === '31_60' ? '31–60 Days Overdue' :
+                        bucket === '61_90' ? '61–90 Days Overdue' : '>90 Days Overdue';
 
-                const isOverdue = bucket !== 'on_track';
-                const modalElement = document.getElementById('overdueDetailsModal');
-                const modalHeader = modalElement.querySelector('.modal-header');
-                const modalIcon = modalElement.querySelector('#overdueDetailsModalLabel i');
-                if (isOverdue) {
-                    modalHeader.classList.add('bg-danger');
-                    modalHeader.classList.remove('bg-success');
-                    if (modalIcon) modalIcon.className = 'fas fa-triangle-exclamation me-2';
-                } else {
-                    modalHeader.classList.add('bg-success');
-                    modalHeader.classList.remove('bg-danger');
-                    if (modalIcon) modalIcon.className = 'fas fa-circle-check me-2';
-                }
+                    const isOverdue = bucket !== 'on_track';
+                    const modalElement = document.getElementById('overdueDetailsModal');
+                    const modalHeader = modalElement.querySelector('.modal-header');
+                    const modalIcon = modalElement.querySelector('#overdueDetailsModalLabel i');
+                    if (isOverdue) {
+                        modalHeader.classList.add('bg-danger');
+                        modalHeader.classList.remove('bg-success');
+                        if (modalIcon) modalIcon.className = 'fas fa-triangle-exclamation me-2';
+                    } else {
+                        modalHeader.classList.add('bg-success');
+                        modalHeader.classList.remove('bg-danger');
+                        if (modalIcon) modalIcon.className = 'fas fa-circle-check me-2';
+                    }
 
-                const modalTitle = modalElement.querySelector('#overdueDetailsModalLabel');
-                if (modalTitle) modalTitle.textContent = isOverdue ? 'Detail PO Overdue' :
-                    'Detail PO On-Track';
+                    const modalTitle = modalElement.querySelector('#overdueDetailsModalLabel');
+                    if (modalTitle) modalTitle.textContent = isOverdue ? 'Detail PO Overdue' :
+                        'Detail PO On-Track';
 
-                const kpiCard = document.querySelector('.yz-chart-card');
-                await scrollToCenter(kpiCard);
+                    const kpiCard = document.querySelector('.yz-chart-card');
+                    await scrollToCenter(kpiCard);
 
-                let modalFilterText = `${labelText}`;
-                const modalSubTitle = document.getElementById('modal-sub-title');
-                const modalContentArea = document.getElementById('modal-content-area');
-                modalSubTitle.textContent = `Filter: ${modalFilterText}...`;
-                modalContentArea.innerHTML = `
-        <div class="text-center p-5">
-          <div class="spinner-border ${isOverdue ? 'text-danger' : 'text-success'}" role="status"></div>
-          <p class="mt-3 text-muted">Memuat detail PO...</p>
-        </div>`;
+                    let modalFilterText = `${labelText}`;
+                    const modalSubTitle = document.getElementById('modal-sub-title');
+                    const modalContentArea = document.getElementById('modal-content-area');
+                    modalSubTitle.textContent = `Filter: ${modalFilterText}...`;
+                    modalContentArea.innerHTML = `
+            <div class="text-center p-5">
+            <div class="spinner-border ${isOverdue ? 'text-danger' : 'text-success'}" role="status"></div>
+            <p class="mt-3 text-muted">Memuat detail PO...</p>
+            </div>`;
 
-                const overdueDetailsModal = bootstrap.Modal.getInstance(modalElement) || new bootstrap
-                    .Modal(modalElement);
-                overdueDetailsModal.show();
+                    const overdueDetailsModal = bootstrap.Modal.getInstance(modalElement) || new bootstrap
+                        .Modal(modalElement);
+                    overdueDetailsModal.show();
 
-                try {
-                    if (!werks || !finalAuart) throw new Error(
-                        'Parameter Plant atau Order Type kosong.');
+                    try {
+                        if (!werks || !finalAuart) throw new Error(
+                            'Parameter Plant atau Order Type kosong.');
 
-                    const api = new URL(apiPoOverdueDetails, window.location.origin);
-                    api.searchParams.set('werks', werks);
-                    api.searchParams.set('auart', finalAuart);
-                    api.searchParams.set('bucket', bucket);
-                    if (activeCustomerKunnr) api.searchParams.set('kunnr', activeCustomerKunnr);
+                        const api = new URL(apiPoOverdueDetails, window.location.origin);
+                        api.searchParams.set('werks', werks);
+                        api.searchParams.set('auart', finalAuart);
+                        api.searchParams.set('bucket', bucket);
+                        if (activeCustomerKunnr) api.searchParams.set('kunnr', activeCustomerKunnr);
 
-                    const res = await fetch(api, {
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }
-                    });
-                    const json = await res.json();
-                    if (!json.ok) throw new Error(json?.message || json?.error ||
-                        'Gagal mengambil data.');
+                        const res = await fetch(api, {
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+                        const json = await res.json();
+                        if (!json.ok) throw new Error(json?.message || json?.error ||
+                            'Gagal mengambil data.');
 
-                    modalSubTitle.textContent = `${modalFilterText} (${json.data.length} PO)`;
-                    modalContentArea.innerHTML = renderModalTable(json.data, labelText);
-                    modalContentArea.addEventListener('click', async (e) => {
-                        const a = e.target.closest('.js-jump-to-so');
-                        if (!a) return;
+                        modalSubTitle.textContent = `${modalFilterText} (${json.data.length} PO)`;
+                        modalContentArea.innerHTML = renderModalTable(json.data, labelText);
+                        modalContentArea.addEventListener('click', async (e) => {
+                            const a = e.target.closest('.js-jump-to-so');
+                            if (!a) return;
 
-                        e.preventDefault();
-                        const vbeln = a.dataset.vbeln || '';
-                        const kunnr = a.dataset.kunnr || (activeCustomerKunnr || '');
-                        const cname = a.dataset.customer || '';
+                            e.preventDefault();
+                            const vbeln = a.dataset.vbeln || '';
+                            const kunnr = a.dataset.kunnr || (activeCustomerKunnr || '');
+                            const cname = a.dataset.customer || '';
 
-                        // Tutup modal dulu agar transisi enak
-                        (bootstrap.Modal.getInstance(document.getElementById(
-                                'overdueDetailsModal')) ||
-                            new bootstrap.Modal(document.getElementById(
-                                'overdueDetailsModal'))).hide();
+                            // Tutup modal dulu agar transisi enak
+                            (bootstrap.Modal.getInstance(document.getElementById(
+                                    'overdueDetailsModal')) ||
+                                new bootstrap.Modal(document.getElementById(
+                                    'overdueDetailsModal'))).hide();
 
-                        // Tunggu sejenak agar animasi modal selesai
-                        await wait(250);
+                            // Tunggu sejenak agar animasi modal selesai
+                            await wait(250);
 
-                        // Lakukan lompatan ke SO dan buka T3
-                        await jumpToSO(vbeln, kunnr, cname);
-                    });
-                } catch (err) {
-                    modalSubTitle.textContent = `Gagal Memuat Detail`;
-                    modalContentArea.innerHTML =
-                        `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i> ${err.message || 'Terjadi kesalahan saat mengambil data.'}</div>`;
-                }
-            });
+                            // Lakukan lompatan ke SO dan buka T3
+                            await jumpToSO(vbeln, kunnr, cname);
+                        });
+                    } catch (err) {
+                        modalSubTitle.textContent = `Gagal Memuat Detail`;
+                        modalContentArea.innerHTML =
+                            `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i> ${err.message || 'Terjadi kesalahan saat mengambil data.'}</div>`;
+                    }
+                });
+            }
 
             modalElement.addEventListener('click', (ev) => {
                 if (ev.target === modalElement)(bootstrap.Modal.getInstance(modalElement) || new bootstrap
@@ -3207,6 +3259,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
                     add('export_type', exportType);
                     add('werks', "{{ $selected['werks'] ?? '' }}");
                     add('auart', "{{ $selected['auart'] ?? '' }}");
+                    add('mode', getMode());
                     Array.from(selectedItems).forEach(id => add('item_ids[]', id));
 
                     document.body.appendChild(form);
@@ -3553,7 +3606,7 @@ Tidak ada PO terpilih. Centang PO lalu aktifkan tombol kolaps (▾).
 
 
             /* ====================== SMALL QTY CHART INITIAL ====================== */
-            if (document.getElementById('chartSmallQtyByCustomer')) {
+            if (SHOW_CHARTS && document.getElementById('chartSmallQtyByCustomer')) {
                 const smallQtySection = document.getElementById('small-qty-section');
                 if (!defaultSmallQtyDataRaw || defaultSmallQtyDataRaw.length === 0) {
                     if (smallQtySection) smallQtySection.style.display = 'none';
