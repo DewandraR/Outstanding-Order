@@ -134,20 +134,23 @@ class DashboardController extends Controller
         }
 
         return $q->selectRaw("
-                MAX(t1.id) as id_pick,
-                TRIM(CAST(t1.VBELN AS CHAR)) as VBELN_KEY,
-                LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0') as POSNR_DB,
-                {$matnrKeyExpr} as MATNR_KEY,
+            MAX(t1.id) as id_pick,
+            TRIM(CAST(t1.VBELN AS CHAR)) as VBELN_KEY,
+            LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0') as POSNR_DB,
+            {$matnrKeyExpr} as MATNR_KEY,
 
-                MAX(t1.MAKTX) as MAKTX,
-                MAX(t1.KWMENG) as KWMENG,
-                MAX(t1.QTY_GI) as QTY_GI,
-                MAX(t1.QTY_BALANCE2) as QTY_BALANCE2,
-                MAX(t1.KALAB) as KALAB,
-                MAX(t1.KALAB2) as KALAB2,
-                MAX(t1.NETPR) as NETPR,
-                MAX(t1.WAERK) as WAERK
-            ")
+            MAX(t1.MAKTX) as MAKTX,
+            MAX(t1.KWMENG) as KWMENG,
+            MAX(t1.QTY_GI) as QTY_GI,
+            MAX(t1.QTY_BALANCE2) as QTY_BALANCE2,
+            MAX(t1.KALAB) as KALAB,
+            MAX(t1.KALAB2) as KALAB2,
+            MAX(t1.NETPR) as NETPR,
+
+            MAX(NULLIF(TRIM(t1.NAME4),'')) as NAME4,
+
+            MAX(t1.WAERK) as WAERK
+        ")
             ->groupBy(
                 DB::raw("TRIM(CAST(t1.VBELN AS CHAR))"),
                 DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"),
@@ -853,7 +856,7 @@ class DashboardController extends Controller
                 DB::raw('t1u.POSNR_DB as POSNR_DB'),
                 DB::raw('COALESCE(ragg.remark_count, 0) as remark_count'),
                 DB::raw('ragg.last_remark_at as last_remark_at'),
-                DB::raw("COALESCE(NULLIF(TRIM(t2.NAME4),''), '-') as NAME4")
+                DB::raw("COALESCE(NULLIF(TRIM(t1u.NAME4),''), '-') as NAME4")
             )
             ->orderByRaw('CAST(t1u.POSNR_DB AS UNSIGNED)')
             ->get();

@@ -959,15 +959,24 @@ class PoReportController extends Controller
         ];
 
         if ($mode === 'complete') {
+
             $selects[] = DB::raw("
                 COALESCE(
                     NULLIF(MAX(cc.CONTAINER_NUMBER), ''),
-                    NULLIF(MAX(TRIM(t2.NAME4)), ''),
+                    MAX(NULLIF(TRIM(t1.NAME4), '')),
                     ''
                 ) AS CONTAINER_NUMBER
             ");
+
         } else {
-            $selects[] = DB::raw("'' AS CONTAINER_NUMBER");
+
+            // outstanding: ambil dari ITEM (t1.NAME4), jangan kosong
+            $selects[] = DB::raw("
+                COALESCE(
+                    MAX(NULLIF(TRIM(t1.NAME4), '')),
+                    ''
+                ) AS CONTAINER_NUMBER
+            ");
         }
 
 
