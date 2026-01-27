@@ -82,41 +82,134 @@ class DashboardController extends Controller
     }
 
     // ====== AUART helper (IV_AUART_PARAM OR AUART2) ======
+    private function normCodes(array $codes): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn($x) => strtoupper(trim((string)$x)),
+            $codes
+        ))));
+    }
+
     private function applyAuartT1($query, string $alias, array $auarts)
     {
-        $auarts = array_values(array_filter($auarts));
+        $auarts = $this->normCodes($auarts);
         if (empty($auarts)) return $query;
 
         return $query->where(function ($q) use ($alias, $auarts) {
-            $q->whereIn("{$alias}.IV_AUART_PARAM", $auarts)
-            ->orWhereIn("{$alias}.AUART2", $auarts);
+            $q->whereIn(DB::raw("TRIM(UPPER({$alias}.IV_AUART_PARAM))"), $auarts)
+            ->orWhereIn(DB::raw("TRIM(UPPER({$alias}.AUART2))"), $auarts);
         });
     }
 
-    /**
-     * Untuk query basis t2 (header).
-     * Lolos kalau:
-     * - t2.IV_AUART_PARAM IN auarts
-     *   ATAU
-     * - ada item t1 yang VBELN match dan (t1.IV_AUART_PARAM IN auarts OR t1.AUART2 IN auarts)
-     */
     private function applyAuartT2($query, array $auarts, string $t1Table = 'so_yppr079_t1')
     {
-        $auarts = array_values(array_filter($auarts));
+        $auarts = $this->normCodes($auarts);
         if (empty($auarts)) return $query;
 
         return $query->where(function ($q) use ($auarts, $t1Table) {
-            $q->whereIn('t2.IV_AUART_PARAM', $auarts)
+
+            $q->whereIn(DB::raw("TRIM(UPPER(t2.IV_AUART_PARAM))"), $auarts)
+
             ->orWhereExists(function ($ex) use ($auarts, $t1Table) {
                 $ex->select(DB::raw(1))
                     ->from("$t1Table as t1x")
-                    ->whereColumn('t1x.VBELN', 't2.VBELN')
+                    ->whereRaw("TRIM(CAST(t1x.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))")
                     ->where(function ($w) use ($auarts) {
-                        $w->whereIn('t1x.IV_AUART_PARAM', $auarts)
-                        ->orWhereIn('t1x.AUART2', $auarts);
+                        $w->whereIn(DB::raw("TRIM(UPPER(t1x.IV_AUART_PARAM))"), $auarts)
+                        ->orWhereIn(DB::raw("TRIM(UPPER(t1x.AUART2))"), $auarts);
                     });
             });
         });
+    }
+
+    private function applyWerksOrAuart2ContextT2($query, ?string $werks, array $auarts, string $t1Table)
+    {
+        $werks = trim((string) $werks);
+        if ($werks === '') return $query;
+
+        $auarts = $this->normCodes($auarts);
+
+        // Kalau auart list kosong, ya filter normal aja by header werks
+        if (empty($auarts)) {
+            return $query->where('t2.IV_WERKS_PARAM', $werks);
+        }
+
+        return $query->where(function ($q) use ($werks, $auarts, $t1Table) {
+
+            // 1) normal: header memang plant itu
+            $q->where('t2.IV_WERKS_PARAM', $werks)
+
+            // 2) nyebrang: header plant lain tapi ada item AUART2 yg termasuk konteks page ini
+            ->orWhereExists(function ($ex) use ($werks, $auarts, $t1Table) {
+                $ex->select(DB::raw(1))
+                    ->from("$t1Table as t1x")
+                    ->whereRaw("TRIM(CAST(t1x.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))")
+                    ->whereIn(DB::raw("TRIM(UPPER(t1x.AUART2))"), $auarts)
+
+                    // opsional: pastikan AUART2 ini memang dipetakan ke werks tsb
+                    ->whereExists(function ($m) use ($werks) {
+                        $m->select(DB::raw(1))
+                        ->from('maping as mp')
+                        ->where('mp.IV_WERKS', $werks)
+                        ->whereRaw("TRIM(UPPER(mp.IV_AUART)) = TRIM(UPPER(t1x.AUART2))");
+                    });
+            });
+        });
+    }
+
+    private function t2OneRowPerVbeln(string $t2Table, ?string $werks)
+    {
+        // aman kalau $werks null
+        $werks = $werks ?? '';
+
+        $safeEdatu = "COALESCE(
+            STR_TO_DATE(TRIM(t2x.EDATU), '%Y-%m-%d'),
+            STR_TO_DATE(TRIM(t2x.EDATU), '%d-%m-%Y')
+        )";
+
+        return DB::table("$t2Table as t2x")
+            ->selectRaw("
+                TRIM(CAST(t2x.VBELN AS CHAR)) as VBELN,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.BSTNK) END),
+                    MAX(TRIM(t2x.BSTNK))
+                ) as BSTNK,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.KUNNR) END),
+                    MAX(TRIM(t2x.KUNNR))
+                ) as KUNNR,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.NAME1) END),
+                    MAX(TRIM(t2x.NAME1))
+                ) as NAME1,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.WAERK) END),
+                    MAX(TRIM(t2x.WAERK))
+                ) as WAERK,
+
+                DATE_FORMAT(
+                    COALESCE(
+                        MIN(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN $safeEdatu END),
+                        MIN($safeEdatu)
+                    ),
+                    '%Y-%m-%d'
+                ) as EDATU,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.IV_WERKS_PARAM) END),
+                    MAX(TRIM(t2x.IV_WERKS_PARAM))
+                ) as IV_WERKS_PARAM,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.IV_AUART_PARAM) END),
+                    MAX(TRIM(t2x.IV_AUART_PARAM))
+                ) as IV_AUART_PARAM
+            ", [$werks,$werks,$werks,$werks,$werks,$werks,$werks])
+            ->groupBy(DB::raw("TRIM(CAST(t2x.VBELN AS CHAR))"));
     }
 
     private function t1UniqueSub(string $t1Table, string $qtyOp, array $auartList)
@@ -277,42 +370,93 @@ class DashboardController extends Controller
                 't1a.MATNR',
                 't1a.EDATU',
                 't1a.WAERK',
-                DB::raw('t2h.IV_WERKS_PARAM AS IV_WERKS_PARAM'),   // ✅ WERKS ikut header
+
+                // header werks (buat bucket 1)
+                DB::raw('TRIM(t2h.IV_WERKS_PARAM) AS HDR_WERKS'),
+
+                // ✅ tambah ini (buat bucket AUART1 / AUART2)
+                DB::raw('MAX(TRIM(t1a.IV_AUART_PARAM)) AS AUART1'),
+                DB::raw('MAX(TRIM(t1a.AUART2)) AS AUART2'),
+
                 DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
                 DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
             )
             ->whereRaw('CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
-            ->when($location, fn($q, $loc) => $q->where('t2h.IV_WERKS_PARAM', $loc)) // ✅
+
+            // ❌ PENTING: jangan filter lokasi di sini lagi (biar nyebrang AUART2 masih kebawa)
+            // ->when($location, fn($q, $loc) => $q->where('t2h.IV_WERKS_PARAM', $loc))
+
             ->when(!empty($poAuartList), fn($q) => $this->applyAuartT1($q, 't1a', $poAuartList))
-            ->groupBy('t1a.VBELN','t1a.POSNR','t1a.MATNR','t1a.EDATU','t1a.WAERK', DB::raw('t2h.IV_WERKS_PARAM'));
+            ->groupBy(
+                't1a.VBELN','t1a.POSNR','t1a.MATNR','t1a.EDATU','t1a.WAERK',
+                DB::raw('TRIM(t2h.IV_WERKS_PARAM)')
+            );
+
+        // Normalisasi list AUART untuk whereIn
+        $poAuartListNorm = $this->normCodes($poAuartList);
+
+        // alias "u" = hasil unique items
+        $uBase = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as u"))
+            ->mergeBindings($uniqueItemsAgg);
+
+        // ==============================
+        // BUCKET 1: pakai AUART1 -> werks = header (HDR_WERKS)
+        // ==============================
+        $bucket1 = (clone $uBase)
+            ->selectRaw("
+                TRIM(CAST(u.VBELN AS CHAR)) as VBELN,
+                TRIM(CAST(u.HDR_WERKS AS CHAR)) as BUCKET_WERKS,
+                TRIM(UPPER(u.WAERK)) as currency,
+                u.EDATU,
+                CAST(u.item_total_value AS DECIMAL(18,2)) as item_total_value
+            ")
+            ->when($location, fn($q, $loc) => $q->where('u.HDR_WERKS', $loc))
+            ->when(!empty($poAuartListNorm), fn($q) => $q->whereIn(DB::raw("TRIM(UPPER(u.AUART1))"), $poAuartListNorm));
+
+        // ==============================
+        // BUCKET 2: pakai AUART2 -> werks = maping.IV_WERKS (nyebrang plant)
+        // ==============================
+        $bucket2 = (clone $uBase)
+            ->join('maping as mp2', function ($j) {
+                $j->on(DB::raw("TRIM(UPPER(mp2.IV_AUART))"), '=', DB::raw("TRIM(UPPER(u.AUART2))"));
+            })
+            ->selectRaw("
+                TRIM(CAST(u.VBELN AS CHAR)) as VBELN,
+                TRIM(CAST(mp2.IV_WERKS AS CHAR)) as BUCKET_WERKS,
+                TRIM(UPPER(u.WAERK)) as currency,
+                u.EDATU,
+                CAST(u.item_total_value AS DECIMAL(18,2)) as item_total_value
+            ")
+            ->whereRaw("TRIM(COALESCE(u.AUART2,'')) <> ''")
+            ->whereRaw("TRIM(UPPER(u.AUART2)) <> TRIM(UPPER(u.AUART1))")
+            ->when($location, fn($q, $loc) => $q->where('mp2.IV_WERKS', $loc))
+            ->when(!empty($poAuartListNorm), fn($q) => $q->whereIn(DB::raw("TRIM(UPPER(u.AUART2))"), $poAuartListNorm));
+
+        // gabungkan 2 bucket jadi 1 dataset
+        $bucketedItems = $bucket1->unionAll($bucket2);
 
 
         // 2. Query untuk NILAI (Outstanding Value) - HANYA PO yang memiliki Outstanding Qty (DARI ITEM UNIK)
-        $kpiValueQuery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t1_u"))->mergeBindings($uniqueItemsAgg)
+        $kpiValueQuery = DB::query()
+            ->fromSub($bucketedItems, 'b')
             ->select(
-                't1_u.IV_WERKS_PARAM as werks',
-                't1_u.WAERK as currency',
-                DB::raw('CAST(SUM(t1_u.item_total_value) AS DECIMAL(18,2)) as total_value'),
-                // Hitung Overdue Value dari item unik
-                DB::raw("CAST(SUM(CASE WHEN " . $this->getSafeEdatuForUniqueItem('t1_u') . " < CURDATE() THEN t1_u.item_total_value ELSE 0 END) AS DECIMAL(18,2)) as overdue_value")
+                DB::raw('b.BUCKET_WERKS as werks'),
+                DB::raw('b.currency as currency'),
+                DB::raw('CAST(SUM(b.item_total_value) AS DECIMAL(18,2)) as total_value'),
+                DB::raw("CAST(SUM(CASE WHEN " . $this->getSafeEdatuForUniqueItem('b') . " < CURDATE() THEN b.item_total_value ELSE 0 END) AS DECIMAL(18,2)) as overdue_value")
             )
-            ->groupBy('t1_u.IV_WERKS_PARAM', 't1_u.WAERK')
+            ->groupBy('b.BUCKET_WERKS', 'b.currency')
             ->get();
 
-
-        // 3. Query untuk JUMLAH PO/SO (QTY PO Count) - Menggunakan $baseQuery T2 JOIN T1 (tanpa filter quantity)
-        $kpiQtyQuery = (clone $baseQuery)
-            ->selectRaw("
-                t2.IV_WERKS_PARAM as werks,
-                t2.WAERK as currency,
-                COUNT(DISTINCT t2.VBELN) as total_qty, 
-                COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_qty
-            ")
-            // Join ke t1 untuk memastikan PO memiliki item
-            ->join('so_yppr079_t1 as t1', function ($j) {
-                $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
-            })
-            ->groupBy('t2.IV_WERKS_PARAM', 't2.WAERK')
+        $kpiQtyQuery = DB::query()
+            ->fromSub($bucketedItems, 'b')
+            ->select(
+                DB::raw('b.BUCKET_WERKS as werks'),
+                DB::raw('b.currency as currency'),
+                DB::raw("COUNT(DISTINCT b.VBELN) as total_qty"),
+                DB::raw("COUNT(DISTINCT CASE WHEN " . $this->getSafeEdatuForUniqueItem('b') . " < CURDATE() THEN b.VBELN ELSE NULL END) as overdue_qty")
+            )
+            ->groupBy('b.BUCKET_WERKS', 'b.currency')
             ->get();
 
 
@@ -582,8 +726,8 @@ class DashboardController extends Controller
                 DATEDIFF(CURDATE(), {$safeEdatu}) AS OVERDUE_DAYS,
                 MAX(t2.NAME1) AS CUSTOMER_NAME_MODAL
             ")
-            ->where('t2.IV_WERKS_PARAM', $werks)
             ->when($kunnr, fn($qq) => $qq->where('t2.KUNNR', $kunnr));
+        $this->applyWerksOrAuart2ContextT2($q, $werks, $auartList, 'so_yppr079_t1');
 
         // ✅ Filter AUART yang benar (header bisa nyebrang via AUART2)
         $q = $this->applyAuartT2($q, $auartList, 'so_yppr079_t1');
@@ -706,26 +850,23 @@ class DashboardController extends Controller
             ->select('ir.VBELN', DB::raw('COUNT(*) AS po_remark_count'));
 
         // ====== QUERY UTAMA ======
-        $rows = DB::table("$t2Table as t2")
-            ->leftJoinSub($aggTotals, 'ag', fn($j) => $j->on('ag.VBELN', '=', 't2.VBELN'))
-            ->leftJoinSub($remarksBySo, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't2.VBELN'))
-            ->when($werks, fn($q) => $q->where('t2.IV_WERKS_PARAM', $werks))
+        $t2OneRow = $this->t2OneRowPerVbeln($t2Table, $werks);
+
+        $rows = DB::query()->fromSub($t2OneRow, 't2')
+            ->leftJoinSub($aggTotals, 'ag', 'ag.VBELN', '=', 't2.VBELN')
+            ->leftJoinSub($remarksBySo, 'rk', 'rk.VBELN', '=', 't2.VBELN')
+            ->when($werks, fn($q) => $this->applyWerksOrAuart2ContextT2($q, $werks, $auartList, $t1Table))
             ->when(!empty($auartList), fn($q) => $this->applyAuartT2($q, $auartList, $t1Table))
-            // toleransi format KUNNR agar kompatibel dgn data lama
-            ->where(function ($q) use ($kunnr) {
-                $q->where('t2.KUNNR', $kunnr)
-                    ->orWhereRaw('TRIM(CAST(t2.KUNNR AS CHAR)) = TRIM(?)', [$kunnr])
-                    ->orWhereRaw('CAST(TRIM(t2.KUNNR) AS UNSIGNED) = CAST(TRIM(?) AS UNSIGNED)', [$kunnr]);
-            })
-            ->select(
+            ->whereRaw("TRIM(CAST(t2.KUNNR AS CHAR)) = ?", [trim($kunnr)])
+            ->select([
                 't2.VBELN',
                 't2.BSTNK',
                 't2.WAERK',
                 't2.EDATU',
-                DB::raw('COALESCE(ag.total_value, 0)  AS total_value'),
-                DB::raw('COALESCE(ag.outs_qty, 0)     AS outs_qty'),
-                DB::raw('COALESCE(rk.po_remark_count, 0) AS po_remark_count')
-            )
+                DB::raw('COALESCE(ag.total_value, 0) as total_value'),
+                DB::raw('COALESCE(ag.outs_qty, 0) as outs_qty'),
+                DB::raw('COALESCE(rk.po_remark_count, 0) as po_remark_count'),
+            ])
             ->get();
 
         // ====== Hitung Overdue & format tanggal (di PHP, cepat) ======
@@ -824,20 +965,30 @@ class DashboardController extends Controller
 
         $t1u = $this->t1UniqueSub($t1Table, $qtyOp, $auartList);
 
+        $w = $werks ? trim((string)$werks) : '';
+
+        $t2One = DB::table("$t2Table as t2x")
+            ->selectRaw("TRIM(CAST(t2x.VBELN AS CHAR)) as VBELN")
+            ->selectRaw("
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN t2x.IV_WERKS_PARAM END),
+                    MAX(t2x.IV_WERKS_PARAM)
+                ) as IV_WERKS_PARAM
+            ", [$w])
+            ->groupBy(DB::raw("TRIM(CAST(t2x.VBELN AS CHAR))"));
+
         $rows = DB::query()
             ->fromSub($t1u, 't1u')
-            ->leftJoin(
-                "$t2Table as t2",
-                DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'),
-                '=',
-                DB::raw('t1u.VBELN_KEY')
-            )
+            ->leftJoinSub($t2One, 't2', function ($j) {
+                $j->on('t2.VBELN', '=', DB::raw('t1u.VBELN_KEY'));
+            })
             ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(ragg.VBELN AS CHAR))'), '=', DB::raw('t1u.VBELN_KEY'))
                 ->on('ragg.POSNR_DB', '=', DB::raw('t1u.POSNR_DB'));
             })
             ->whereRaw('t1u.VBELN_KEY = TRIM(?)', [$vbeln])
-            ->when($werks, fn($q) => $q->where('t2.IV_WERKS_PARAM', $werks))
+            ->when($werks, fn($q) => $this->applyWerksOrAuart2ContextT2($q, $werks, $auartList, $t1Table))
+
             ->select(
                 DB::raw('t1u.id_pick as id'),
                 DB::raw('t1u.VBELN_KEY as VBELN'),

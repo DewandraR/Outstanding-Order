@@ -157,38 +157,79 @@ class PoReportController extends Controller
 
 
     // ====== AUART helper (IV_AUART_PARAM OR AUART2) ======
-    private function applyAuartT1($query, string $alias, array $auarts)
+    private function normCodes(array $codes): array
     {
-        $auarts = array_values(array_filter($auarts));
-        if (empty($auarts)) return $query;
+        return array_values(array_unique(array_filter(array_map(
+            fn($x) => strtoupper(trim((string)$x)),
+            $codes
+        ))));
+    }
 
-        return $query->where(function ($q) use ($alias, $auarts) {
-            $q->whereIn("{$alias}.IV_AUART_PARAM", $auarts)
-            ->orWhereIn("{$alias}.AUART2", $auarts);
+    private function applyWerksOrAuart2ContextT2Alias($query, string $t2Alias, ?string $werks, array $auarts, string $t1Table)
+    {
+        $werks = trim((string) $werks);
+        if ($werks === '') return $query;
+
+        $auarts = $this->normCodes($auarts);
+
+        $colWerks = "{$t2Alias}.IV_WERKS_PARAM";
+        $colVbeln = "TRIM(CAST({$t2Alias}.VBELN AS CHAR))";
+
+        // Kalau auart list kosong, filter normal by header werks
+        if (empty($auarts)) {
+            return $query->where($colWerks, $werks);
+        }
+
+        return $query->where(function ($q) use ($werks, $auarts, $t1Table, $colWerks, $colVbeln) {
+
+            // 1) normal: header memang plant itu
+            $q->where($colWerks, $werks)
+
+            // 2) nyebrang: header plant lain tapi ada item AUART2 yg termasuk konteks page ini
+            ->orWhereExists(function ($ex) use ($werks, $auarts, $t1Table, $colVbeln) {
+                $ex->select(DB::raw(1))
+                    ->from("$t1Table as t1x")
+                    ->whereRaw("TRIM(CAST(t1x.VBELN AS CHAR)) = {$colVbeln}")
+                    ->whereIn(DB::raw("TRIM(UPPER(t1x.AUART2))"), $auarts)
+
+                    // pastikan AUART2 ini memang dipetakan ke werks tsb
+                    ->whereExists(function ($m) use ($werks) {
+                        $m->select(DB::raw(1))
+                        ->from('maping as mp')
+                        ->where('mp.IV_WERKS', $werks)
+                        ->whereRaw("TRIM(UPPER(mp.IV_AUART)) = TRIM(UPPER(t1x.AUART2))");
+                    });
+            });
         });
     }
 
-    /**
-     * Untuk query basis t2 (header).
-     * Lolos kalau:
-     * - t2.IV_AUART_PARAM IN auarts
-     *   ATAU
-     * - ada item t1 yang VBELN match dan (t1.IV_AUART_PARAM IN auarts OR t1.AUART2 IN auarts)
-     */
+    private function applyAuartT1($query, string $alias, array $auarts)
+    {
+        $auarts = $this->normCodes($auarts);
+        if (empty($auarts)) return $query;
+
+        return $query->where(function ($q) use ($alias, $auarts) {
+            $q->whereIn(DB::raw("TRIM(UPPER({$alias}.IV_AUART_PARAM))"), $auarts)
+            ->orWhereIn(DB::raw("TRIM(UPPER({$alias}.AUART2))"), $auarts);
+        });
+    }
+
     private function applyAuartT2($query, array $auarts, string $t1Table = 'so_yppr079_t1')
     {
-        $auarts = array_values(array_filter($auarts));
+        $auarts = $this->normCodes($auarts);
         if (empty($auarts)) return $query;
 
         return $query->where(function ($q) use ($auarts, $t1Table) {
-            $q->whereIn('t2.IV_AUART_PARAM', $auarts)
+
+            $q->whereIn(DB::raw("TRIM(UPPER(t2.IV_AUART_PARAM))"), $auarts)
+
             ->orWhereExists(function ($ex) use ($auarts, $t1Table) {
                 $ex->select(DB::raw(1))
                     ->from("$t1Table as t1x")
-                    ->whereColumn('t1x.VBELN', 't2.VBELN')
+                    ->whereRaw("TRIM(CAST(t1x.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))")
                     ->where(function ($w) use ($auarts) {
-                        $w->whereIn('t1x.IV_AUART_PARAM', $auarts)
-                        ->orWhereIn('t1x.AUART2', $auarts);
+                        $w->whereIn(DB::raw("TRIM(UPPER(t1x.IV_AUART_PARAM))"), $auarts)
+                        ->orWhereIn(DB::raw("TRIM(UPPER(t1x.AUART2))"), $auarts);
                     });
             });
         });
@@ -335,6 +376,92 @@ class PoReportController extends Controller
         ]);
     }
 
+    private function t2OneRowPerVbeln(string $t2Table, ?string $werks)
+    {
+        $werks = $werks ?? '';
+
+        $safeEdatu = "COALESCE(
+            STR_TO_DATE(TRIM(t2x.EDATU), '%Y-%m-%d'),
+            STR_TO_DATE(TRIM(t2x.EDATU), '%d-%m-%Y')
+        )";
+
+        return DB::table("$t2Table as t2x")
+            ->selectRaw("
+                TRIM(CAST(t2x.VBELN AS CHAR)) as VBELN,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.BSTNK) END),
+                    MAX(TRIM(t2x.BSTNK))
+                ) as BSTNK,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.KUNNR) END),
+                    MAX(TRIM(t2x.KUNNR))
+                ) as KUNNR,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.NAME1) END),
+                    MAX(TRIM(t2x.NAME1))
+                ) as NAME1,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.WAERK) END),
+                    MAX(TRIM(t2x.WAERK))
+                ) as WAERK,
+
+                DATE_FORMAT(
+                    COALESCE(
+                        MIN(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN $safeEdatu END),
+                        MIN($safeEdatu)
+                    ),
+                    '%Y-%m-%d'
+                ) as EDATU,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.IV_WERKS_PARAM) END),
+                    MAX(TRIM(t2x.IV_WERKS_PARAM))
+                ) as IV_WERKS_PARAM,
+
+                COALESCE(
+                    MAX(CASE WHEN t2x.IV_WERKS_PARAM = ? THEN TRIM(t2x.IV_AUART_PARAM) END),
+                    MAX(TRIM(t2x.IV_AUART_PARAM))
+                ) as IV_AUART_PARAM
+            ", [$werks,$werks,$werks,$werks,$werks,$werks,$werks])
+            ->groupBy(DB::raw("TRIM(CAST(t2x.VBELN AS CHAR))"));
+    }
+
+    private function applyWerksOrAuart2ContextT2($query, ?string $werks, array $auarts, string $t1Table)
+    {
+        $werks = trim((string) $werks);
+        if ($werks === '') return $query;
+
+        $auarts = $this->normCodes($auarts);
+
+        if (empty($auarts)) {
+            return $query->where('t2.IV_WERKS_PARAM', $werks);
+        }
+
+        return $query->where(function ($q) use ($werks, $auarts, $t1Table) {
+
+            // 1) header plant memang plant itu
+            $q->where('t2.IV_WERKS_PARAM', $werks)
+
+            // 2) header plant lain tapi ada item AUART2 yg masuk konteks plant ini
+            ->orWhereExists(function ($ex) use ($werks, $auarts, $t1Table) {
+                $ex->select(DB::raw(1))
+                    ->from("$t1Table as t1x")
+                    ->whereRaw("TRIM(CAST(t1x.VBELN AS CHAR)) = TRIM(CAST(t2.VBELN AS CHAR))")
+                    ->whereIn(DB::raw("TRIM(UPPER(t1x.AUART2))"), $auarts)
+                    ->whereExists(function ($m) use ($werks) {
+                        $m->select(DB::raw(1))
+                        ->from('maping as mp')
+                        ->where('mp.IV_WERKS', $werks)
+                        ->whereRaw("TRIM(UPPER(mp.IV_AUART)) = TRIM(UPPER(t1x.AUART2))");
+                    });
+            });
+
+        });
+    }
 
     /** Halaman report (tabel) */
     public function index(Request $request)
@@ -491,23 +618,22 @@ class PoReportController extends Controller
                     $j->on(DB::raw('TRIM(CAST(t2h.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1a.VBELN AS CHAR))'));
                 })
                 ->select(
-                    't1a.VBELN',
-                    't1a.POSNR',
-                    't1a.MATNR',
-                    't1a.WAERK',
+                    't1a.VBELN','t1a.POSNR','t1a.MATNR','t1a.WAERK',
                     DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
                     DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
                 )
-                ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0")
-                // ✅ WERKS ikut header
-                ->where('t2h.IV_WERKS_PARAM', $werks);
+                ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0");
 
             $uniqueItemsAgg = $this->applyAuartT1($uniqueItemsAgg, 't1a', $auartList);
+
+            // ✅ INI penggantinya
+            $this->applyWerksOrAuart2ContextT2Alias($uniqueItemsAgg, 't2h', $werks, $auartList, $t1Table);
 
             $uniqueItemsAgg->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK');
 
             // Ringkas per SO
-            $soAgg = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t1_u"))->mergeBindings($uniqueItemsAgg)
+            $soAgg = DB::query()
+                ->fromSub($uniqueItemsAgg, 't1_u')
                 ->select(
                     't1_u.VBELN',
                     't1_u.WAERK',
@@ -516,34 +642,43 @@ class PoReportController extends Controller
                 )
                 ->groupBy('t1_u.VBELN', 't1_u.WAERK');
 
+            // IMPORTANT: jangan reuse object yang sama untuk beberapa subquery
+            $t2OneRow_base   = $this->t2OneRowPerVbeln($t2Table, $werks);
+            $t2OneRow_forAll = $this->t2OneRowPerVbeln($t2Table, $werks);
+            $t2OneRow_forOD  = $this->t2OneRowPerVbeln($t2Table, $werks);
+
             // A) Semua outstanding per customer
-            $allAggSubquery = DB::table(DB::raw("({$soAgg->toSql()}) as so_agg"))->mergeBindings($soAgg)
-                ->join("$t2Table as t2a", function ($j) {
-                    $j->on(DB::raw('TRIM(CAST(t2a.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
+            $allAggSubquery = DB::query()
+                ->fromSub($soAgg, 'so_agg')
+                ->joinSub($t2OneRow_forAll, 't2a', function ($j) {
+                    $j->on('t2a.VBELN', '=', 'so_agg.VBELN');
                 })
-                ->groupBy('t2a.KUNNR')
                 ->select(
                     't2a.KUNNR',
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN TRIM(so_agg.WAERK) = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN TRIM(so_agg.WAERK) = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD"),
                     DB::raw("CAST(SUM(so_agg.so_outs_qty) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY")
-                );
+                )
+                ->groupBy('t2a.KUNNR');
 
             // B) Total overdue per customer
-            $overdueValueSubquery = DB::table(DB::raw("({$soAgg->toSql()}) as so_agg"))->mergeBindings($soAgg)
-                ->join("$t2Table as t2_inner", function ($j) {
-                    $j->on(DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
+            $safeEdatuInner = "STR_TO_DATE(NULLIF(t2_inner.EDATU,''), '%Y-%m-%d')";
+
+            $overdueValueSubquery = DB::query()
+                ->fromSub($soAgg, 'so_agg')
+                ->joinSub($t2OneRow_forOD, 't2_inner', function ($j) {
+                    $j->on('t2_inner.VBELN', '=', 'so_agg.VBELN');
                 })
                 ->whereRaw("{$safeEdatuInner} < CURDATE()")
-                ->groupBy('t2_inner.KUNNR')
                 ->select(
                     't2_inner.KUNNR',
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
-                );
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN TRIM(so_agg.WAERK) = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                    DB::raw("CAST(ROUND(SUM(CASE WHEN TRIM(so_agg.WAERK) = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
+                )
+                ->groupBy('t2_inner.KUNNR');
 
             // Query utama customer
-            $rowsQuery = DB::table("$t2Table as t2")
+            $rowsQuery = DB::query()->fromSub($t2OneRow_base, 't2')
                 ->leftJoinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
                 ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
                 ->select(
@@ -554,11 +689,13 @@ class PoReportController extends Controller
                     DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_IDR),0) AS TOTAL_OVERDUE_VALUE_IDR'),
                     DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_USD),0) AS TOTAL_OVERDUE_VALUE_USD'),
                     DB::raw("COUNT(DISTINCT t2.VBELN) AS SO_TOTAL_COUNT"),
-                    DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
-                )
-                ->where('t2.IV_WERKS_PARAM', $werks);
+                    DB::raw("COUNT(DISTINCT CASE WHEN STR_TO_DATE(NULLIF(t2.EDATU,''),'%Y-%m-%d') < CURDATE() THEN t2.VBELN END) AS SO_LATE_COUNT")
+                );
 
-            // ✅ filter AUART header yang benar (include AUART2)
+            // ✅ ganti filter werks
+            $this->applyWerksOrAuart2ContextT2Alias($rowsQuery, 't2', $werks, $auartList, $t1Table);
+
+            // AUART filter tetap
             $rowsQuery = $this->applyAuartT2($rowsQuery, $auartList, $t1Table);
 
             // ✅ pastikan ada item outstanding dalam konteks AUART
@@ -598,12 +735,14 @@ class PoReportController extends Controller
                     '=',
                     DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
                 )
-                ->where('t2.IV_WERKS_PARAM', $werks)
                 ->whereRaw("CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0")
                 ->where(function ($w) use ($targetAuarts) {
                     $w->whereIn('t2.IV_AUART_PARAM', $targetAuarts)
                     ->orWhereIn('t1.AUART2', $targetAuarts);
                 });
+
+            // ✅ INI KUNCI: samakan dengan Tabel 2 (boleh nyebrang via AUART2)
+            $this->applyWerksOrAuart2ContextT2($performanceQueryBase, $werks, $targetAuarts, $t1Table);
 
             $perf = (clone $performanceQueryBase)
                 ->select(
@@ -647,15 +786,15 @@ class PoReportController extends Controller
                     '=',
                     DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
                 )
-                ->where('t2.IV_WERKS_PARAM', $werks)
                 ->where(function ($w) use ($auartList) {
                     $w->whereIn('t2.IV_AUART_PARAM', $auartList)
                     ->orWhereIn('t1.AUART2', $auartList);
                 })
-                // small qty ini hanya relevan outstanding, jadi tetap >0 dan <=5
                 ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
                 ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) <= 5')
                 ->where('t1.QTY_GI', '>', 0);
+
+            $this->applyWerksOrAuart2ContextT2($smallQtyBase, $werks, $auartList, $t1Table);
 
             $smallQtyByCustomer = (clone $smallQtyBase)
                 ->select('t2.NAME1', 't2.IV_WERKS_PARAM', DB::raw('COUNT(DISTINCT t2.VBELN) AS so_count'))
@@ -1086,20 +1225,23 @@ class PoReportController extends Controller
             ->first();
 
         $perfQuery = DB::table('so_yppr079_t2 as t2')
-            ->join(
-                'so_yppr079_t1 as t1',
+            ->join('so_yppr079_t1 as t1',
                 DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'),
                 '=',
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR))')
             )
-            ->where('t2.IV_WERKS_PARAM', $werks)
             ->where(function ($w) use ($targetAuarts) {
                 $w->whereIn('t2.IV_AUART_PARAM', $targetAuarts)
                 ->orWhereIn('t1.AUART2', $targetAuarts);
             })
             ->whereRaw('CAST(t1.QTY_BALANCE2 AS DECIMAL(18,3)) > 0')
-            ->where('t2.KUNNR', $kunnr)
-            ->select(
+            ->where('t2.KUNNR', $kunnr);   // ✅ tutup chain dulu
+
+            // ✅ baru apply helper
+            $perfQuery = $this->applyWerksOrAuart2ContextT2($perfQuery, $werks, $targetAuarts, 'so_yppr079_t1');
+
+            // ✅ lanjut select
+            $perf = $perfQuery->select(
                 DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
                 DB::raw("CAST(ROUND(SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) as total_value_idr"),
                 DB::raw("CAST(ROUND(SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1.TOTPR AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) as total_value_usd"),
@@ -1112,24 +1254,27 @@ class PoReportController extends Controller
             ->first();
 
         $performanceData = collect();
-        if ($perfQuery && (int) ($perfQuery->total_so ?? 0) > 0) {
+
+        if ($perf && (int)($perf->total_so ?? 0) > 0) {
             $performanceData->push((object) [
                 'Deskription'      => $inExport ? 'KMI Export' : ($descForRow ?: $auart),
                 'IV_WERKS'         => $werks,
                 'IV_AUART'         => $auart,
-                'total_so'         => (int) $perfQuery->total_so,
-                'total_value_idr'  => (float) $perfQuery->total_value_idr,
-                'total_value_usd'  => (float) $perfQuery->total_value_usd,
-                'overdue_so_count' => (int) $perfQuery->overdue_so_count,
-                'overdue_1_30'     => (int) $perfQuery->overdue_1_30,
-                'overdue_31_60'    => (int) $perfQuery->overdue_31_60,
-                'overdue_61_90'    => (int) $perfQuery->overdue_61_90,
-                'overdue_over_90'  => (int) $perfQuery->overdue_over_90,
+
+                'total_so'         => (int) $perf->total_so,
+                'total_value_idr'  => (float) $perf->total_value_idr,
+                'total_value_usd'  => (float) $perf->total_value_usd,
+                'overdue_so_count' => (int) $perf->overdue_so_count,
+                'overdue_1_30'     => (int) $perf->overdue_1_30,
+                'overdue_31_60'    => (int) $perf->overdue_31_60,
+                'overdue_61_90'    => (int) $perf->overdue_61_90,
+                'overdue_over_90'  => (int) $perf->overdue_over_90,
             ]);
         }
 
         $customerName = DB::table('so_yppr079_t2')
-            ->where('KUNNR', $kunnr)->where('IV_WERKS_PARAM', $werks)
+            ->where('KUNNR', $kunnr)
+            ->where('IV_WERKS_PARAM', $werks)
             ->value('NAME1') ?? $kunnr;
 
         return response()->json([
