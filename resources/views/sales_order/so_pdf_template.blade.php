@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Outstanding SO Detail - {{ $locationName }} ({{ $auart }})</title>
+
     <style>
         body { font-family: Arial, sans-serif; font-size: 9px; margin:0; padding:0; color:#333; }
 
@@ -62,9 +63,9 @@
     $isMetal = $mode === 'metal';
 
     // total kolom:
-    // wood  = 15 (No..Remark)
-    // metal = 16 (tambahan PRIMER)
-    $colspan = $isMetal ? 16 : 15;
+    // wood  = 16 (tambah Req. Deliv. Date)
+    // metal = 17 (tambah Req. Deliv. Date + PRIMER)
+    $colspan = $isMetal ? 17 : 16;
 
     // Helpers
     $formatNumber = function ($n, $d = 0) {
@@ -103,9 +104,13 @@
                 <th style="width: 3%;">No.</th>
                 <th style="width: 7%;">PO</th>
                 <th style="width: 6%;">SO</th>
+
+                <!-- ✅ NEW -->
+                <th style="width: 7%;">Req. Deliv. Date</th>
+
                 <th style="width: 3%;">Item</th>
                 <th style="width: 8%;">Material FG</th>
-                <th class="text-left" style="width:22%;">Desc FG</th>
+                <th class="text-left" style="width:20%;">Desc FG</th>
                 <th style="width: 4%;">Qty SO</th>
                 <th style="width: 4%;">Outs. SO</th>
                 <th style="width: 4%;">WHFG</th>
@@ -134,6 +139,7 @@
                     $customerItemIndex++;
 
                     $poNumber = $item->headerInfo->BSTNK ?? '-';
+                    $reqDate  = $item->headerInfo->EDATU_FMT ?? '';
 
                     $qtySo   = (float)($item->KWMENG ?? 0);
                     $outsSo  = (float)($item->PACKG  ?? 0);
@@ -142,17 +148,17 @@
 
                     // pilih field proses sesuai mode
                     if ($isMetal) {
-                        $p1 = (float)($item->CUTT   ?? 0);    // CUTTING
-                        $p2 = (float)($item->ASSYMT ?? 0);    // ASSY (metal)
-                        $p3 = (float)($item->PRIMER ?? 0);    // PRIMER
-                        $p4 = (float)($item->PAINTMT?? 0);    // PAINT (metal)
-                        $p5 = (float)($item->PRSIMT ?? 0);    // PACKING (metal)
+                        $p1 = (float)($item->CUTT    ?? 0); // CUTTING
+                        $p2 = (float)($item->ASSYMT  ?? 0); // ASSY (metal)
+                        $p3 = (float)($item->PRIMER  ?? 0); // PRIMER
+                        $p4 = (float)($item->PAINTMT ?? 0); // PAINT (metal)
+                        $p5 = (float)($item->PRSIMT  ?? 0); // PACKING (metal)
                     } else {
-                        $p1 = (float)($item->MACHI  ?? 0);    // MACHI (wood)
-                        $p2 = (float)($item->ASSYM  ?? 0);    // ASSY (wood)
-                        $p3 = null;                            // tidak ada primer di wood
-                        $p4 = (float)($item->PAINTM ?? 0);    // PAINT (wood)
-                        $p5 = (float)($item->PACKGM ?? 0);    // PACKING (wood)
+                        $p1 = (float)($item->MACHI  ?? 0); // MACHI (wood)
+                        $p2 = (float)($item->ASSYM  ?? 0); // ASSY (wood)
+                        $p3 = null;                         // tidak ada primer di wood
+                        $p4 = (float)($item->PAINTM ?? 0); // PAINT (wood)
+                        $p5 = (float)($item->PACKGM ?? 0); // PACKING (wood)
                     }
 
                     $vbeln = $item->VBELN ?? '-';
@@ -165,6 +171,10 @@
                     <td class="text-center">{{ $customerItemIndex }}</td>
                     <td>{{ $poNumber }}</td>
                     <td>{{ $vbeln }}</td>
+
+                    <!-- ✅ NEW -->
+                    <td class="text-center">{{ $reqDate !== '' ? $reqDate : '-' }}</td>
+
                     <td class="text-center">{{ $posnr }}</td>
                     <td>{{ $matnr }}</td>
                     <td class="text-left">{{ $maktx }}</td>
@@ -196,7 +206,9 @@
     <table class="group-table">
         <tbody>
             <tr>
-                <td colspan="{{ $colspan }}" class="text-center item-row">Tidak ada item yang dipilih untuk diekspor.</td>
+                <td colspan="{{ $colspan }}" class="text-center item-row">
+                    Tidak ada item yang dipilih untuk diekspor.
+                </td>
             </tr>
         </tbody>
     </table>

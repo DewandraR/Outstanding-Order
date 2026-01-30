@@ -770,10 +770,37 @@
                 const exportDropdownContainer = document.getElementById('export-dropdown-container');
                 const selectedCountSpan = document.getElementById('selected-count');
                 const updateExportButton = () => {
-                    const n = selectedItems.size;
-                    if (selectedCountSpan) selectedCountSpan.textContent = n;
-                    if (exportDropdownContainer) exportDropdownContainer.style.display = n > 0 ? 'block' : 'none';
-                };
+                let validCount = 0;
+
+                selectedItems.forEach(id => {
+                    // Ambil info item dari cache berdasarkan ID
+                    const vbeln = itemIdToSO.get(String(id));
+                    if (!vbeln) return; // Skip jika data corrupt
+
+                    const items = itemsCache.get(vbeln);
+                    const itemData = items?.find(r => String(r.id) === String(id));
+                    
+                    if (itemData) {
+                        // --- LOGIKA FILTER MODE (Sama dengan renderLevel3) ---
+                        if (materialMode === 'metal') {
+                            const kmtl = Number(itemData.KMTL ?? 0);
+                            // Hanya hitung jika KMTL valid dan > 0
+                            if (Number.isFinite(kmtl) && kmtl > 0) {
+                                validCount++;
+                            }
+                        } else {
+                            // Mode WOOD: Hitung semua
+                            validCount++;
+                        }
+                    }
+                });
+
+                if (selectedCountSpan) selectedCountSpan.textContent = validCount;
+                // Tampilkan tombol export jika ada setidaknya 1 item yang valid untuk mode ini
+                if (exportDropdownContainer) {
+                    exportDropdownContainer.style.display = validCount > 0 ? 'block' : 'none';
+                }
+            };
                 const updateSODot = (vbeln) => {
                     document.querySelectorAll(`.js-t2row[data-vbeln='${CSS.escape(vbeln)}'] .so-selected-dot`)
                         .forEach(dot => {
@@ -863,49 +890,53 @@
                  * RENDERERS (Level 3 Items)
                  * ======================================================= */
                 function renderLevel3_Items(rows, mode = 'wood') {
-                    // fallback bila tidak ada data
-                    if (!rows || !rows.length) {
+                    const isMetal = (mode === 'metal');
+                    const rowsArr = Array.isArray(rows) ? rows : [];
+
+                    // fallback kalau memang tidak ada item sama sekali
+                    if (!rowsArr.length) {
                         return `<div class="p-2 text-muted">Tidak ada item detail (dengan Outs. SO > 0).</div>`;
                     }
 
-                    const isMetal = (mode === 'metal');
+                    // FILTER: saat METAL, buang item yang KMTL = 0
+                    const rowsFiltered = isMetal
+                        ? rowsArr.filter(r => {
+                            const kmtl = Number(r.KMTL ?? r.kmtl ?? 0);
+                            return Number.isFinite(kmtl) && kmtl > 0;
+                        })
+                        : rowsArr;
 
-                    // helper lokal: persen auto-scale (untuk PRSIMT: bisa 0..1 atau 0..100)
-                    const formatPercentAuto = (v) => {
-                        const n = parseFloat(v);
-                        if (!Number.isFinite(n) || n === 0) return '0%';
-                        const val = (n <= 1 ? (n * 100) : n);
-                        return `${formatNumberGlobal(val, 0)}%`;
-                    };
+                    // fallback khusus METAL setelah filter
+                    if (isMetal && !rowsFiltered.length) {
+                        return `<div class="p-2 text-muted">Tidak ada item METAL (KMTL > 0) untuk SO ini.</div>`;
+                    }
 
                     // ===== Header =====
                     const headerHtml = `
-<tr>
-  <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
-  <th>Item</th>
-  <th>Material FG</th>
-  <th>Desc FG</th>
-  <th>Qty SO</th>
-  <th>Outs. SO</th>
-  <th>Stock Packing</th>
-  ${isMetal ? '' : '<th>Pembahanan</th>'}          <!-- ⬅ tampil hanya WOOD -->
-  <th>${isMetal ? 'CUTING' : 'MACHI'}</th>
-  <th>ASSY</th>
-  ${isMetal ? '<th>PRIMER</th>' : ''}              <!-- PRIMER hanya METAL -->
-  <th>PAINT</th>
-  <th>PACKING</th>
-  <th>Remark</th>
-</tr>`;
+                        <tr>
+                        <th style="width:40px;"><input class="form-check-input check-all-items" type="checkbox" title="Pilih Semua Item"></th>
+                        <th>Item</th>
+                        <th>Material FG</th>
+                        <th>Desc FG</th>
+                        <th>Qty SO</th>
+                        <th>Outs. SO</th>
+                        <th>Stock Packing</th>
+                        ${isMetal ? '' : '<th>Pembahanan</th>'}
+                        <th>${isMetal ? 'CUTING' : 'MACHI'}</th>
+                        <th>ASSY</th>
+                        ${isMetal ? '<th>PRIMER</th>' : ''}
+                        <th>PAINT</th>
+                        <th>PACKING</th>
+                        <th>Remark</th>
+                        </tr>`;
 
                     let html = `
-    <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0 yz-mini">
-        <thead class="yz-header-item">
-          ${headerHtml}
-        </thead>
-        <tbody>`;
+                        <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 yz-mini">
+                            <thead class="yz-header-item">${headerHtml}</thead>
+                            <tbody>`;
 
-                    rows.forEach(r => {
+                    rowsFiltered.forEach(r => {
                         // checkbox state & remark count
                         const isChecked = selectedItems && selectedItems.has(String(r.id));
                         const countRemarks = Number(r.remark_count ?? ((r.remark && String(r.remark).trim() !==
@@ -1176,6 +1207,7 @@
                         syncCheckAllHeader(box);
                         attachBootstrapPopovers(box);
                     });
+                    updateExportButton();
                 }
 
                 document.getElementById('btn-mode-wood')?.addEventListener('click', () => setMaterialMode('wood'));
@@ -1200,6 +1232,86 @@
                     attachBootstrapPopovers(document);
                     const selectedCustomers = new Set();
                     const btnOpenSelected = document.getElementById('btn-open-selected');
+                    const customerToVbelns = new Map();   // KUNNR -> array VBELN
+                    const customerToItemIds = new Map();  // KUNNR -> Set(itemId)
+
+                    // limiter biar fetch ga brutal
+                    async function runWithLimit(tasks, limit = 4) {
+                    const out = new Array(tasks.length);
+                    let idx = 0;
+
+                    async function worker() {
+                        while (idx < tasks.length) {
+                        const i = idx++;
+                        out[i] = await tasks[i]();
+                        }
+                    }
+
+                    await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+                    return out;
+                    }
+
+                    async function fetchSOsForCustomer(kunnr) {
+                    if (customerToVbelns.has(kunnr)) return customerToVbelns.get(kunnr);
+
+                    const url = new URL(apiSoByCustomer, window.location.origin);
+                    url.searchParams.set('kunnr', kunnr);
+                    url.searchParams.set('werks', WERKS);
+                    url.searchParams.set('auart', AUART);
+
+                    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    const js  = await res.json();
+                    if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
+
+                    const vbelns = uniqBy(js.data || [], r => `${r.VBELN}`)
+                        .map(r => String(r.VBELN).trim())
+                        .filter(Boolean);
+
+                    customerToVbelns.set(kunnr, vbelns);
+                    return vbelns;
+                    }
+
+                    async function selectCustomerSilent(kunnr) {
+                    const vbelns = await fetchSOsForCustomer(kunnr);
+
+                    // load items semua SO (silent) -> isi selectedItems
+                    const tasks = vbelns.map(v => async () => {
+                        try {
+                        return await ensureItemsLoadedForSO(v, WERKS, AUART);
+                        } catch {
+                        return [];
+                        }
+                    });
+
+                    const itemsPerSO = await runWithLimit(tasks, 4);
+
+                    const picked = new Set();
+                    itemsPerSO.flat().forEach(it => {
+                        const id = String(it.id);
+                        selectedItems.add(id);
+                        picked.add(id);
+                    });
+
+                    customerToItemIds.set(kunnr, picked);
+
+                    // kalau ada SO yang kebetulan sudah tampil, refresh dot
+                    vbelns.forEach(v => updateSODot(v));
+
+                    updateExportButton();
+                    }
+
+                    async function unselectCustomerSilent(kunnr) {
+                    const picked = customerToItemIds.get(kunnr);
+                    if (picked) {
+                        picked.forEach(id => selectedItems.delete(String(id)));
+                        customerToItemIds.delete(kunnr);
+                    }
+
+                    const vbelns = customerToVbelns.get(kunnr) || [];
+                    vbelns.forEach(v => updateSODot(v));
+
+                    updateExportButton();
+                    }
                     const checkAllCustomers = document.getElementById('check-all-customers');
                     const customerListContainer = document.getElementById('customer-list-container');
 
@@ -1208,7 +1320,7 @@
                         if (!btnOpenSelected) return;
                         const anyChecked = document.querySelector('.check-customer:checked') !== null;
                         const anyTabel2Open = document.querySelector('.yz-customer-card.is-open') !== null;
-                        const shouldShow = anyChecked && (!anyTabel2Open || isColabsActive);
+                        const shouldShow = isColabsActive || (anyChecked && !anyTabel2Open);
                         btnOpenSelected.style.display = shouldShow ? '' : 'none';
                     }
 
@@ -1245,12 +1357,32 @@
                     }
 
                     // tangkap perubahan checkbox per-customer
-                    document.body.addEventListener('change', (e) => {
-                        if (e.target.classList.contains('check-customer')) {
-                            const kunnr = e.target.dataset.kunnr;
-                            if (!kunnr) return;
-                            if (e.target.checked) selectedCustomers.add(kunnr);
+                    document.body.addEventListener('change', async (e) => {
+                        if (!e.target.classList.contains('check-customer')) return;
+
+                        const ch = e.target;
+                        const kunnr = (ch.dataset.kunnr || '').trim();
+                        if (!kunnr) return;
+
+                        ch.disabled = true;
+                        try {
+                            if (ch.checked) {
+                            selectedCustomers.add(kunnr);
+                            await selectCustomerSilent(kunnr);   // ✅ preload + isi selectedItems (tanpa buka UI)
+                            } else {
+                            selectedCustomers.delete(kunnr);
+                            await unselectCustomerSilent(kunnr);
+                            }
+                        } catch (err) {
+                            console.error(err);
+                            alert(err?.message || 'Gagal memproses checklist customer.');
+
+                            // rollback visual checkbox
+                            ch.checked = !ch.checked;
+                            if (ch.checked) selectedCustomers.add(kunnr);
                             else selectedCustomers.delete(kunnr);
+                        } finally {
+                            ch.disabled = false;
                             syncSelectAllCustomersState();
                             updateColabsButtonVisibility();
                         }
@@ -1258,16 +1390,33 @@
 
                     // checkbox master
                     if (checkAllCustomers) {
-                        checkAllCustomers.addEventListener('change', () => {
-                            const all = document.querySelectorAll('.check-customer');
-                            all.forEach(ch => {
+                        checkAllCustomers.addEventListener('change', async () => {
+                            const all = Array.from(document.querySelectorAll('.check-customer'));
+                            checkAllCustomers.disabled = true;
+
+                            try {
+                                for (const ch of all) {
+                                const kunnr = (ch.dataset.kunnr || '').trim();
+                                if (!kunnr) continue;
+
                                 ch.checked = checkAllCustomers.checked;
-                                const k = ch.dataset.kunnr;
-                                if (checkAllCustomers.checked) selectedCustomers.add(k);
-                                else selectedCustomers.delete(k);
-                            });
-                            syncSelectAllCustomersState();
-                            updateColabsButtonVisibility();
+                                ch.disabled = true;
+
+                                if (ch.checked) {
+                                    selectedCustomers.add(kunnr);
+                                    await selectCustomerSilent(kunnr);
+                                } else {
+                                    selectedCustomers.delete(kunnr);
+                                    await unselectCustomerSilent(kunnr);
+                                }
+
+                                ch.disabled = false;
+                                }
+                            } finally {
+                                checkAllCustomers.disabled = false;
+                                syncSelectAllCustomersState();
+                                updateColabsButtonVisibility();
+                            }
                         });
                     }
 

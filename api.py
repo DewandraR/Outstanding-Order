@@ -6,7 +6,7 @@ Mode CLI (tanpa HTTP):
 
   # Sync SO NORMAL (tanpa IV_BALANCE, hanya ke tabel utama so_yppr079_t1..t4)
   python api.py --sync
-  python api.py --sync --werks 2000 --auart ZOR3 --timeout 3000
+  python api.py --sync --werks 3000 --auart ZOR3 --timeout 3000
 
   # Sync SO COMPLETE (IV_BALANCE = 'X') hanya ke tabel *_comp
   python api.py --sync_comp
@@ -161,6 +161,18 @@ def fnum(x):
         return val if math.isfinite(val) else None
     except Exception:
         return None
+    
+def fint(x):
+    """Konversi ke int aman. '', None -> None."""
+    try:
+        if x in ("", None):
+            return None
+        if isinstance(x, bool):
+            return int(x)
+        return int(str(x).strip())
+    except Exception:
+        return None
+
 
 def fdate_yyyymmdd(s):
     try:
@@ -255,6 +267,7 @@ COMMON_SO_COLS = [
 
     # NAME4 dari RFC
     "NAME4",
+    "KMTL",
 
     "fetched_at",
 ]
@@ -333,6 +346,7 @@ def ensure_tables():
           QODRIMT DECIMAL(18,3),
           PRSIMT DECIMAL(18,2),
           NAME4 VARCHAR(500),
+          KMTL INT,
           fetched_at DATETIME NOT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
@@ -393,6 +407,7 @@ def ensure_tables():
           QODRIMT DECIMAL(18,3),
           PRSIMT DECIMAL(18,2),
           NAME4 VARCHAR(500),
+          KMTL INT,
           fetched_at DATETIME NOT NULL,
           UNIQUE KEY uq_t3 (IV_WERKS_PARAM, IV_AUART_PARAM, VBELN, POSNR)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -512,17 +527,23 @@ def ensure_tables():
             "so_yppr079_t1_comp", "so_yppr079_t2_comp", "so_yppr079_t3_comp",
         )
         for _tbl in name4_tables:
-            # Coba MODIFIY dulu (kalau kolom sudah ada tapi kependekan)
+            # Coba MODIFY dulu (kalau kolom sudah ada tapi kependekan)
             try:
                 cur.execute(f"ALTER TABLE {_tbl} MODIFY COLUMN NAME4 VARCHAR(500)")
             except Exception:
                 # Kalau kolom belum ada, baru ADD
                 try:
-                    cur.execute(
-                        f"ALTER TABLE {_tbl} ADD COLUMN NAME4 VARCHAR(500) AFTER PRSIMT"
-                    )
+                    cur.execute(f"ALTER TABLE {_tbl} ADD COLUMN NAME4 VARCHAR(500) AFTER PRSIMT")
                 except Exception:
                     pass
+
+        # ---- AUTO MIGRASI: pastikan KMTL ada di t1/t2/t3 + _comp ----
+        kmtl_tables = (
+            "so_yppr079_t1", "so_yppr079_t2", "so_yppr079_t3",
+            "so_yppr079_t1_comp", "so_yppr079_t2_comp", "so_yppr079_t3_comp",
+        )
+        for _tbl in kmtl_tables:
+            _ensure_column(cur, _tbl, f"ALTER TABLE {_tbl} ADD COLUMN KMTL INT AFTER NAME4")
 
         db.commit()
     finally:
@@ -583,6 +604,7 @@ def _so_row_params(werks: str, auart: str, r: Dict[str, Any], now: datetime.date
         fnum(r.get("PAINTMT")), fnum(r.get("QPROIMT")), fnum(r.get("QODRIMT")), fnum(r.get("PRSIMT")),
 
         r.get("NAME4"),
+        fint(r.get("KMTL")),
         now,
     )
 

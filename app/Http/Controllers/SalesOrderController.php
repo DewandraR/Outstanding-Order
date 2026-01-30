@@ -56,6 +56,28 @@ class SalesOrderController extends Controller
     }
 
     /**
+     * ✅ NEW: normalize mode
+     */
+    private function normalizeMode(?string $mode): string
+    {
+        $m = strtolower(trim((string) $mode));
+        return in_array($m, ['wood', 'metal'], true) ? $m : 'wood';
+    }
+
+    /**
+     * ✅ NEW: Apply filter item by mode
+     * metal => item dianggap ada jika KMTL > 0
+     */
+    private function applyModeItemFilter($query, string $alias, string $mode): void
+    {
+        if ($mode === 'metal') {
+            $query->whereRaw("
+                CAST(COALESCE(NULLIF(TRIM({$alias}.KMTL), ''), '0') AS DECIMAL(18,3)) > 0
+            ");
+        }
+    }
+
+    /**
      * ✅ FIX: AUART context harus WERKS-aware (tidak boleh merge export/replace lintas plant).
      */
     private function resolveAuartListForContext(?string $auart, ?string $werks = null): array
@@ -179,8 +201,11 @@ class SalesOrderController extends Controller
             }
         }
 
-        $werks = (string) $request->query('werks', '');
-        $auart = (string) $request->query('auart', '');
+        $werks = (string) $request->input('werks', '');
+        $auart = (string) $request->input('auart', '');
+
+        // ✅ NEW: mode
+        $mode  = $this->normalizeMode($request->input('mode', 'wood'));
 
         $rawMapping = DB::table('maping')
             ->select('IV_WERKS', 'IV_AUART', 'Deskription')
@@ -266,19 +291,24 @@ class SalesOrderController extends Controller
         }
 
         if ($werks !== '' && $auart !== '') {
+
             $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
                 ->select(
                     't1a.VBELN', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU',
                     DB::raw('MAX(t1a.TOTPR2) AS item_total_value'),
                     DB::raw('MAX(t1a.PACKG) AS item_outs_qty')
                 )
-                // ✅ FIX: kunci plant
                 ->where('t1a.IV_WERKS_PARAM', $werks)
                 ->where(function ($q) use ($auartList) {
                     $q->whereIn('t1a.AUART', $auartList)
                       ->orWhereIn('t1a.AUART2', $auartList);
                 })
-                ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+                ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0');
+
+            // ✅ NEW: mode filter (metal => KMTL > 0)
+            $this->applyModeItemFilter($uniqueItemsAgg, 't1a', $mode);
+
+            $uniqueItemsAgg = $uniqueItemsAgg
                 ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
 
             $allAggSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
@@ -300,19 +330,20 @@ class SalesOrderController extends Controller
                 ->groupBy('t_u.KUNNR');
 
             $soCountAgg = DB::table('so_yppr079_t2 as t2c')
-                // ✅ FIX: kunci plant t2
                 ->where('t2c.IV_WERKS_PARAM', $werks)
-                ->whereExists(function ($q) use ($auartList, $werks) {
+                ->whereExists(function ($q) use ($auartList, $werks, $mode) {
                     $q->select(DB::raw(1))
                         ->from('so_yppr079_t1 as t1_check')
                         ->whereColumn('t1_check.VBELN', 't2c.VBELN')
-                        // ✅ FIX: kunci plant t1
                         ->where('t1_check.IV_WERKS_PARAM', $werks)
                         ->where(function($subQ) use ($auartList) {
                             $subQ->whereIn('t1_check.AUART', $auartList)
                                  ->orWhereIn('t1_check.AUART2', $auartList);
                         })
                         ->whereRaw('CAST(t1_check.PACKG AS DECIMAL(18,3)) != 0');
+
+                    // ✅ NEW: mode filter on exists (metal => KMTL > 0)
+                    $this->applyModeItemFilter($q, 't1_check', $mode);
                 })
                 ->select(
                     't2c.KUNNR',
@@ -328,7 +359,6 @@ class SalesOrderController extends Controller
                 ->joinSub($soCountAgg, 'agg_so', fn($j) => $j->on('t2.KUNNR', '=', 'agg_so.KUNNR'))
                 ->leftJoinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
                 ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
-                // ✅ FIX: kunci plant
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->select(
                     't2.KUNNR',
@@ -361,7 +391,6 @@ class SalesOrderController extends Controller
 
             $smallQtyByCustomer = DB::table('so_yppr079_t1 as t1')
                 ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-                // ✅ FIX: kunci plant
                 ->where('t1.IV_WERKS_PARAM', $werks)
                 ->where('t2.IV_WERKS_PARAM', $werks)
                 ->where(function ($q) use ($auartList) {
@@ -396,6 +425,9 @@ class SalesOrderController extends Controller
             'highlight'           => $highlight,
             'autoExpand'          => $autoExpand,
             'smallQtyByCustomer'  => $smallQtyByCustomer,
+
+            // ✅ NEW
+            'mode'                => $mode,
         ]);
     }
 
@@ -408,15 +440,20 @@ class SalesOrderController extends Controller
             'kunnr' => 'required|string',
             'werks' => 'required|string',
             'auart' => 'required|string',
+
+            // ✅ NEW
+            'mode'  => 'nullable|string|in:wood,metal',
         ]);
 
         $werks = (string) $request->werks;
         $auart = (string) $request->auart;
 
+        // ✅ NEW
+        $mode  = $this->normalizeMode($request->mode ?? 'wood');
+
         // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
 
-        // remark count by VBELN saja (tanpa filter werks/auart)
         $remarksSub = DB::table('item_remarks as ir')
             ->select('ir.VBELN', DB::raw('COUNT(*) AS remark_count'))
             ->where('ir.IV_WERKS_PARAM', $werks)
@@ -431,20 +468,23 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1a.TOTPR2) as item_total_value'),
                 DB::raw('MAX(t1a.PACKG) as item_outs_qty')
             )
-            // ✅ FIX: kunci plant
             ->where('t1a.IV_WERKS_PARAM', $werks)
             ->where(function ($q) use ($auartList) {
                 $q->whereIn('t1a.AUART', $auartList)
                   ->orWhereIn('t1a.AUART2', $auartList);
             })
             ->where('t1a.KUNNR', $request->kunnr)
-            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0');
+
+        // ✅ NEW: mode filter (metal => KMTL > 0)
+        $this->applyModeItemFilter($uniqueItemsAgg, 't1a', $mode);
+
+        $uniqueItemsAgg = $uniqueItemsAgg
             ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.EDATU');
 
         $rows = DB::table('so_yppr079_t2 as t2')
             ->joinSub($uniqueItemsAgg, 'item_agg', fn($j) => $j->on('item_agg.VBELN', '=', 't2.VBELN'))
             ->leftJoinSub($remarksSub, 'rk', fn($j) => $j->on('rk.VBELN', '=', 't2.VBELN'))
-            // ✅ FIX: kunci plant
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->select(
                 't2.VBELN',
@@ -477,7 +517,7 @@ class SalesOrderController extends Controller
                         $overdue = -$delta;
                     }
                 } catch (\Exception $e) {
-                    // ignore parse error
+                    // ignore
                 }
             }
 
@@ -492,7 +532,13 @@ class SalesOrderController extends Controller
             return $b->Overdue <=> $a->Overdue;
         })->values();
 
-        return response()->json(['ok' => true, 'data' => $sorted], 200);
+        return response()->json([
+            'ok'   => true,
+            'data' => $sorted,
+
+            // ✅ NEW
+            'meta' => ['mode' => $mode],
+        ], 200);
     }
 
     /**
@@ -504,10 +550,16 @@ class SalesOrderController extends Controller
             'vbeln' => 'required|string',
             'werks' => 'required|string',
             'auart' => 'required|string',
+
+            // ✅ NEW
+            'mode'  => 'nullable|string|in:wood,metal',
         ]);
 
         $werks = (string) $request->werks;
         $auart = (string) $request->auart;
+
+        // ✅ NEW
+        $mode  = $this->normalizeMode($request->mode ?? 'wood');
 
         // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
@@ -525,7 +577,6 @@ class SalesOrderController extends Controller
             ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
-
         $t4Agg = DB::table('so_yppr079_t4 as t4')
             ->whereRaw('TRIM(CAST(t4.KDAUF AS CHAR)) = ?', [$request->vbeln])
             ->selectRaw("
@@ -536,7 +587,7 @@ class SalesOrderController extends Controller
             ")
             ->groupBy('VBELN', 'POSNR_KEY');
 
-        $items = DB::table('so_yppr079_t1 as t1')
+        $itemsQuery = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksAgg, 'ragg', function ($j) {
                 $j->on('ragg.VBELN', '=', 't1.VBELN')
                   ->on('ragg.POSNR', '=', 't1.POSNR');
@@ -587,24 +638,33 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PAINTMT) as PAINTMT'),
                 DB::raw('MAX(t1.QPROIMT) as QPROIMT'),
                 DB::raw('MAX(t1.PRSIMT)  as PRSIMT'),
+                DB::raw('MAX(t1.KMTL) as KMTL'),
                 DB::raw('COALESCE(MAX(ragg.remark_count), 0) as remark_count'),
                 DB::raw('MAX(ragg.last_remark_at) as last_remark_at'),
                 DB::raw('COALESCE(MAX(t4a.TOTTP),  0) as TOTTP'),
                 DB::raw('COALESCE(MAX(t4a.TOTREQ), 0) as TOTREQ')
             )
             ->where('t1.VBELN', $request->vbeln)
-            // ✅ FIX: kunci plant
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->where(function ($q) use ($auartList) {
                 $q->whereIn('t1.AUART', $auartList)
                   ->orWhereIn('t1.AUART2', $auartList);
             })
-            ->where('t1.PACKG', '!=', 0)
+            ->where('t1.PACKG', '!=', 0);
+
+        // ✅ NEW: mode filter (metal => KMTL > 0)
+        $this->applyModeItemFilter($itemsQuery, 't1', $mode);
+
+        $items = $itemsQuery
             ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
 
-        return response()->json(['ok' => true, 'data' => $items]);
+        return response()->json([
+            'ok'   => true,
+            'data' => $items,
+            'meta' => ['mode' => $mode],
+        ]);
     }
 
     public function exportDataStart(Request $request)
@@ -620,7 +680,6 @@ class SalesOrderController extends Controller
             'mode'          => 'nullable|string|in:wood,metal',
         ]);
 
-        // default kalau tidak terkirim
         $validated['mode'] = $validated['mode'] ?? 'wood';
 
         $t = $this->packToToken($validated);
@@ -651,16 +710,23 @@ class SalesOrderController extends Controller
         $exportType = (string) ($payload['export_type'] ?? 'pdf');
         $werks      = (string) ($payload['werks'] ?? '');
         $auart      = (string) ($payload['auart'] ?? '');
-        $mode = strtolower((string) ($payload['mode'] ?? 'wood'));
-        if (!in_array($mode, ['wood','metal'], true)) $mode = 'wood';
+
+        $mode = $this->normalizeMode(($payload['mode'] ?? 'wood'));
 
         // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
 
         // ✅ FIX: kunci plant saat ambil key berdasarkan id (biar aman)
-        $itemKeys = DB::table('so_yppr079_t1')
+        $itemKeysQ = DB::table('so_yppr079_t1')
             ->whereIn('id', $itemIds)
-            ->where('IV_WERKS_PARAM', $werks)
+            ->where('IV_WERKS_PARAM', $werks);
+
+        // ✅ NEW: metal => hanya item KMTL > 0
+        if ($mode === 'metal') {
+            $itemKeysQ->whereRaw("CAST(COALESCE(NULLIF(TRIM(KMTL), ''), '0') AS DECIMAL(18,3)) > 0");
+        }
+
+        $itemKeys = $itemKeysQ
             ->select('VBELN', 'POSNR', 'MATNR')
             ->get();
 
@@ -674,7 +740,7 @@ class SalesOrderController extends Controller
 
         if ($vbelnPosnrMatnrPairs->isEmpty()) {
             if ($exportType === 'excel') {
-                return Excel::download(new SoItemsExport(collect()), 'Outstanding_SO_Empty_' . date('Ymd_His') . ".xlsx");
+                return Excel::download(new SoItemsExport(collect(), $mode), 'Outstanding_SO_Empty_' . date('Ymd_His') . ".xlsx");
             }
             return response()->json(['error' => 'No unique items found for export.'], 400);
         }
@@ -697,12 +763,11 @@ class SalesOrderController extends Controller
             )
             ->groupBy('ir.VBELN', 'ir.POSNR');
 
-        $items = DB::table('so_yppr079_t1 as t1')
+        $itemsQuery = DB::table('so_yppr079_t1 as t1')
             ->leftJoinSub($remarksConcat, 'rc', function ($j) {
                 $j->on('rc.VBELN', '=', 't1.VBELN')
                   ->on('rc.POSNR', '=', DB::raw("LPAD(TRIM(CAST(t1.POSNR AS CHAR)), 6, '0')"));
             })
-            // ✅ FIX: kunci plant
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->where(function ($query) use ($auartList) {
                 $query->whereIn('t1.AUART', $auartList)
@@ -716,7 +781,12 @@ class SalesOrderController extends Controller
                           ->where('t1.MATNR', $pair['MATNR']);
                     });
                 }
-            })
+            });
+
+        // ✅ NEW: mode filter (metal => KMTL > 0)
+        $this->applyModeItemFilter($itemsQuery, 't1', $mode);
+
+        $items = $itemsQuery
             ->select(
                 't1.VBELN',
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) AS POSNR"),
@@ -726,24 +796,33 @@ class SalesOrderController extends Controller
                 DB::raw('MAX(t1.PACKG)  as PACKG'),
                 DB::raw('MAX(t1.KALAB)  as KALAB'),
                 DB::raw('MAX(t1.KALAB2) as KALAB2'),
-                // ✅ WOOD fields (sudah ada)
+
+                // ✅ WOOD fields
                 DB::raw('MAX(t1.MACHI)  as MACHI'),
                 DB::raw('MAX(t1.ASSYM)  as ASSYM'),
                 DB::raw('MAX(t1.PAINTM) as PAINTM'),
                 DB::raw('MAX(t1.PACKGM) as PACKGM'),
 
-                // ✅ METAL fields (NEW) - pakai yang memang ada di T1 Anda (lihat apiGetItemsBySo)
+                // ✅ METAL fields
                 DB::raw('MAX(t1.CUTT)    as CUTT'),
                 DB::raw('MAX(t1.ASSYMT)  as ASSYMT'),
                 DB::raw('MAX(t1.PRIMER)  as PRIMER'),
                 DB::raw('MAX(t1.PAINTMT) as PAINTMT'),
                 DB::raw('MAX(t1.PRSIMT)  as PRSIMT'),
+
                 DB::raw("COALESCE(MAX(rc.REMARKS), '') AS remark")
             )
             ->groupBy('t1.VBELN', 't1.POSNR', 't1.MATNR')
             ->orderBy('t1.VBELN', 'asc')
             ->orderByRaw('CAST(t1.POSNR AS UNSIGNED) asc')
             ->get();
+
+        if ($items->isEmpty()) {
+            if ($exportType === 'excel') {
+                return Excel::download(new SoItemsExport(collect(), $mode), 'Outstanding_SO_Empty_' . date('Ymd_His') . ".xlsx");
+            }
+            return response()->json(['error' => 'No items found after mode filter.'], 400);
+        }
 
         $locationName = $this->resolveLocationName($werks);
 
@@ -754,12 +833,34 @@ class SalesOrderController extends Controller
 
         $vbelns  = $items->pluck('VBELN')->unique();
 
-        // ✅ FIX: kunci plant pada header juga
+        $formatReqDate = function ($raw) {
+            $raw = trim((string)$raw);
+            if ($raw === '' || $raw === '0000-00-00' || $raw === '00-00-0000') return '';
+
+            $raw10 = substr($raw, 0, 10);
+
+            foreach (['Y-m-d', 'd-m-Y'] as $fmt) {
+                try {
+                    return \Carbon\Carbon::createFromFormat($fmt, $raw10)->format('d-m-Y');
+                } catch (\Throwable $e) {}
+            }
+
+            try {
+                return \Carbon\Carbon::parse($raw10)->format('d-m-Y');
+            } catch (\Throwable $e) {
+                return $raw10;
+            }
+        };
+
         $headers = DB::table('so_yppr079_t2')
             ->where('IV_WERKS_PARAM', $werks)
             ->whereIn('VBELN', $vbelns)
-            ->select('VBELN', 'BSTNK', 'NAME1')
+            ->select('VBELN', 'BSTNK', 'NAME1', 'EDATU')
             ->get()
+            ->map(function ($h) use ($formatReqDate) {
+                $h->EDATU_FMT = $formatReqDate($h->EDATU ?? '');
+                return $h;
+            })
             ->keyBy('VBELN');
 
         foreach ($items as $item) {
@@ -853,10 +954,16 @@ class SalesOrderController extends Controller
         $request->validate([
             'werks' => 'required|string',
             'auart' => 'required|string',
+
+            // ✅ NEW
+            'mode'  => 'nullable|string|in:wood,metal',
         ]);
 
-        $werks = (string) $request->query('werks', '');
-        $auart = (string) $request->query('auart', '');
+        $werks = (string) $request->input('werks', '');
+        $auart = (string) $request->input('auart', '');
+
+        // ✅ NEW
+        $mode  = $this->normalizeMode($request->input('mode', 'wood'));
 
         // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
@@ -874,13 +981,17 @@ class SalesOrderController extends Controller
                 't1a.VBELN', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU',
                 DB::raw('MAX(t1a.TOTPR2) AS item_total_value')
             )
-            // ✅ FIX: kunci plant
             ->where('t1a.IV_WERKS_PARAM', $werks)
             ->where(function ($q) use ($auartList) {
                 $q->whereIn('t1a.AUART', $auartList)
                   ->orWhereIn('t1a.AUART2', $auartList);
             })
-            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0');
+
+        // ✅ NEW: mode filter
+        $this->applyModeItemFilter($uniqueItemsAgg, 't1a', $mode);
+
+        $uniqueItemsAgg = $uniqueItemsAgg
             ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
 
         $overdueValueSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
@@ -894,7 +1005,6 @@ class SalesOrderController extends Controller
 
         $rows = DB::table('so_yppr079_t2 as t2')
             ->leftJoinSub($overdueValueSubquery, 'overdue_values', fn($j) => $j->on('t2.KUNNR', '=', 'overdue_values.KUNNR'))
-            // ✅ FIX: kunci plant
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->select(
                 't2.KUNNR',
@@ -903,17 +1013,19 @@ class SalesOrderController extends Controller
                 DB::raw('COALESCE(MAX(overdue_values.TOTAL_OVERDUE_VALUE), 0) AS TOTAL_VALUE'),
                 DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
             )
-            ->whereExists(function ($query) use ($auartList, $werks) {
+            ->whereExists(function ($query) use ($auartList, $werks, $mode) {
                 $query->select(DB::raw(1))
                     ->from('so_yppr079_t1 as t1_check')
                     ->whereColumn('t1_check.VBELN', 't2.VBELN')
-                    // ✅ FIX: kunci plant
                     ->where('t1_check.IV_WERKS_PARAM', $werks)
                     ->where(function($subQ) use ($auartList) {
                         $subQ->whereIn('t1_check.AUART', $auartList)
                              ->orWhereIn('t1_check.AUART2', $auartList);
                     })
                     ->whereRaw('CAST(t1_check.PACKG AS DECIMAL(18,3)) != 0');
+
+                // ✅ NEW: mode filter
+                $this->applyModeItemFilter($query, 't1_check', $mode);
             })
             ->whereNotNull('t2.NAME1')
             ->where('t2.NAME1', '!=', '')
@@ -930,6 +1042,7 @@ class SalesOrderController extends Controller
             'werks'            => $werks,
             'auartDescription' => $auartDesc,
             'today'            => now(),
+            'mode'             => $mode,
         ];
 
         $fileName = $this->buildFileName("Overview_Customer_{$locationName}_{$auart}", "pdf");
@@ -958,12 +1071,10 @@ class SalesOrderController extends Controller
         $werks = (string) $request->query('werks', '');
         $auart = (string) $request->query('auart', '');
 
-        // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
 
         $rows = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-            // ✅ FIX: kunci plant
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where(function ($q) use ($auartList) {
@@ -997,12 +1108,10 @@ class SalesOrderController extends Controller
         $werks = (string) $request->query('werks', '');
         $auart = (string) $request->query('auart', '');
 
-        // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
 
         $items = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-            // ✅ FIX: kunci plant
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where('t2.NAME1', $customerName)
@@ -1052,12 +1161,10 @@ class SalesOrderController extends Controller
         $werks        = (string) ($payload['werks'] ?? '');
         $auart        = (string) ($payload['auart'] ?? '');
 
-        // ✅ FIX: WERKS-aware
         $auartList = $this->resolveAuartListForContext($auart, $werks);
 
         $items = DB::table('so_yppr079_t1 as t1')
             ->join('so_yppr079_t2 as t2', DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'))
-            // ✅ FIX: kunci plant
             ->where('t1.IV_WERKS_PARAM', $werks)
             ->where('t2.IV_WERKS_PARAM', $werks)
             ->where('t2.NAME1', $customerName)
@@ -1110,55 +1217,52 @@ class SalesOrderController extends Controller
      * List remark per item.
      */
     public function apiListItemRemarks(Request $request)
-{
-    $validated = $request->validate([
-        'werks' => 'required|string',
-        'auart' => 'required|string',
-        'vbeln' => 'required|string',
-        'posnr' => 'required|string',
-    ]);
+    {
+        $validated = $request->validate([
+            'werks' => 'required|string',
+            'auart' => 'required|string',
+            'vbeln' => 'required|string',
+            'posnr' => 'required|string',
+        ]);
 
-    $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
-    $currentUserId = Auth::id();
+        $posnrKey = str_pad(preg_replace('/\D/', '', $validated['posnr']), 6, '0', STR_PAD_LEFT);
+        $currentUserId = Auth::id();
 
-    $werks = trim((string) $validated['werks']);
-    $auart = strtoupper(trim((string) $validated['auart']));
+        $werks = trim((string) $validated['werks']);
+        $auart = strtoupper(trim((string) $validated['auart']));
 
-    // ✅ pakai konteks AUART yang sama dengan report (EXPORT/REPLACE digabung)
-    $auartList = $this->resolveAuartListForContext($auart, $werks);
-    if (empty($auartList)) $auartList = [$auart];
+        $auartList = $this->resolveAuartListForContext($auart, $werks);
+        if (empty($auartList)) $auartList = [$auart];
 
-    $rows = DB::table('item_remarks as ir')
-        ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
-        ->where('ir.VBELN', trim((string)$validated['vbeln']))
-        ->where('ir.POSNR', $posnrKey)
-        // ✅ rekomendasi: kunci plant supaya tidak nyasar lintas plant
-        ->where('ir.IV_WERKS_PARAM', $werks)
-        ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
-        ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList)
-        ->orderBy('ir.updated_at', 'desc')
-        ->select(
-            'ir.id',
-            'ir.user_id',
-            DB::raw('COALESCE(u.name, "Guest") as user_name'),
-            'ir.remark',
-            'ir.created_at',
-            'ir.updated_at'
-        )
-        ->get()
-        ->map(function ($r) use ($currentUserId) {
-            $displayTime = $r->updated_at ?: $r->created_at;
-            $r->created_at = $displayTime;
-            $r->is_owner = $currentUserId !== null && (int)$r->user_id === (int)$currentUserId;
-            return $r;
-        });
+        $rows = DB::table('item_remarks as ir')
+            ->leftJoin('users as u', 'u.id', '=', 'ir.user_id')
+            ->where('ir.VBELN', trim((string)$validated['vbeln']))
+            ->where('ir.POSNR', $posnrKey)
+            ->where('ir.IV_WERKS_PARAM', $werks)
+            ->whereRaw("TRIM(COALESCE(ir.remark,'')) <> ''")
+            ->whereIn(DB::raw('TRIM(ir.IV_AUART_PARAM)'), $auartList)
+            ->orderBy('ir.updated_at', 'desc')
+            ->select(
+                'ir.id',
+                'ir.user_id',
+                DB::raw('COALESCE(u.name, "Guest") as user_name'),
+                'ir.remark',
+                'ir.created_at',
+                'ir.updated_at'
+            )
+            ->get()
+            ->map(function ($r) use ($currentUserId) {
+                $displayTime = $r->updated_at ?: $r->created_at;
+                $r->created_at = $displayTime;
+                $r->is_owner = $currentUserId !== null && (int)$r->user_id === (int)$currentUserId;
+                return $r;
+            });
 
-    return response()->json(['ok' => true, 'data' => $rows]);
-}
+        return response()->json(['ok' => true, 'data' => $rows]);
+    }
 
     /**
      * Tambah remark baru untuk item (selalu INSERT, tidak menimpa).
-     * INSERT LOGIC TETAP SAMA (SIMPAN CONTEXT WERKS/AUART)
      */
     public function apiAddItemRemark(Request $request)
     {

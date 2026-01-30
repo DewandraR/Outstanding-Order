@@ -2715,6 +2715,138 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
 
             const WERKS = (root.dataset.werks || '').trim() || null;
             const AUART = (root.dataset.auart || '').trim() || null;
+            async function ensureCustomerT2Loaded(custRow) {
+    const kunnr = (custRow?.dataset?.kunnr || '').trim();
+    const kid   = custRow?.dataset?.kid;
+    const slot  = kid ? document.getElementById(kid) : null;
+    const wrap  = slot?.querySelector('.yz-nest-wrap');
+
+    if (!kunnr || !wrap) return null;
+
+    if (wrap.dataset.loaded === '1') {
+        return { kunnr, slot, wrap };
+    }
+
+    // load T2 tanpa harus user klik card
+    wrap.innerHTML = `
+        <div class="p-3 text-muted small d-flex align-items-center justify-content-center yz-loader-pulse">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>Memuat data…
+        </div>`;
+
+    const url = new URL(apiT2, window.location.origin);
+    url.searchParams.set('kunnr', kunnr);
+    if (WERKS) url.searchParams.set('werks', WERKS);
+    if (AUART) url.searchParams.set('auart', AUART);
+    url.searchParams.set('mode', getMode());
+
+    const res = await fetch(url);
+    const js  = await res.json();
+    if (!res.ok || !js.ok) throw new Error(js.error || 'Gagal memuat data PO');
+
+    wrap.innerHTML = renderT2(js.data, kunnr);
+    wrap.dataset.loaded = '1';
+
+    mountT2Handlers(wrap, WERKS, AUART);
+    updateT2FooterVisibility(wrap.querySelector('table'));
+
+    return { kunnr, slot, wrap };
+}
+
+async function selectOneSOAllItems(soRow) {
+    if (!soRow) return;
+
+    const chkSo = soRow.querySelector('.check-so');
+    const vbeln = (soRow.dataset.vbeln || chkSo?.dataset?.vbeln || '').trim();
+
+    // check SO
+    if (chkSo) chkSo.checked = true;
+
+    // ensure T3 loaded
+    await openItemsIfNeededForSORow(soRow);
+
+    const nest = soRow.nextElementSibling;
+    const box  = nest?.querySelector('.yz-slot-t3');
+
+    if (box) {
+        // check ALL items in T3 + isi selectedItems
+        box.querySelectorAll('.check-item').forEach(ci => {
+            const sid = sanitizeId(ci.dataset.id);
+            if (!sid) return;
+            selectedItems.add(sid);
+            ci.checked = true;
+        });
+
+        // check header "check all items" bila ada
+        const chkAllItems = box.querySelector('.check-all-items');
+        if (chkAllItems) chkAllItems.checked = true;
+    }
+
+    if (vbeln) soHasSelectionDot(vbeln);
+    }
+
+    function unselectOneSOAllItems(soRow) {
+        if (!soRow) return;
+
+        const chkSo = soRow.querySelector('.check-so');
+        const vbeln = (soRow.dataset.vbeln || chkSo?.dataset?.vbeln || '').trim();
+
+        if (chkSo) chkSo.checked = false;
+
+        const nest = soRow.nextElementSibling;
+
+        if (nest?.dataset?.loaded === '1') {
+            // hapus dari selectedItems berdasarkan checkbox item yang ada di DOM
+            nest.querySelectorAll('.check-item').forEach(ci => {
+                const sid = sanitizeId(ci.dataset.id);
+                if (sid) selectedItems.delete(sid);
+                ci.checked = false;
+            });
+            const chkAllItems = nest.querySelector('.check-all-items');
+            if (chkAllItems) chkAllItems.checked = false;
+        } else {
+            // fallback (kalau T3 belum diload): buang berdasarkan mapping itemIdToSO
+            Array.from(selectedItems).forEach(id => {
+                if (itemIdToSO.get(String(id)) === vbeln) selectedItems.delete(id);
+            });
+        }
+
+        if (vbeln) soHasSelectionDot(vbeln);
+    }
+
+    async function selectAllForCustomer(custRow) {
+        const info = await ensureCustomerT2Loaded(custRow);
+        if (!info) return;
+
+        const { wrap } = info;
+        const soRows = Array.from(wrap.querySelectorAll('.js-t2row'));
+
+        for (const soRow of soRows) {
+            await selectOneSOAllItems(soRow);
+        }
+
+        // rapihkan state header select-all-so + export count
+        const tbody = wrap.querySelector('table.yz-mini tbody');
+        if (tbody) syncSelectAllSoState(tbody);
+        updateExportButton();
+    }
+
+    async function unselectAllForCustomer(custRow) {
+        const kid  = custRow?.dataset?.kid;
+        const slot = kid ? document.getElementById(kid) : null;
+        const wrap = slot?.querySelector('.yz-nest-wrap');
+
+        if (!wrap || wrap.dataset.loaded !== '1') {
+            updateExportButton();
+            return;
+        }
+
+        const soRows = Array.from(wrap.querySelectorAll('.js-t2row'));
+        for (const soRow of soRows) unselectOneSOAllItems(soRow);
+
+        const tbody = wrap.querySelector('table.yz-mini tbody');
+        if (tbody) syncSelectAllSoState(tbody);
+        updateExportButton();
+    }
             const isExportContext = !!parseInt(root.dataset.isExport || 0);
 
             const needAutoExpand = !!parseInt(root.dataset.autoExpand || 0);
@@ -2782,23 +2914,50 @@ MODAL POP-UP UNTUK DETAIL OVERDUE
             }
 
             // per-baris customer
-            document.body.addEventListener('change', (e) => {
+            document.body.addEventListener('change', async (e) => {
                 if (!e.target.classList.contains('check-customer')) return;
+
                 const kunnr = e.target.dataset.kunnr;
-                if (e.target.checked) selectedCustomers.add(kunnr);
-                else selectedCustomers.delete(kunnr);
+                const custRow = e.target.closest('.yz-customer-card');
+                if (!custRow) return;
+
+                try {
+                    if (e.target.checked) {
+                        selectedCustomers.add(kunnr);
+                        await selectAllForCustomer(custRow);   // ✅ ceklis sampai T3
+                    } else {
+                        selectedCustomers.delete(kunnr);
+                        await unselectAllForCustomer(custRow); // ✅ batalin semua ceklis buyer ini
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert(err.message || 'Gagal memproses ceklis Buyer.');
+                    // rollback UI checkbox biar konsisten
+                    e.target.checked = !e.target.checked;
+                }
+
                 syncSelectAllCustomersState();
                 updateColabsButtonVisibility();
             });
-
             // master select-all
-            checkAllCustomers?.addEventListener('change', () => {
-                document.querySelectorAll('.check-customer').forEach(ch => {
+            checkAllCustomers?.addEventListener('change', async () => {
+                const all = Array.from(document.querySelectorAll('.check-customer'));
+                for (const ch of all) {
                     ch.checked = checkAllCustomers.checked;
+
                     const k = ch.dataset.kunnr;
-                    if (checkAllCustomers.checked) selectedCustomers.add(k);
-                    else selectedCustomers.delete(k);
-                });
+                    const custRow = ch.closest('.yz-customer-card');
+                    if (!custRow) continue;
+
+                    if (checkAllCustomers.checked) {
+                        selectedCustomers.add(k);
+                        await selectAllForCustomer(custRow);
+                    } else {
+                        selectedCustomers.delete(k);
+                        await unselectAllForCustomer(custRow);
+                    }
+                }
+
                 syncSelectAllCustomersState();
                 updateColabsButtonVisibility();
             });

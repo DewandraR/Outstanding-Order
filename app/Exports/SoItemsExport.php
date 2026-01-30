@@ -42,17 +42,17 @@ class SoItemsExport implements
 
     /**
      * Last column letter depends on mode:
-     * wood  = 14 columns (A..N)
-     * metal = 15 columns (A..O) (add PRIMER GR)
+     * wood  = 15 columns (A..O)  (tambah Req. Deliv. Date)
+     * metal = 16 columns (A..P)  (tambah Req. Deliv. Date + PRIMER GR)
      */
     protected function lastColumnLetter(): string
     {
-        return $this->isMetal() ? 'O' : 'N';
+        return $this->isMetal() ? 'P' : 'O';
     }
 
     protected function totalColumns(): int
     {
-        return $this->isMetal() ? 15 : 14;
+        return $this->isMetal() ? 16 : 15;
     }
 
     public function collection()
@@ -87,38 +87,39 @@ class SoItemsExport implements
 
     public function headings(): array
     {
-        // Base columns always same
+        // Base columns
         $base = [
-            'PO',            // A
-            'SO',            // B
-            'Item',          // C
-            'Material FG',   // D
-            'Description',   // E
-            'Qty SO',        // F
-            'Outs. SO',      // G
-            'WHFG',          // H
-            'Stock Packg.',  // I
+            'PO',               // A
+            'SO',               // B
+            'Req. Deliv. Date', // C  ✅ NEW
+            'Item',             // D
+            'Material FG',      // E
+            'Description',      // F
+            'Qty SO',           // G
+            'Outs. SO',         // H
+            'WHFG',             // I
+            'Stock Packg.',     // J
         ];
 
         if ($this->isMetal()) {
-            // add 5 process columns (CUTTING, ASSY, PRIMER, PAINT, PACKING) + Remark
+            // METAL: 5 process columns + Remark
             return array_merge($base, [
-                'CUTTING GR',  // J
-                'ASSY GR',     // K
-                'PRIMER GR',   // L
-                'PAINT GR',    // M
-                'PACKING GR',  // N
-                'Remark',      // O
+                'CUTTING GR',  // K
+                'ASSY GR',     // L
+                'PRIMER GR',   // M
+                'PAINT GR',    // N
+                'PACKING GR',  // O
+                'Remark',      // P
             ]);
         }
 
-        // wood: 4 process columns + Remark
+        // WOOD: 4 process columns + Remark
         return array_merge($base, [
-            'MACHI GR',    // J
-            'ASSY GR',     // K
-            'PAINT GR',    // L
-            'PACKING GR',  // M
-            'Remark',      // N
+            'MACHI GR',    // K
+            'ASSY GR',     // L
+            'PAINT GR',    // M
+            'PACKING GR',  // N
+            'Remark',      // O
         ]);
     }
 
@@ -134,6 +135,8 @@ class SoItemsExport implements
 
         $po   = $item->headerInfo->BSTNK ?? '';
         $so   = $item->VBELN ?? '';
+        $req  = $item->headerInfo->EDATU_FMT ?? ''; // ✅ NEW
+
         $pos  = (int)($item->POSNR ?? 0);
         $mat  = $item->MATNR ?? '';
         $desc = $item->MAKTX ?? '';
@@ -154,7 +157,7 @@ class SoItemsExport implements
             $pack   = (float)($item->PRSIMT  ?? 0);
 
             return [
-                $po, $so, $pos, $mat, $desc,
+                $po, $so, $req, $pos, $mat, $desc,
                 $qtySo, $outsSo, $whfg, $stockPk,
                 $cut, $assy, $primer, $paint, $pack,
                 $remark,
@@ -168,7 +171,7 @@ class SoItemsExport implements
         $pack  = (float)($item->PACKGM ?? 0);
 
         return [
-            $po, $so, $pos, $mat, $desc,
+            $po, $so, $req, $pos, $mat, $desc,
             $qtySo, $outsSo, $whfg, $stockPk,
             $machi, $assy, $paint, $pack,
             $remark,
@@ -217,31 +220,32 @@ class SoItemsExport implements
     {
         $intNoDecimal = '#,##0';
 
-        // Base fixed columns
+        // Karena ada kolom Req. Deliv. Date (C),
+        // Qty/Outs/WHFG/Stock geser jadi G/H/I/J
         $formats = [
-            'F' => $intNoDecimal, // Qty SO
-            'G' => $intNoDecimal, // Outs SO
-            'H' => $intNoDecimal, // WHFG
-            'I' => $intNoDecimal, // Stock Packg
+            'G' => $intNoDecimal, // Qty SO
+            'H' => $intNoDecimal, // Outs SO
+            'I' => $intNoDecimal, // WHFG
+            'J' => $intNoDecimal, // Stock Packg
         ];
 
         if ($this->isMetal()) {
-            // METAL: process columns J..N
-            $formats['J'] = $intNoDecimal; // CUTTING
-            $formats['K'] = $intNoDecimal; // ASSY
-            $formats['L'] = $intNoDecimal; // PRIMER
-            $formats['M'] = $intNoDecimal; // PAINT
-            $formats['N'] = $intNoDecimal; // PACKING
-            // Remark is O (text) -> no format needed
+            // METAL: process columns K..O
+            $formats['K'] = $intNoDecimal; // CUTTING
+            $formats['L'] = $intNoDecimal; // ASSY
+            $formats['M'] = $intNoDecimal; // PRIMER
+            $formats['N'] = $intNoDecimal; // PAINT
+            $formats['O'] = $intNoDecimal; // PACKING
+            // Remark = P (text)
             return $formats;
         }
 
-        // WOOD: process columns J..M
-        $formats['J'] = $intNoDecimal; // MACHI
-        $formats['K'] = $intNoDecimal; // ASSY
-        $formats['L'] = $intNoDecimal; // PAINT
-        $formats['M'] = $intNoDecimal; // PACKING
-        // Remark is N (text)
+        // WOOD: process columns K..N
+        $formats['K'] = $intNoDecimal; // MACHI
+        $formats['L'] = $intNoDecimal; // ASSY
+        $formats['M'] = $intNoDecimal; // PAINT
+        $formats['N'] = $intNoDecimal; // PACKING
+        // Remark = O (text)
         return $formats;
     }
 }
