@@ -91,8 +91,8 @@ class SoItemsExport implements
         $base = [
             'PO',               // A
             'SO',               // B
-            'Req. Deliv. Date', // C  ✅ NEW
-            'Item',             // D
+            'Item',             // C  ✅ NEW
+            'Req. Deliv. Date', // D
             'Material FG',      // E
             'Description',      // F
             'Qty SO',           // G
@@ -157,7 +157,7 @@ class SoItemsExport implements
             $pack   = (float)($item->PRSIMT  ?? 0);
 
             return [
-                $po, $so, $req, $pos, $mat, $desc,
+                $po, $so, $pos, $req, $mat, $desc,
                 $qtySo, $outsSo, $whfg, $stockPk,
                 $cut, $assy, $primer, $paint, $pack,
                 $remark,

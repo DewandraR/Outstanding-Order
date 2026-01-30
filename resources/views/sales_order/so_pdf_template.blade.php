@@ -105,10 +105,11 @@
                 <th style="width: 7%;">PO</th>
                 <th style="width: 6%;">SO</th>
 
-                <!-- ✅ NEW -->
-                <th style="width: 7%;">Req. Deliv. Date</th>
+                
 
                 <th style="width: 3%;">Item</th>
+                <!-- ✅ NEW -->
+                <th style="width: 7%;">Req. Deliv. Date</th>
                 <th style="width: 8%;">Material FG</th>
                 <th class="text-left" style="width:20%;">Desc FG</th>
                 <th style="width: 4%;">Qty SO</th>
@@ -172,10 +173,9 @@
                     <td>{{ $poNumber }}</td>
                     <td>{{ $vbeln }}</td>
 
+                    <td class="text-center">{{ $posnr }}</td>
                     <!-- ✅ NEW -->
                     <td class="text-center">{{ $reqDate !== '' ? $reqDate : '-' }}</td>
-
-                    <td class="text-center">{{ $posnr }}</td>
                     <td>{{ $matnr }}</td>
                     <td class="text-left">{{ $maktx }}</td>
 
