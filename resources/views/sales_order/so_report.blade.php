@@ -717,23 +717,35 @@
                  * DATA LOADER
                  * ======================================================= */
                 const itemsCache = new Map(); // VBELN -> array items
+                const itemsCacheMode = new Map();
                 const itemIdToSO = new Map(); // itemId -> VBELN
+                const soMetalEligible = new Map();
                 async function ensureItemsLoadedForSO(vbeln, WERKS, AUART) {
-                    if (itemsCache.has(vbeln)) return itemsCache.get(vbeln);
+                    const vb = String(vbeln);
+                    const cachedMode = itemsCacheMode.get(vb);
+                    if (itemsCache.has(vb) && cachedMode === materialMode) return itemsCache.get(vb);
+
                     const u = new URL(apiItemsBySo, window.location.origin);
-                    u.searchParams.set('vbeln', vbeln);
+                    u.searchParams.set('vbeln', vb);
                     u.searchParams.set('werks', WERKS);
                     u.searchParams.set('auart', AUART);
-                    const r = await fetch(u, {
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    });
+                    u.searchParams.set('mode', materialMode);
+
+                    const r = await fetch(u, { headers: { 'Accept': 'application/json' } });
                     const jd = await r.json();
                     if (!jd.ok) throw new Error(jd.error || 'Gagal memuat item');
+
                     const dedupItems = uniqBy(jd.data || [], x => `${x.VBELN_KEY}|${x.POSNR_KEY}|${x.MATNR ?? ''}`);
-                    dedupItems.forEach(x => itemIdToSO.set(String(x.id), vbeln));
-                    itemsCache.set(vbeln, dedupItems);
+                    dedupItems.forEach(x => itemIdToSO.set(String(x.id), vb));
+
+                    const hasMetal = dedupItems.some(x => {
+                        const k = Number(x.KMTL ?? x.kmtl ?? 0);
+                        return Number.isFinite(k) && k > 0;
+                    });
+                    soMetalEligible.set(vb, hasMetal);
+
+                    itemsCache.set(vb, dedupItems);
+                    itemsCacheMode.set(vb, materialMode);   // <--- penting
                     return dedupItems;
                 }
 
@@ -1180,38 +1192,82 @@
                     yzToggleSlider.style.transform = `translateX(${relativeLeft}px)`;
                 }
 
-                function setMaterialMode(mode) {
+                async function setMaterialMode(mode) { // Tambahkan async
                     if (materialMode === mode) return;
                     materialMode = mode;
 
                     const expMode = document.getElementById('exp_mode');
                     if (expMode) expMode.value = materialMode;
 
-                    // toggle gaya tombol
+                    // Toggle visual button
                     btnWood?.classList.toggle('active', mode === 'wood');
                     btnMetal?.classList.toggle('active', mode === 'metal');
 
-                    updateToggleSlider(); // Panggil fungsi slider
+                    updateToggleSlider();
 
-                    // RERENDER SEMUA TABEL-3 yang sudah dimuat (tetap)
-                    document.querySelectorAll('tr.yz-nest[data-loaded="1"]').forEach(nestTr => {
-                        const box = nestTr.querySelector('.yz-slot-items');
-                        const soRow = nestTr.previousElementSibling;
-                        const vbeln = soRow?.dataset.vbeln;
-                        if (!vbeln || !box) return;
-                        const items = itemsCache.get(vbeln);
-                        if (!items) return;
+                    // RERENDER Tabel-3 (Items) yang sudah terbuka
+                    if (typeof refreshSelectionsForCheckedCustomers === 'function') {
+                        await refreshSelectionsForCheckedCustomers();
+                    }
 
-                        box.innerHTML = renderLevel3_Items(items, materialMode);
-                        applySelectionsToRenderedItems(box);
-                        syncCheckAllHeader(box);
-                        attachBootstrapPopovers(box);
-                    });
+                    // ✅ NEW: rerender tabel-3 yang sudah terbuka, tapi pastikan items sesuai mode baru
+                    const __root = document.getElementById('so-root');
+                    const WERKS = (__root?.dataset.werks || '').trim();
+                    const AUART = (__root?.dataset.auart || '').trim();
+
+                    const openedNests = Array.from(document.querySelectorAll('tr.yz-nest[data-loaded="1"]'));
+                    for (const nestTr of openedNests) {
+                    const box = nestTr.querySelector('.yz-slot-items');
+                    const soRow = nestTr.previousElementSibling;
+                    const vbeln = soRow?.dataset.vbeln;
+                    if (!vbeln || !box) continue;
+
+                    let items = [];
+                    try {
+                        // paksa load items untuk mode terbaru (wood/metal)
+                        items = await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
+                    } catch (e) {
+                        items = itemsCache.get(vbeln) || [];
+                    }
+
+                    box.innerHTML = renderLevel3_Items(items, materialMode);
+                    applySelectionsToRenderedItems(box);
+                    syncCheckAllHeader(box);
+                    attachBootstrapPopovers(box);
+                    }
+
+                    // RE-SYNC Tabel-2 (SO) dan Tabel-1 (Customer)
+                    if (materialMode === 'metal') {
+                        // Gunakan await karena fungsi ini melakukan fetch/load items di background
+                        await applyMetalFilterToAllLoadedWraps();
+                        await applyMetalFilterToAllCustomerCards();
+                    } else {
+                        // Kembali ke WOOD: Tampilkan semuanya
+                        resetMetalFilterToAllLoadedWraps();
+                        resetMetalFilterToAllCustomerCards();
+                        
+                        // TAMBAHAN: Pastikan baris SO yang tadinya hilang muncul kembali
+                        document.querySelectorAll('.js-t2row').forEach(row => {
+                            row.style.display = '';
+                            row.classList.remove('yz-so-hidden-by-metal');
+                        });
+                        
+                        // Hapus pesan "Tidak ada SO metal" jika ada
+                        document.querySelectorAll('.yz-no-so-metal').forEach(el => el.remove());
+                    }
+                    
                     updateExportButton();
                 }
-
                 document.getElementById('btn-mode-wood')?.addEventListener('click', () => setMaterialMode('wood'));
                 document.getElementById('btn-mode-metal')?.addEventListener('click', () => setMaterialMode('metal'));
+
+                let applyMetalFilterToAllLoadedWraps = async () => {};
+                let resetMetalFilterToAllLoadedWraps = () => {};
+                
+                let applyMetalFilterToAllCustomerCards = async () => {};
+                let resetMetalFilterToAllCustomerCards = () => {};
+                let refreshSelectionsForCheckedCustomers = async () => {};
+
 
                 window.addEventListener('load', updateToggleSlider);
                 window.addEventListener('resize', updateToggleSlider);
@@ -1232,7 +1288,8 @@
                     attachBootstrapPopovers(document);
                     const selectedCustomers = new Set();
                     const btnOpenSelected = document.getElementById('btn-open-selected');
-                    const customerToVbelns = new Map();   // KUNNR -> array VBELN
+                    const customerToVbelns = new Map();   // key: `${mode}|${kunnr}` -> array VBELN
+                    const custKey = (kunnr) => `${materialMode}|${String(kunnr||'').trim()}`;
                     const customerToItemIds = new Map();  // KUNNR -> Set(itemId)
 
                     // limiter biar fetch ga brutal
@@ -1251,24 +1308,311 @@
                     return out;
                     }
 
+                    const customerMetalEligible = new Map(); // KUNNR -> boolean
+
+                    async function isCustomerMetalEligible(kunnr) {
+                        kunnr = String(kunnr || '').trim();
+                        if (!kunnr) return false;
+                        if (customerMetalEligible.has(kunnr)) return customerMetalEligible.get(kunnr);
+
+                        // Ambil daftar SO untuk customer
+                        let vbelns = [];
+                        try {
+                            vbelns = await fetchSOsForCustomer(kunnr); // sudah ada di kode kamu
+                        } catch (e) {
+                            customerMetalEligible.set(kunnr, false);
+                            return false;
+                        }
+
+                        // kalau tidak punya SO sama sekali
+                        if (!vbelns || vbelns.length === 0) {
+                            customerMetalEligible.set(kunnr, false);
+                            return false;
+                        }
+
+                        // cek satu per satu, STOP begitu ketemu yang eligible
+                        for (const v of vbelns) {
+                            const vbeln = String(v || '').trim();
+                            if (!vbeln) continue;
+
+                            // kalau sudah pernah dihitung
+                            if (soMetalEligible.has(vbeln)) {
+                                if (soMetalEligible.get(vbeln)) {
+                                    customerMetalEligible.set(kunnr, true);
+                                    return true;
+                                }
+                                continue;
+                            }
+
+                            // pastikan items untuk SO ini ter-load agar soMetalEligible terisi
+                            try {
+                                await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
+                            } catch (e) {
+                                // kalau error load items, anggap tidak eligible (lanjut SO berikutnya)
+                            }
+
+                            if (soMetalEligible.get(vbeln)) {
+                                customerMetalEligible.set(kunnr, true);
+                                return true;
+                            }
+                        }
+
+                        customerMetalEligible.set(kunnr, false);
+                        return false;
+                    }
+
+                    // apply filter ke semua customer cards (Table-1)
+                    async function __applyMetalFilterToAllCustomerCards() {
+                        const cards = Array.from(document.querySelectorAll('.yz-customer-card'));
+                        if (cards.length === 0) return;
+
+                        // optional: indikator "kosong"
+                        const container = document.getElementById('customer-list-container');
+                        let emptyInfo = document.getElementById('yz-no-metal-customers');
+                        if (!emptyInfo && container) {
+                            emptyInfo = document.createElement('div');
+                            emptyInfo.id = 'yz-no-metal-customers';
+                            emptyInfo.className = 'alert alert-warning text-center my-3';
+                            emptyInfo.style.display = 'none';
+                            emptyInfo.innerHTML = `
+                            <i class="fas fa-info-circle me-2"></i>
+                            Tidak ada customer dengan SO yang memiliki item METAL (KMTL &gt; 0).
+                            `;
+                            container.prepend(emptyInfo);
+                        }
+
+                        // hitung eligibility per customer (dibatasi concurrency)
+                        const tasks = cards.map(card => async () => {
+                            const kunnr = (card.dataset.kunnr || '').trim();
+                            const eligible = await isCustomerMetalEligible(kunnr);
+                            return { card, kunnr, eligible };
+                        });
+
+                        const results = await runWithLimit(tasks, 3);
+
+                        let visibleCount = 0;
+
+                        for (const r of results) {
+                            const card = r.card;
+                            const kunnr = r.kunnr;
+                            const eligible = !!r.eligible;
+
+                            const kid = card.dataset.kid || '';
+                            const slot = kid ? document.getElementById(kid) : null;
+
+                            if (!eligible) {
+                                // ✅ sembunyikan card + slot detailnya
+                                card.classList.add('yz-cust-hidden-by-metal');
+                                card.style.display = 'none';
+
+                                // kalau sedang open, tutup state UI
+                                card.classList.remove('is-open', 'is-focused');
+                                card.querySelector('.kunnr-caret')?.classList.remove('rot');
+
+                                if (slot) {
+                                    slot.classList.add('yz-cust-hidden-by-metal');
+                                    slot.style.display = 'none';
+                                }
+
+                                // ✅ kalau customer sedang dicentang, batalkan agar export tidak nyangkut
+                                const ch = card.querySelector('.check-customer');
+                                if (ch && ch.checked) {
+                                    ch.checked = false;
+                                    selectedCustomers.delete(kunnr);
+                                    try { await unselectCustomerSilent(kunnr); } catch {}
+                                }
+                            } else {
+                                // ✅ tampilkan lagi (tapi hormati filter search kalau ada)
+                                card.classList.remove('yz-cust-hidden-by-metal');
+                                if (!card.classList.contains('yz-cust-hidden-by-search')) card.style.display = '';
+
+                                if (slot) {
+                                    slot.classList.remove('yz-cust-hidden-by-metal');
+                                    // slot hanya tampil kalau card memang sedang open
+                                    if (card.classList.contains('is-open') && !card.classList.contains('yz-cust-hidden-by-search')) {
+                                        slot.style.display = 'block';
+                                    }
+                                }
+
+                                visibleCount++;
+                            }
+                        }
+
+                        if (emptyInfo) emptyInfo.style.display = (visibleCount === 0) ? '' : 'none';
+
+                        // rapikan UI terkait selection
+                        try { syncSelectAllCustomersState(); } catch {}
+                        try { updateColabsButtonVisibility(); } catch {}
+                        try { updateExportButton(); } catch {}
+                        try { updateGlobalTotalCardVisibility(); } catch {}
+                    }
+
+                    function __resetMetalFilterToAllCustomerCards() {
+                        // hapus cache eligibility customer (biar fresh saat metal dipilih lagi)
+                        customerMetalEligible.clear();
+
+                        document.querySelectorAll('.yz-customer-card.yz-cust-hidden-by-metal').forEach(card => {
+                            card.classList.remove('yz-cust-hidden-by-metal');
+                            if (!card.classList.contains('yz-cust-hidden-by-search')) card.style.display = '';
+                        });
+
+                        document.querySelectorAll('.yz-nest-card.yz-cust-hidden-by-metal').forEach(slot => {
+                            slot.classList.remove('yz-cust-hidden-by-metal');
+
+                            // slot hanya dibuka kalau card pemiliknya sedang open
+                            const kid = slot.id;
+                            const ownerCard = kid ? document.querySelector(`.yz-customer-card[data-kid='${CSS.escape(kid)}']`) : null;
+                            if (ownerCard && ownerCard.classList.contains('is-open') && !ownerCard.classList.contains('yz-cust-hidden-by-search')) {
+                                slot.style.display = 'block';
+                            }
+                        });
+
+                        const emptyInfo = document.getElementById('yz-no-metal-customers');
+                        if (emptyInfo) emptyInfo.style.display = 'none';
+
+                        try { syncSelectAllCustomersState(); } catch {}
+                        try { updateColabsButtonVisibility(); } catch {}
+                        try { updateExportButton(); } catch {}
+                        try { updateGlobalTotalCardVisibility(); } catch {}
+                    }
+
+                    // “Expose” ke outer scope agar bisa dipanggil dari setMaterialMode()
+                    applyMetalFilterToAllCustomerCards = __applyMetalFilterToAllCustomerCards;
+                    resetMetalFilterToAllCustomerCards = __resetMetalFilterToAllCustomerCards;
+
+                    async function applyMetalFilterToWrap(wrap) {
+                        if (!wrap) return;
+
+                        const t2Table = wrap.querySelector('table');
+                        const tbody   = t2Table?.querySelector('tbody');
+                        if (!t2Table || !tbody) return;
+
+                        const soRows = Array.from(tbody.querySelectorAll('.js-t2row'));
+                        if (soRows.length === 0) return;
+
+                        // Bersihkan pesan "Tidak ada SO metal" sebelumnya (biar tidak dobel)
+                        tbody.querySelectorAll('.yz-no-so-metal').forEach(el => el.remove());
+
+                        // Pastikan data item ter-load untuk pengecekan KMTL
+                        const tasks = soRows.map(r => async () => {
+                            const vbeln = (r.dataset.vbeln || '').trim();
+                            if (!vbeln) return;
+                            if (soMetalEligible.has(vbeln)) return;
+                            await ensureItemsLoadedForSO(vbeln, WERKS, AUART);
+                        });
+                        await runWithLimit(tasks, 5);
+
+                        let visibleCount = 0;
+
+                        soRows.forEach(r => {
+                            const vbeln = (r.dataset.vbeln || '').trim();
+                            const isEligible = !!soMetalEligible.get(vbeln);
+
+                            if (!isEligible) {
+                            r.style.display = 'none';
+                            r.classList.add('yz-so-hidden-by-metal');
+
+                            // tutup juga nest row-nya biar tidak “nempel”
+                            const nest = r.nextElementSibling;
+                            if (nest && nest.classList.contains('yz-nest')) {
+                                nest.style.display = 'none';
+                                nest.classList.add('yz-so-hidden-by-metal');
+                            }
+                            } else {
+                            r.classList.remove('yz-so-hidden-by-metal');
+                            const nest = r.nextElementSibling;
+                            if (nest && nest.classList.contains('yz-nest')) {
+                                nest.classList.remove('yz-so-hidden-by-metal');
+                            }
+
+                            // hormati search filter kalau ada
+                            if (!r.classList.contains('yz-so-hidden-by-search')) {
+                                r.style.display = '';
+                                visibleCount++;
+                            }
+                            }
+                        });
+
+                        // kalau tidak ada SO eligible, tampilkan baris info
+                        if (visibleCount === 0) {
+                            const tr = document.createElement('tr');
+                            tr.className = 'yz-no-so-metal';
+                            tr.innerHTML = `
+                            <td colspan="8" class="text-center text-muted py-4">
+                                Tidak ada SO dengan item METAL (KMTL &gt; 0).
+                            </td>`;
+                            tbody.appendChild(tr);
+                        }
+
+                        // sync header checkbox & footer
+                        syncCheckAllSoHeader(tbody);
+                        updateT2FooterVisibility(t2Table);
+                        updateGlobalTotalCardVisibility();
+                    }
+
+                        function resetMetalFilterToWrap(wrap) {
+                            if (!wrap) return;
+
+                            const tbody = wrap.querySelector('tbody');
+                            const t2Table = wrap.querySelector('table');
+
+                            // Hapus pesan error "Tidak ada SO metal"
+                            tbody?.querySelectorAll('.yz-no-so-metal').forEach(el => el.remove());
+
+                            // Tampilkan semua baris SO (Level 2)
+                            wrap.querySelectorAll('.js-t2row').forEach(r => {
+                                r.classList.remove('yz-so-hidden-by-metal');
+                                // Hanya tampilkan jika tidak sedang disembunyikan oleh filter SEARCH
+                                if (!r.classList.contains('yz-so-hidden-by-search')) {
+                                    r.style.display = '';
+                                }
+                            });
+
+                            // Pastikan nest (Level 3) tetap mengikuti aturan search
+                            wrap.querySelectorAll('tr.yz-nest').forEach(n => {
+                                n.classList.remove('yz-so-hidden-by-metal');
+                                // Jangan paksa display='', biarkan tertutup kecuali user membukanya
+                            });
+
+                            const tb = wrap.querySelector('table tbody');
+                            if (tb) syncCheckAllSoHeader(tb);
+
+                            updateT2FooterVisibility(t2Table);
+                            updateGlobalTotalCardVisibility();
+                        }
+
+                        applyMetalFilterToAllLoadedWraps = async function () {
+                            const wraps = Array.from(document.querySelectorAll('.yz-nest-wrap[data-loaded="1"]'))
+                                .filter(w => w.querySelector('.js-t2row'));
+                            for (const w of wraps) await applyMetalFilterToWrap(w);
+                        };
+
+                        resetMetalFilterToAllLoadedWraps = function () {
+                            const wraps = Array.from(document.querySelectorAll('.yz-nest-wrap[data-loaded="1"]'))
+                                .filter(w => w.querySelector('.js-t2row'));
+                            wraps.forEach(w => resetMetalFilterToWrap(w));
+                        };
+
                     async function fetchSOsForCustomer(kunnr) {
-                    if (customerToVbelns.has(kunnr)) return customerToVbelns.get(kunnr);
+                        const key = custKey(kunnr);
+                        if (customerToVbelns.has(key)) return customerToVbelns.get(key);
 
-                    const url = new URL(apiSoByCustomer, window.location.origin);
-                    url.searchParams.set('kunnr', kunnr);
-                    url.searchParams.set('werks', WERKS);
-                    url.searchParams.set('auart', AUART);
+                        const url = new URL(apiSoByCustomer, window.location.origin);
+                        url.searchParams.set('kunnr', kunnr);
+                        url.searchParams.set('werks', WERKS);
+                        url.searchParams.set('auart', AUART);
+                        url.searchParams.set('mode', materialMode);
 
-                    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                    const js  = await res.json();
-                    if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
+                        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                        const js  = await res.json();
+                        if (!js.ok) throw new Error(js.error || 'Gagal memuat data SO');
 
-                    const vbelns = uniqBy(js.data || [], r => `${r.VBELN}`)
-                        .map(r => String(r.VBELN).trim())
-                        .filter(Boolean);
+                        const vbelns = uniqBy(js.data || [], r => `${r.VBELN}`)
+                            .map(r => String(r.VBELN).trim())
+                            .filter(Boolean);
 
-                    customerToVbelns.set(kunnr, vbelns);
-                    return vbelns;
+                        customerToVbelns.set(key, vbelns);
+                        return vbelns;
                     }
 
                     async function selectCustomerSilent(kunnr) {
@@ -1292,7 +1636,9 @@
                         picked.add(id);
                     });
 
-                    customerToItemIds.set(kunnr, picked);
+                    const prev = customerToItemIds.get(kunnr) || new Set();
+                    picked.forEach(id => prev.add(id));
+                    customerToItemIds.set(kunnr, prev);
 
                     // kalau ada SO yang kebetulan sudah tampil, refresh dot
                     vbelns.forEach(v => updateSODot(v));
@@ -1301,17 +1647,35 @@
                     }
 
                     async function unselectCustomerSilent(kunnr) {
-                    const picked = customerToItemIds.get(kunnr);
-                    if (picked) {
-                        picked.forEach(id => selectedItems.delete(String(id)));
-                        customerToItemIds.delete(kunnr);
+                        const picked = customerToItemIds.get(kunnr);
+                        if (picked) {
+                            const vset = new Set();
+                            picked.forEach(id => {
+                            selectedItems.delete(String(id));
+                            const v = itemIdToSO.get(String(id));
+                            if (v) vset.add(v);
+                            });
+                            customerToItemIds.delete(kunnr);
+                            vset.forEach(v => updateSODot(v));
+                        }
+                        updateExportButton();
                     }
 
-                    const vbelns = customerToVbelns.get(kunnr) || [];
-                    vbelns.forEach(v => updateSODot(v));
+                    refreshSelectionsForCheckedCustomers = async () => {
+                        // Ambil semua customer yang sedang dicentang (Table-1)
+                        const checked = Array.from(document.querySelectorAll('.check-customer:checked'))
+                            .map(ch => (ch.dataset.kunnr || '').trim())
+                            .filter(Boolean);
 
-                    updateExportButton();
-                    }
+                        if (!checked.length) return;
+
+                        // Preload ulang item sesuai MODE YANG SEDANG AKTIF sekarang (wood/metal)
+                        const tasks = checked.map(kunnr => async () => {
+                            await selectCustomerSilent(kunnr); // ini akan load items per SO dgn mode terbaru + add ke selectedItems
+                        });
+
+                        await runWithLimit(tasks, 3);
+                    };
                     const checkAllCustomers = document.getElementById('check-all-customers');
                     const customerListContainer = document.getElementById('customer-list-container');
 
@@ -1565,6 +1929,7 @@
                             url.searchParams.set('kunnr', kunnr);
                             url.searchParams.set('werks', WERKS);
                             url.searchParams.set('auart', AUART);
+                            url.searchParams.set('mode', materialMode);
 
                             const res = await fetch(url, {
                                 headers: {
@@ -1577,6 +1942,11 @@
                             const soRows = (js.data || []).filter(Boolean);
                             wrap.innerHTML = renderLevel2_SO(soRows, kunnr);
                             wrap.dataset.loaded = '1';
+
+                            // ✅ kalau mode metal, sembunyikan SO yang tidak eligible
+                            if (materialMode === 'metal') {
+                                await applyMetalFilterToWrap(wrap);
+                            }
 
                             // PASANG HANDLER KLIK UNTUK BARIS SO (penting untuk COLABS -> tutup -> pilih sebagian)
                             bindSoRowClicks(wrap);
@@ -1840,6 +2210,7 @@
                                 url.searchParams.set('kunnr', kunnr);
                                 url.searchParams.set('werks', WERKS);
                                 url.searchParams.set('auart', AUART);
+                                url.searchParams.set('mode', materialMode);
                                 const res = await fetch(url, {
                                     headers: {
                                         'Accept': 'application/json'
@@ -1851,6 +2222,11 @@
                                 const soRows = uniqBy(js.data, r => `${r.VBELN}`);
                                 wrap.innerHTML = renderLevel2_SO(soRows, kunnr);
                                 wrap.dataset.loaded = '1';
+
+                                // ✅ kalau mode metal, sembunyikan SO yang tidak eligible
+                                if (materialMode === 'metal') {
+                                    await applyMetalFilterToWrap(wrap);
+                                }
 
                                 const soTable = wrap.querySelector('table');
                                 const soTbody = soTable?.querySelector('tbody');
@@ -2561,6 +2937,7 @@
                             url.searchParams.set('kunnr', kunnr);
                             url.searchParams.set('werks', WERKS);
                             url.searchParams.set('auart', AUART);
+                            url.searchParams.set('mode', materialMode);
 
                             const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
                             const js = await res.json();
@@ -2685,6 +3062,7 @@
                                     url.searchParams.set('kunnr', kunnr);
                                     url.searchParams.set('werks', WERKS);
                                     url.searchParams.set('auart', AUART);
+                                    url.searchParams.set('mode', materialMode);
 
                                     const resp = await fetch(url, {
                                         headers: {
@@ -2784,6 +3162,7 @@
                             url.searchParams.set('kunnr', firstMatchedKunnr);
                             url.searchParams.set('werks', WERKS);
                             url.searchParams.set('auart', AUART);
+                            url.searchParams.set('mode', materialMode);
 
                             const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
                             const js = await res.json();
