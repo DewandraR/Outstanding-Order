@@ -82,7 +82,7 @@
 @endphp
 
 <div class="header">
-    <h1>OUTSTANDING SO DETAIL {{ $locationName }} - {{ $auartDescription }}</h1>
+    <h1>OUTSTANDING SO DETAIL{{ $isMetal ? ' Metal' : '' }} {{ $locationName }} - {{ $auartDescription }}</h1>
     <p class="date">{{ now()->format('d M Y') }}</p>
 </div>
 
