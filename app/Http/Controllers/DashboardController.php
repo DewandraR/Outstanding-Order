@@ -818,18 +818,23 @@ class DashboardController extends Controller
         // ====== PRE-AGREGASI (cepat) ======
         // Total nilai & outstanding qty per SO
         $uniqueItemsAgg = DB::table("$t1Table as t1a")
-            ->select(
-                't1a.VBELN',
-                't1a.POSNR',
-                't1a.MATNR',
-                't1a.WAERK',
-                't1a.IV_WERKS_PARAM',
-                DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
-                DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
-            )
-            ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0")
-            ->when(!empty($auartList), fn($q) => $this->applyAuartT1($q, 't1a', $auartList))
-            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK', 't1a.IV_WERKS_PARAM');
+        ->select(
+            't1a.VBELN',
+            't1a.POSNR',
+            't1a.MATNR',
+            't1a.WAERK',
+            't1a.IV_WERKS_PARAM',
+            DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
+            DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
+        )
+        ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0")
+        
+        // === PERBAIKAN DI SINI: Pastikan hanya menjumlahkan item milik Plant aktif ===
+        ->when($werks, fn($q) => $q->where('t1a.IV_WERKS_PARAM', $werks)) 
+        // =========================================================================
+
+        ->when(!empty($auartList), fn($q) => $this->applyAuartT1($q, 't1a', $auartList))
+        ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK', 't1a.IV_WERKS_PARAM');
 
         // Total per SO dari item unik (bukan dari baris dupe)
         $aggTotals = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t1_u"))

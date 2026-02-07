@@ -611,91 +611,96 @@ class PoReportController extends Controller
         if ($show) {
            $t2Header = $this->t2OneRowPerVbeln($t2Table, $werks); // 1 row per VBELN (prefer werks page)
 
-// A. Subquery Item Unik (Basis Data)
-$uniqueItemsAgg = DB::table("$t1Table as t1a")
-    ->joinSub($t2Header, 't2h', function ($j) {
-        $j->on(DB::raw('TRIM(CAST(t2h.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1a.VBELN AS CHAR))'));
-    })
-    ->select(
-        't1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK',
-        DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
-        DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
-    )
-    ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0");
+        $uniqueItemsAgg = DB::table("$t1Table as t1a")
+            ->joinSub($t2Header, 't2h', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t2h.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t1a.VBELN AS CHAR))'));
+            })
+            ->select(
+                't1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK',
+                DB::raw('MAX(t1a.TOTPR) AS item_total_value'),
+                DB::raw('MAX(t1a.QTY_BALANCE2) AS item_outs_qty')
+            )
+            ->whereRaw("CAST(t1a.QTY_BALANCE2 AS DECIMAL(18,3)) {$qtyOp} 0");
 
-// (logic complete/outstanding tetap sama, cuma tabel headernya sekarang 1 row per VBELN)
-if ($mode === 'complete') {
-    $uniqueItemsAgg->where('t2h.IV_WERKS_PARAM', $werks);
-    $uniqueItemsAgg->whereIn('t1a.IV_AUART_PARAM', $auartList);
-} else {
-    $this->applyWerksOrAuart2ContextT2Alias($uniqueItemsAgg, 't2h', $werks, $auartList, $t1Table);
-    $uniqueItemsAgg = $this->applyAuartT1($uniqueItemsAgg, 't1a', $auartList);
-}
+        // === PERBAIKAN DI SINI: Filter Item t1a agar sesuai Plant yang dipilih ===
+        // Agar item milik Plant 3000 tidak ikut terhitung saat melihat Plant 2000
+        if ($werks) {
+            $uniqueItemsAgg->where('t1a.IV_WERKS_PARAM', $werks); 
+        }
+        // ======================================================================
 
-$uniqueItemsAgg->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK');
+        if ($mode === 'complete') {
+            $uniqueItemsAgg->where('t2h.IV_WERKS_PARAM', $werks);
+            $uniqueItemsAgg->whereIn('t1a.IV_AUART_PARAM', $auartList);
+        } else {
+            $this->applyWerksOrAuart2ContextT2Alias($uniqueItemsAgg, 't2h', $werks, $auartList, $t1Table);
+            $uniqueItemsAgg = $this->applyAuartT1($uniqueItemsAgg, 't1a', $auartList);
+        }
 
-// B. Ringkas per SO
-$soAgg = DB::query()
-    ->fromSub($uniqueItemsAgg, 't1_u')
-    ->select(
-        't1_u.VBELN',
-        't1_u.WAERK',
-        DB::raw('SUM(t1_u.item_total_value) AS so_total_value'),
-        DB::raw('SUM(t1_u.item_outs_qty)    AS so_outs_qty')
-    )
-    ->groupBy('t1_u.VBELN', 't1_u.WAERK');
+        $uniqueItemsAgg->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.WAERK');
 
-// C. Aggregasi Semua Value per Customer  ✅ join ke t2Header (bukan t2Table mentah)
-$allAggSubquery = DB::query()
-    ->fromSub($soAgg, 'so_agg')
-    ->joinSub($t2Header, 't2a', function ($j) {
-        $j->on(DB::raw('TRIM(CAST(t2a.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
-    })
-    ->groupBy('t2a.KUNNR')
-    ->select(
-        't2a.KUNNR',
-        DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
-        DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD"),
-        DB::raw("CAST(SUM(so_agg.so_outs_qty) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY")
-    );
+        // B. Ringkas per SO
+        $soAgg = DB::query()
+            ->fromSub($uniqueItemsAgg, 't1_u')
+            ->select(
+                't1_u.VBELN',
+                't1_u.WAERK',
+                DB::raw('SUM(t1_u.item_total_value) AS so_total_value'),
+                DB::raw('SUM(t1_u.item_outs_qty)    AS so_outs_qty')
+            )
+            ->groupBy('t1_u.VBELN', 't1_u.WAERK');
 
-// D. Aggregasi Overdue per Customer ✅ juga pakai t2Header
-$overdueValueSubquery = DB::query()
-    ->fromSub($soAgg, 'so_agg')
-    ->joinSub($t2Header, 't2_inner', function ($j) {
-        $j->on(DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
-    })
-    ->whereRaw("{$safeEdatuInner} < CURDATE()")
-    ->groupBy('t2_inner.KUNNR')
-    ->select(
-        't2_inner.KUNNR',
-        DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
-        DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
-    );
+        // C. Aggregasi Semua Value per Customer  ✅ join ke t2Header (bukan t2Table mentah)
+        $allAggSubquery = DB::query()
+            ->fromSub($soAgg, 'so_agg')
+            ->joinSub($t2Header, 't2a', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t2a.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
+            })
+            ->groupBy('t2a.KUNNR')
+            ->select(
+                't2a.KUNNR',
+                DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
+                DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD"),
+                DB::raw("CAST(SUM(so_agg.so_outs_qty) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY")
+            );
 
-// E. Query Final (Customer List) ✅ base table juga dari t2Header biar konsisten
-$rowsQuery = DB::query()
-    ->fromSub($t2Header, 't2')
-    ->joinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
-    ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
-    ->select(
-        't2.KUNNR',
-        DB::raw('MAX(t2.NAME1) AS NAME1'),
-        DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0)  AS TOTAL_ALL_VALUE_IDR'),
-        DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0)  AS TOTAL_ALL_VALUE_USD'),
-        DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_IDR),0) AS TOTAL_OVERDUE_VALUE_IDR'),
-        DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_USD),0) AS TOTAL_OVERDUE_VALUE_USD'),
-        DB::raw("COUNT(DISTINCT t2.VBELN) AS SO_TOTAL_COUNT"),
-        DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
-    );
+        // D. Aggregasi Overdue per Customer ✅ juga pakai t2Header
+        $overdueValueSubquery = DB::query()
+            ->fromSub($soAgg, 'so_agg')
+            ->joinSub($t2Header, 't2_inner', function ($j) {
+                $j->on(DB::raw('TRIM(CAST(t2_inner.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(so_agg.VBELN AS CHAR))'));
+            })
+            ->whereRaw("{$safeEdatuInner} < CURDATE()")
+            ->groupBy('t2_inner.KUNNR')
+            ->select(
+                't2_inner.KUNNR',
+                DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'IDR' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
+                DB::raw("CAST(ROUND(SUM(CASE WHEN so_agg.WAERK = 'USD' THEN so_agg.so_total_value ELSE 0 END),0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
+            );
 
-// Filter header (tetap)
-if ($mode === 'complete') {
-    $rowsQuery->where('t2.IV_WERKS_PARAM', $werks);
-} else {
-    $this->applyWerksOrAuart2ContextT2Alias($rowsQuery, 't2', $werks, $auartList, $t1Table);
-    $rowsQuery = $this->applyAuartT2($rowsQuery, $auartList, $t1Table);
-}
+        // E. Query Final (Customer List) ✅ base table juga dari t2Header biar konsisten
+        $rowsQuery = DB::query()
+            ->fromSub($t2Header, 't2')
+            ->joinSub($allAggSubquery, 'agg_all', fn($j) => $j->on('t2.KUNNR', '=', 'agg_all.KUNNR'))
+            ->leftJoinSub($overdueValueSubquery, 'agg_overdue', fn($j) => $j->on('t2.KUNNR', '=', 'agg_overdue.KUNNR'))
+            ->select(
+                't2.KUNNR',
+                DB::raw('MAX(t2.NAME1) AS NAME1'),
+                DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0)  AS TOTAL_ALL_VALUE_IDR'),
+                DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0)  AS TOTAL_ALL_VALUE_USD'),
+                DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_IDR),0) AS TOTAL_OVERDUE_VALUE_IDR'),
+                DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_USD),0) AS TOTAL_OVERDUE_VALUE_USD'),
+                DB::raw("COUNT(DISTINCT t2.VBELN) AS SO_TOTAL_COUNT"),
+                DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatu} < CURDATE() THEN t2.VBELN ELSE NULL END) AS SO_LATE_COUNT")
+            );
+
+        // Filter header (tetap)
+        if ($mode === 'complete') {
+            $rowsQuery->where('t2.IV_WERKS_PARAM', $werks);
+        } else {
+            $this->applyWerksOrAuart2ContextT2Alias($rowsQuery, 't2', $werks, $auartList, $t1Table);
+            $rowsQuery = $this->applyAuartT2($rowsQuery, $auartList, $t1Table);
+        }
 
             // Eksekusi
             $rows = $rowsQuery
