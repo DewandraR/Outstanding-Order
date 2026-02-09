@@ -66,7 +66,7 @@ class SoItemsExport implements
         });
 
         foreach ($groups as $customerName => $rows) {
-            // customer header row
+
             $customerHeader = (object)[
                 'is_customer_header' => true,
                 'customer_name'      => 'Customer: ' . $customerName,
@@ -74,6 +74,14 @@ class SoItemsExport implements
             $final->push($customerHeader);
             $this->customerRows[] = $currentRow;
             $currentRow++;
+
+            // ✅ SORT: Material FG -> SO -> Item
+            $rows = $rows->sortBy(function ($i) {
+                $mat = (string)($i->MATNR ?? '');
+                $so  = (string)($i->VBELN ?? '');
+                $pos = (int)($i->POSNR ?? 0);
+                return $mat.'|'.$so.'|'.str_pad((string)$pos, 6, '0', STR_PAD_LEFT);
+            })->values();
 
             foreach ($rows as $item) {
                 $item->is_customer_header = false;
@@ -170,8 +178,8 @@ class SoItemsExport implements
         $paint = (float)($item->PAINTM ?? 0);
         $pack  = (float)($item->PACKGM ?? 0);
 
-        return [
-            $po, $so, $req, $pos, $mat, $desc,
+                return [
+            $po, $so, $pos, $req, $mat, $desc,
             $qtySo, $outsSo, $whfg, $stockPk,
             $machi, $assy, $paint, $pack,
             $remark,

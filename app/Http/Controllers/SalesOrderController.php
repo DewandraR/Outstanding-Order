@@ -867,6 +867,24 @@ class SalesOrderController extends Controller
             $item->headerInfo = $headers->get($item->VBELN);
         }
 
+        // ✅ SORT (match Excel): Buyer -> Material FG -> SO -> Item
+        $items = $items->sortBy(function ($it) {
+            $cust = preg_replace('/\s+/', ' ', trim((string) data_get($it, 'headerInfo.NAME1', '')));
+            $cust = strtoupper($cust);
+
+            // IMPORTANT: jangan padding numeric MATNR (biar 26.* tetap sebelum 3000*)
+            $mat  = strtoupper(trim((string) ($it->MATNR ?? '')));
+
+            // VBELN biasanya panjangnya sama (10 digit), jadi aman string sort seperti Excel
+            $so   = trim((string) ($it->VBELN ?? ''));
+
+            // POSNR pad 6 digit supaya 10 < 120 dll tetap benar
+            $pos  = preg_replace('/\D/', '', (string) ($it->POSNR ?? '0'));
+            $posKey = str_pad($pos, 6, '0', STR_PAD_LEFT);
+
+            return $cust.'|'.$mat.'|'.$so.'|'.$posKey;
+        })->values();
+
         $fileExtension = $exportType === 'excel' ? 'xlsx' : 'pdf';
         $fileName      = $this->buildFileName("Outstanding_SO_{$locationName}_{$auart}", $fileExtension);
 
