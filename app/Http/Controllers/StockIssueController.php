@@ -88,7 +88,12 @@ class StockIssueController extends Controller
                         // 🚨 PERUBAHAN UTAMA DI SINI: Menggunakan DB::raw untuk TRIM LEADING ZEROS
                         DB::raw("TRIM(LEADING '0' FROM s.VBELN) AS VBELN"), // Tambahan: Sales Order (VBELN)
                         DB::raw("TRIM(LEADING '0' FROM s.POSNR) AS POSNR"), // Item
-                        DB::raw("TRIM(LEADING '0' FROM s.MATNH) AS MATNH"), // Material Finish
+                        DB::raw("
+                            CASE
+                                WHEN s.MATNH REGEXP '[A-Za-z]' THEN s.MATNH
+                                ELSE TRIM(LEADING '0' FROM s.MATNH)
+                            END AS MATNH
+                        "),
                         's.MAKTXH',
                         's.STOCK3',
                         's.MEINS',
@@ -180,7 +185,12 @@ class StockIssueController extends Controller
                 's.NAME1',
                 DB::raw("TRIM(LEADING '0' FROM s.VBELN) AS VBELN"),
                 DB::raw("TRIM(LEADING '0' FROM s.POSNR) AS POSNR"),
-                DB::raw("TRIM(LEADING '0' FROM s.MATNH) AS MATNH"),
+                DB::raw("
+                    CASE
+                        WHEN s.MATNH REGEXP '[A-Za-z]' THEN s.MATNH
+                        ELSE TRIM(LEADING '0' FROM s.MATNH)
+                    END AS MATNH
+                "),
                 's.MAKTXH',
                 's.STOCK3',
                 's.MEINS',
@@ -268,7 +278,12 @@ class StockIssueController extends Controller
                 's.NAME1',
                 DB::raw("TRIM(LEADING '0' FROM s.VBELN) AS VBELN"),
                 DB::raw("TRIM(LEADING '0' FROM s.POSNR) AS POSNR"),
-                DB::raw("TRIM(LEADING '0' FROM s.MATNH) AS MATNH"),
+                DB::raw("
+                    CASE
+                        WHEN s.MATNH REGEXP '[A-Za-z]' THEN s.MATNH
+                        ELSE TRIM(LEADING '0' FROM s.MATNH)
+                    END AS MATNH
+                "),
                 's.MAKTXH',
                 's.STOCK3',
                 's.MEINS',
