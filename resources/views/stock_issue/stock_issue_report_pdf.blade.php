@@ -48,6 +48,20 @@
         .text-left { text-align: left; }
         .text-center { text-align: center; }
         .text-right { text-align: right; }
+        .customer-total {
+            text-align: right;
+        }
+        .customer-total .value {
+            font-size: 11px;
+            font-weight: bold;
+            line-height: 1.1;
+        }
+        .customer-total .label {
+            font-size: 8px;
+            font-weight: normal;
+            color: #333;
+            line-height: 1.1;
+        }
     </style>
 </head>
 
@@ -66,17 +80,25 @@
 </div>
 
 @forelse ($itemsGrouped as $customerName => $groupRows)
-    <table class="group-table">
-        @php
-            $idx = 0;
-            $currentCustomer = $customerName ?: '-';
-        @endphp
+    @php
+        $idx = 0;
+        $currentCustomer = $customerName ?: '-';
 
+        // ✅ TOTAL PER CUSTOMER
+        $customerTotalValue = $groupRows->sum('TPRC');   // atau collect($groupRows)->sum('TPRC') jika perlu
+    @endphp
+
+    <table class="group-table">
         <thead class="customer-header-group">
             <tr class="customer-header-row">
                 {{-- total kolom = 8 --}}
-                <td colspan="8">
+                <td colspan="6">
                     Customer: {{ $currentCustomer }}
+                </td>
+
+                <td colspan="2" class="customer-total">
+                    <div class="value">{{ $formatMoney($customerTotalValue) }}</div>
+                    <div class="label">Total Value</div>
                 </td>
             </tr>
 
