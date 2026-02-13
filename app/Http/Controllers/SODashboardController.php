@@ -246,7 +246,7 @@ class SODashboardController extends Controller
                 't1a.EDATU',
                 DB::raw('MAX(t1a.PACKG) AS item_outs_qty')
             )
-            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
             ->when($location, fn($q, $loc) => $q->where('t1a.IV_WERKS_PARAM', $loc))
             ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.EDATU');
 
@@ -288,12 +288,14 @@ class SODashboardController extends Controller
     /* ================== Helper SO dashboard (Termasuk KPI Baru) ================== */
     private function getSoDashboardData(Request $request)
     {
-        $window = (int) $request->query('window', 7);
-        $location = $request->query('location'); // '2000' | '3000' | null
-        $type = $request->query('type'); // 'lokal' | 'export' | null
-        $auart = $request->query('auart'); // optional
+        $chartData = []; // ✅ pastikan terdefinisi
 
-        $today = now()->startOfDay();
+        $window   = (int) $request->query('window', 7);
+        $location = $request->query('location'); // '2000' | '3000' | null
+        $type     = $request->query('type');     // 'lokal' | 'export' | null
+        $auart    = $request->query('auart');    // optional
+
+        $today     = now()->startOfDay();
         $startWeek = now()->startOfWeek(\Carbon\Carbon::MONDAY)->startOfDay(); // inclusive
         $endWeekEx = (clone $startWeek)->addWeek(); // exclusive
 
@@ -303,35 +305,60 @@ class SODashboardController extends Controller
             STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y')
         )";
 
-        // Helper filter AUART/TYPE (alias dinamis)
-        $applyTypeOrAuart = function ($q, string $alias) use ($type, $auart) {
+        /**
+         * ✅ Helper filter AUART/TYPE (versi Kode 1)
+         * - jika auart dipilih: pakai auartList (WERKS-aware jika method ada)
+         * - jika type dipilih:
+         *    lokal  = Deskription contains local AND NOT replace
+         *    export = Deskription contains export AND NOT local AND NOT replace
+         * - jika type kosong & auart kosong: include semua kecuali replace (biar konsisten dengan pills di kode 1)
+         * - pakai whereExists (bukan join) supaya tidak ada duplikasi row dari maping
+         */
+        $applyTypeOrAuart = function ($q, string $alias) use ($type, $auart, $location) {
+
             if (!empty($auart)) {
-                $q->where("{$alias}.IV_AUART_PARAM", $auart);
+                $auartList = method_exists($this, 'resolveAuartListForContext')
+                    ? $this->resolveAuartListForContext($auart, (string)($location ?? ''))
+                    : [$auart];
+
+                $q->whereIn("{$alias}.IV_AUART_PARAM", $auartList);
                 return;
             }
-            if ($type === 'lokal') {
-                $q->join('maping as m', function ($j) use ($alias) {
-                    $j->on("{$alias}.IV_AUART_PARAM", '=', 'm.IV_AUART')
-                        ->on("{$alias}.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
-                })->where('m.Deskription', 'like', '%Local%');
-            } elseif ($type === 'export') {
-                $q->join('maping as m', function ($j) use ($alias) {
-                    $j->on("{$alias}.IV_AUART_PARAM", '=', 'm.IV_AUART')
-                        ->on("{$alias}.IV_WERKS_PARAM", '=', 'm.IV_WERKS');
-                })->where(function ($w) {
-                    $w->where('m.Deskription', 'like', '%Export%')
-                        ->where('m.Deskription', 'not like', '%Local%')
-                        // ⬇️ Export juga mencakup Replace
-                        ->orWhereIn('m.IV_AUART', ['ZRP1', 'ZRP2']);
+
+            if (empty($type)) {
+                $q->whereExists(function ($sub) use ($alias) {
+                    $sub->selectRaw('1')
+                        ->from('maping as m')
+                        ->whereColumn('m.IV_WERKS', "{$alias}.IV_WERKS_PARAM")
+                        ->whereColumn('m.IV_AUART', "{$alias}.IV_AUART_PARAM")
+                        ->whereRaw("LOWER(COALESCE(m.Deskription,'')) NOT LIKE '%replace%'");
                 });
+                return;
             }
+
+            $q->whereExists(function ($sub) use ($alias, $type) {
+                $sub->selectRaw('1')
+                    ->from('maping as m')
+                    ->whereColumn('m.IV_WERKS', "{$alias}.IV_WERKS_PARAM")
+                    ->whereColumn('m.IV_AUART', "{$alias}.IV_AUART_PARAM");
+
+                if ($type === 'lokal') {
+                    $sub->whereRaw("LOWER(COALESCE(m.Deskription,'')) LIKE '%local%'")
+                        ->whereRaw("LOWER(COALESCE(m.Deskription,'')) NOT LIKE '%replace%'");
+                } elseif ($type === 'export') {
+                    $sub->whereRaw("LOWER(COALESCE(m.Deskription,'')) LIKE '%export%'")
+                        ->whereRaw("LOWER(COALESCE(m.Deskription,'')) NOT LIKE '%local%'")
+                        ->whereRaw("LOWER(COALESCE(m.Deskription,'')) NOT LIKE '%replace%'");
+                    // ✅ Tidak include replace (ZRP1/ZRP2) agar sama dengan kode 1
+                }
+            });
         };
 
         /* =====================================================================
-         * DEDUPLIKASI ITEM UNIK (KPI, DONUT, DETAIL)
-         * ===================================================================== */
+        * DEDUP ITEM UNIK (SAMA DENGAN KODE 1)
+        * ===================================================================== */
 
-        // Subquery Item Unik (VBELN, POSNR, MATNR)
+        // Subquery Item Unik (VBELN, POSNR, MATNR) dari T1
         $uniqueItemsAgg = DB::table('so_yppr079_t1 as t1a')
             ->select(
                 't1a.VBELN',
@@ -341,85 +368,180 @@ class SODashboardController extends Controller
                 't1a.EDATU',
                 't1a.WAERK',
                 DB::raw('MAX(t1a.TOTPR2) AS item_total_value'),
-                DB::raw('MAX(t1a.PACKG) AS item_outs_qty')
+                DB::raw('MAX(t1a.PACKG)  AS item_outs_qty')
             )
-            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
-            ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.IV_WERKS_PARAM', 't1a.IV_AUART_PARAM', 't1a.EDATU', 't1a.WAERK');
+            // ✅ KODE 1: outstanding hanya yang positif
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+            ->groupBy(
+                't1a.VBELN', 't1a.POSNR', 't1a.MATNR',
+                't1a.KUNNR', 't1a.IV_WERKS_PARAM', 't1a.IV_AUART_PARAM',
+                't1a.EDATU', 't1a.WAERK'
+            );
 
-        // Apply filter type/auart/location ke item unik
-        $itemUniqueFiltered = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+        // Apply filter location + type/auart ke item unik (alias t_u)
+        $itemUniqueFiltered = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))
+            ->mergeBindings($uniqueItemsAgg)
             ->when($location, fn($q, $loc) => $q->where('t_u.IV_WERKS_PARAM', $loc));
+
         $applyTypeOrAuart($itemUniqueFiltered, 't_u');
 
-        // Gabungkan item unik dengan T2 (untuk mengambil data SO header)
+        /**
+         * Base join T2 untuk donut/due-this-week (boleh tetap),
+         * tapi KPI total/overdue jangan dihitung dari join ini (agar sama seperti kode 1).
+         */
         $allOutstandingItemsBase = DB::table('so_yppr079_t2 as t2')
             ->joinSub($itemUniqueFiltered, 't1', function ($j) {
-                // Joinkan t2.VBELN dengan item unik
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
             });
 
-
         /* =====================================================================
-          * Logic untuk KPI Block Baru (Semarang / Surabaya)
-          * Dihitung dari items unik (t1)
-          * ===================================================================== */
+        * KPI BLOCK BARU — ✅ HITUNG DARI ITEM UNIK (t_u), BUKAN DARI JOIN t2
+        * ===================================================================== */
 
-        // 1. Outstanding Value dan Count (Total semua item outstanding)
-        $totalAgg = (clone $allOutstandingItemsBase)
-            // Agregasi dilakukan berdasarkan WERKS dan CURRENCY dari item unik (t1)
-            ->groupBy('t1.IV_WERKS_PARAM', 't1.WAERK')
+        $kpiBase = (clone $itemUniqueFiltered); // ✅ source KPI setara kode 1
+
+        // 1) Outstanding Value dan Count
+        $totalAgg = (clone $kpiBase)
+            ->groupBy('t_u.IV_WERKS_PARAM', 't_u.WAERK')
             ->selectRaw("
-                t1.IV_WERKS_PARAM as werks,
-                t1.WAERK as cur,
-                CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS value,
-                COUNT(DISTINCT t1.VBELN) AS so_count
+                t_u.IV_WERKS_PARAM as werks,
+                t_u.WAERK as cur,
+                CAST(ROUND(SUM(CAST(t_u.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS value,
+                COUNT(DISTINCT t_u.VBELN) AS so_count
             ")
             ->get();
 
-        // 2. Overdue Value dan Count (Item outstanding yang EDATU < hari ini)
-        $overdueAgg = (clone $allOutstandingItemsBase)
-            // Filter EDATU menggunakan kolom EDATU dari item unik (t1)
-            ->whereRaw($this->getSafeEdatuForUniqueItem('t1') . " < CURDATE()")
-            ->groupBy('t1.IV_WERKS_PARAM', 't1.WAERK')
+        // 2) Overdue Value dan Count (EDATU < hari ini) — pakai EDATU item unik (t_u)
+        $overdueAgg = (clone $kpiBase)
+            ->whereRaw($this->getSafeEdatuForUniqueItem('t_u') . " < CURDATE()")
+            ->groupBy('t_u.IV_WERKS_PARAM', 't_u.WAERK')
             ->selectRaw("
-                t1.IV_WERKS_PARAM as werks,
-                t1.WAERK as cur,
-                CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS value,
-                COUNT(DISTINCT t1.VBELN) AS so_count
+                t_u.IV_WERKS_PARAM as werks,
+                t_u.WAERK as cur,
+                CAST(ROUND(SUM(CAST(t_u.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) AS value,
+                COUNT(DISTINCT t_u.VBELN) AS so_count
             ")
             ->get();
 
         $kpiNew = [];
+        $buildSoCount = function (?string $forcedType = null, bool $overdue = false) use ($location, $auart) {
+            $q = DB::table('so_yppr079_t2 as t2c')
+                ->when($location, fn($qq, $loc) => $qq->where('t2c.IV_WERKS_PARAM', $loc))
+                ->whereExists(function ($sub) use ($forcedType, $overdue, $auart, $location) {
+
+                    $sub->selectRaw('1')
+                        ->from('so_yppr079_t1 as t1_check')
+                        ->whereColumn('t1_check.IV_WERKS_PARAM', 't2c.IV_WERKS_PARAM')
+                        ->whereRaw("TRIM(CAST(t1_check.VBELN AS CHAR)) = TRIM(CAST(t2c.VBELN AS CHAR))")
+                        // ✅ Kode 1 count pakai != 0 (bukan > 0)
+                        ->whereRaw('CAST(t1_check.PACKG AS DECIMAL(18,3)) <> 0');
+
+                    // ---- Filter AUART (WERKS-aware jika method ada) ----
+                    if (!empty($auart)) {
+                        $auartList = method_exists($this, 'resolveAuartListForContext')
+                            ? $this->resolveAuartListForContext($auart, (string)($location ?? ''))
+                            : [$auart];
+
+                        $hasAuart  = \Illuminate\Support\Facades\Schema::hasColumn('so_yppr079_t1', 'AUART');
+                        $hasAuart2 = \Illuminate\Support\Facades\Schema::hasColumn('so_yppr079_t1', 'AUART2');
+
+                        $sub->where(function ($w) use ($auartList, $hasAuart, $hasAuart2) {
+                            // fallback (kalau column AUART/AUART2 tidak ada, tetap jalan)
+                            $w->whereIn('t1_check.IV_AUART_PARAM', $auartList);
+
+                            // kalau ada kolom AUART/AUART2, ikutkan supaya match kode 1
+                            if ($hasAuart) {
+                                $w->orWhereIn('t1_check.AUART', $auartList);
+                            }
+                            if ($hasAuart2) {
+                                $w->orWhereIn('t1_check.AUART2', $auartList);
+                            }
+                        });
+                    } else {
+                        // ---- Filter type export/lokal ala Kode 1 (exclude replace) ----
+                        $typeToUse = $forcedType; // export|lokal|null
+
+                        if (empty($typeToUse)) {
+                            // kalau tidak ada type & tidak ada auart: exclude replace
+                            $sub->whereExists(function ($m) {
+                                $m->selectRaw('1')
+                                    ->from('maping as mm')
+                                    ->whereColumn('mm.IV_WERKS', 't1_check.IV_WERKS_PARAM')
+                                    ->whereColumn('mm.IV_AUART', 't1_check.IV_AUART_PARAM')
+                                    ->whereRaw("LOWER(COALESCE(mm.Deskription,'')) NOT LIKE '%replace%'");
+                            });
+                        } else {
+                            $sub->whereExists(function ($m) use ($typeToUse) {
+                                $m->selectRaw('1')
+                                    ->from('maping as mm')
+                                    ->whereColumn('mm.IV_WERKS', 't1_check.IV_WERKS_PARAM')
+                                    ->whereColumn('mm.IV_AUART', 't1_check.IV_AUART_PARAM');
+
+                                if ($typeToUse === 'lokal') {
+                                    $m->whereRaw("LOWER(COALESCE(mm.Deskription,'')) LIKE '%local%'")
+                                    ->whereRaw("LOWER(COALESCE(mm.Deskription,'')) NOT LIKE '%replace%'");
+                                } elseif ($typeToUse === 'export') {
+                                    $m->whereRaw("LOWER(COALESCE(mm.Deskription,'')) LIKE '%export%'")
+                                    ->whereRaw("LOWER(COALESCE(mm.Deskription,'')) NOT LIKE '%local%'")
+                                    ->whereRaw("LOWER(COALESCE(mm.Deskription,'')) NOT LIKE '%replace%'");
+                                }
+                            });
+                        }
+                    }
+
+                    // ---- overdue count (opsional): overdue berdasarkan EDATU item (t1_check) ----
+                    if ($overdue) {
+                        $sub->whereRaw($this->getSafeEdatuForUniqueItem('t1_check') . " < CURDATE()");
+                    }
+                })
+                ->groupBy('t2c.IV_WERKS_PARAM')
+                ->selectRaw('t2c.IV_WERKS_PARAM as werks, COUNT(DISTINCT t2c.VBELN) as so_count');
+
+            return $q->get();
+        };
         $locations = ['3000' => 'smg', '2000' => 'sby'];
+
+        $soCountExport    = ($type === 'lokal')  ? collect() : $buildSoCount('export', false);
+        $soCountLocal     = ($type === 'export') ? collect() : $buildSoCount('lokal',  false);
+        $soOverdueExport  = ($type === 'lokal')  ? collect() : $buildSoCount('export', true);
+        $soOverdueLocal   = ($type === 'export') ? collect() : $buildSoCount('lokal',  true);
 
         foreach ($locations as $werksCode => $prefix) {
             if ($location && $location != $werksCode) continue;
 
-            // Outstanding
+            // VALUE (tetap dari totalAgg / overdueAgg)
             $usdTotal = $totalAgg->where('werks', $werksCode)->firstWhere('cur', 'USD');
             $idrTotal = $totalAgg->where('werks', $werksCode)->firstWhere('cur', 'IDR');
 
-            $kpiNew["{$prefix}_usd_val"] = (float) ($usdTotal->value ?? 0);
-            $kpiNew["{$prefix}_usd_qty"] = (int) ($usdTotal->so_count ?? 0);
-            $kpiNew["{$prefix}_idr_val"] = (float) ($idrTotal->value ?? 0);
-            $kpiNew["{$prefix}_idr_qty"] = (int) ($idrTotal->so_count ?? 0);
-
-            // Overdue
             $usdOverdue = $overdueAgg->where('werks', $werksCode)->firstWhere('cur', 'USD');
             $idrOverdue = $overdueAgg->where('werks', $werksCode)->firstWhere('cur', 'IDR');
 
+            // ✅ QTY (ambil dari count ala kode 1)
+            $expCnt = $soCountExport->firstWhere('werks', $werksCode);
+            $locCnt = $soCountLocal->firstWhere('werks', $werksCode);
+
+            $expOv  = $soOverdueExport->firstWhere('werks', $werksCode);
+            $locOv  = $soOverdueLocal->firstWhere('werks', $werksCode);
+
+            $kpiNew["{$prefix}_usd_val"] = (float) ($usdTotal->value ?? 0);
+            $kpiNew["{$prefix}_idr_val"] = (float) ($idrTotal->value ?? 0);
+
+            // Export -> USD toggle
+            $kpiNew["{$prefix}_usd_qty"] = (int) ($expCnt->so_count ?? 0);
+
+            // Local -> IDR toggle
+            $kpiNew["{$prefix}_idr_qty"] = (int) ($locCnt->so_count ?? 0);
+
             $kpiNew["{$prefix}_usd_overdue_val"] = (float) ($usdOverdue->value ?? 0);
-            $kpiNew["{$prefix}_usd_overdue_qty"] = (int) ($usdOverdue->so_count ?? 0);
             $kpiNew["{$prefix}_idr_overdue_val"] = (float) ($idrOverdue->value ?? 0);
-            $kpiNew["{$prefix}_idr_overdue_qty"] = (int) ($idrOverdue->so_count ?? 0);
+
+            $kpiNew["{$prefix}_usd_overdue_qty"] = (int) ($expOv->so_count ?? 0);
+            $kpiNew["{$prefix}_idr_overdue_qty"] = (int) ($locOv->so_count ?? 0);
         }
+
         $chartData['kpi_new'] = $kpiNew;
-        /* =====================================================================
-          * END: Logic untuk KPI Block Baru
-          * ===================================================================== */
 
-
-        // Mengosongkan KPI lama karena digantikan oleh kpi_new
+        // Kosongkan KPI lama
         $chartData['kpi'] = [
             'total_outstanding_value_usd' => 0,
             'total_outstanding_value_idr' => 0,
@@ -432,12 +554,9 @@ class SODashboardController extends Controller
         ];
 
         /* =====================================================================
-         * Donut Urgency / Aging — Dihitung dari SO Header (t2) yang memiliki item unik (t1)
-         * ===================================================================== */
+        * Donut Aging — tetap pakai T2 JOIN item unik (t1)
+        * ===================================================================== */
 
-        // Logic Donut (SO Count): menggunakan $allOutstandingItemsBase yang sudah didefinisikan (T2 JOIN T1 DEDUP)
-
-        // LOGIKA AGING ANALYSIS (DONUT)
         $chartData['aging_analysis'] = [
             'overdue_over_30' => (clone $allOutstandingItemsBase)
                 ->whereRaw("DATEDIFF(CURDATE(), {$safeEdatuT2}) > 30")
@@ -457,33 +576,29 @@ class SODashboardController extends Controller
         ];
 
         /* =====================================================================
-         * List “SO Due This Week” (tabel di UI) — Dihitung dari item unik (t1)
-         * ===================================================================== */
+        * Due This Week — tetap dari item unik (t1) + join ke T2 untuk atribut SO
+        * ===================================================================== */
 
         $dueThisWeekBase = DB::table('so_yppr079_t2 as t2')
             ->joinSub($itemUniqueFiltered, 't1', function ($j) {
                 $j->on(DB::raw('TRIM(CAST(t1.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
             })
-            ->whereRaw($this->getSafeEdatuForUniqueItem('t1') . " >= ? AND " . $this->getSafeEdatuForUniqueItem('t1') . " < ?", [$startWeek, $endWeekEx]);
+            ->whereRaw(
+                $this->getSafeEdatuForUniqueItem('t1') . " >= ? AND " . $this->getSafeEdatuForUniqueItem('t1') . " < ?",
+                [$startWeek, $endWeekEx]
+            );
 
-        // Gunakan item_total_value dari t1 (hasil dedup)
         $dueThisWeekBySo = (clone $dueThisWeekBase)
             ->groupBy('t2.VBELN', 't2.BSTNK', 't2.NAME1', 't1.WAERK', 't2.IV_WERKS_PARAM', 't2.IV_AUART_PARAM')
             ->selectRaw("
-            t2.VBELN, t2.BSTNK, t2.NAME1, t1.WAERK,
-            t2.IV_WERKS_PARAM, t2.IV_AUART_PARAM,
-            CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS total_value,
-            DATE_FORMAT(MIN(" . $this->getSafeEdatuForUniqueItem('t1') . "), '%Y-%m-%d') AS due_date
-        ")
+                t2.VBELN, t2.BSTNK, t2.NAME1, t1.WAERK,
+                t2.IV_WERKS_PARAM, t2.IV_AUART_PARAM,
+                CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS total_value,
+                DATE_FORMAT(MIN(" . $this->getSafeEdatuForUniqueItem('t1') . "), '%Y-%m-%d') AS due_date
+            ")
             ->orderByDesc('total_value')
             ->get();
 
-
-        /* =====================================================================
-         * Customers Due This Week (agregasi dari item unik)
-         * ===================================================================== */
-
-        // Gunakan item_total_value dari t1 (hasil dedup)
         $dueThisWeekByCustomer = (clone $dueThisWeekBase)
             ->groupBy('t2.NAME1', 't1.WAERK')
             ->selectRaw("t2.NAME1, t1.WAERK, CAST(SUM(t1.item_total_value) AS DECIMAL(18,2)) AS total_value")

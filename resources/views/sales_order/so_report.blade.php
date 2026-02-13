@@ -34,38 +34,32 @@
         $globalOverdueRatio = $totalSOTotal > 0 ? ($totalOverdueSOTotal / $totalSOTotal) * 100 : 0;
         $globalOverdueColor = $totalOverdueSOTotal > 0 ? 'bg-danger' : 'bg-success';
 
-        // total "Outs. Value" (semua outstanding value) per currency
-        $pageTotalsAll = [
-            'USD' => (float) $rowsCol->sum(fn($r) => (float) ($r->TOTAL_ALL_VALUE_USD ?? 0)),
-            'IDR' => (float) $rowsCol->sum(fn($r) => (float) ($r->TOTAL_ALL_VALUE_IDR ?? 0)),
-        ];
-
-        // total "Overdue Value" (hanya yang telat) per currency
-        $pageTotalsOverdue = [
-            'USD' => (float) $rowsCol->sum(fn($r) => (float) ($r->TOTAL_OVERDUE_VALUE_USD ?? 0)),
-            'IDR' => (float) $rowsCol->sum(fn($r) => (float) ($r->TOTAL_OVERDUE_VALUE_IDR ?? 0)),
-        ];
-
-        // Logika $formatTotals (tidak berubah)
+        // Logic $formatTotals (Updated for dynamic currencies)
         $formatTotals = function (array $totals) {
-            $sumUsd = $totals['USD'] ?? 0;
-            $sumIdr = $totals['IDR'] ?? 0;
-
-            if ($sumUsd == 0 && $sumIdr == 0) {
-                return 'Rp ' . number_format(0, 0, ',', '.');
-            }
+            if (empty($totals)) return 'Rp ' . number_format(0, 0, ',', '.');
 
             $parts = [];
+            ksort($totals); // urutkan currency supaya konsisten (misal EUR, IDR, USD)
 
-            if ($sumUsd > 0) {
-                $parts[] = '$' . number_format($sumUsd, 0, '.', ',');
-            }
-            if ($sumIdr > 0) {
-                $parts[] = 'Rp ' . number_format($sumIdr, 0, ',', '.');
+            foreach ($totals as $curr => $val) {
+                if ($val == 0) continue;
+                
+                if ($curr === 'IDR') {
+                    $parts[] = 'Rp ' . number_format($val, 0, ',', '.');
+                } elseif ($curr === 'USD') {
+                    $parts[] = '$' . number_format($val, 0, '.', ',');
+                } else {
+                    $parts[] = $curr . ' ' . number_format($val, 0, ',', '.');
+                }
             }
 
+            if (empty($parts)) return 'Rp ' . number_format(0, 0, ',', '.');
             return implode(' | ', $parts);
         };
+        
+        // Use passed totals from controller
+        $pageTotalsAll = $pageTotalsAll ?? [];
+        $pageTotalsOverdue = $pageTotalsOverdue ?? [];
     @endphp
 
     {{-- ROOT STATE --}}
@@ -194,29 +188,33 @@
                             @forelse ($rows as $r)
                                 @php
                                     $kid = 'krow_' . $r->KUNNR . '_' . $loop->index;
-
                                     $totalSO = (int) ($r->SO_TOTAL_COUNT ?? 0);
                                     $totalOverdueSO = (int) ($r->SO_LATE_COUNT ?? 0);
+                                    $isOverdue = $totalOverdueSO > 0;
                                     $overdueRatio = $totalSO > 0 ? ($totalOverdueSO / $totalSO) * 100 : 0;
                                     $overdueColor = $totalOverdueSO > 0 ? 'bg-danger' : 'bg-success';
 
-                                    $outsValueUSD = (float) ($r->TOTAL_ALL_VALUE_USD ?? 0);
-                                    $outsValueIDR = (float) ($r->TOTAL_ALL_VALUE_IDR ?? 0);
-                                    $displayOutsValue = $formatTotals([
-                                        'USD' => $outsValueUSD,
-                                        'IDR' => $outsValueIDR,
-                                    ]);
+                                    // Helper inline parser
+                                    $parseValStr = function($s) {
+                                        $ret = [];
+                                        if(!$s) return $ret;
+                                        foreach(explode('|', $s) as $chunk) {
+                                            $parts = explode(':', $chunk);
+                                            if(count($parts)===2) $ret[$parts[0]] = (float)$parts[1];
+                                        }
+                                        return $ret;
+                                    };
 
-                                    $overdueValueUSD = (float) ($r->TOTAL_OVERDUE_VALUE_USD ?? 0);
-                                    $overdueValueIDR = (float) ($r->TOTAL_OVERDUE_VALUE_IDR ?? 0);
-                                    $displayOverdueValue = $formatTotals([
-                                        'USD' => $overdueValueUSD,
-                                        'IDR' => $overdueValueIDR,
-                                    ]);
-                                    $overdueValueStyle =
-                                        $overdueValueUSD > 0 || $overdueValueIDR > 0 ? 'text-danger' : 'text-success';
+                                    $outsVals = $parseValStr($r->TOTAL_ALL_VALUE_STR ?? '');
+                                    $displayOutsValue = $formatTotals($outsVals);
 
-                                    $isOverdue = $totalOverdueSO > 0;
+                                    $overdueVals = $parseValStr($r->TOTAL_OVERDUE_VALUE_STR ?? '');
+                                    $displayOverdueValue = $formatTotals($overdueVals);
+                                    
+                                    // Style: jika ada overdue value > 0 (currency apapun) -> danger
+                                    $hasOverdueVal = collect($overdueVals)->sum() > 0;
+                                    $overdueValueStyle = $hasOverdueVal ? 'text-danger' : 'text-success';
+                                    
                                     $highlightClass = $isOverdue ? 'yz-customer-card-overdue' : '';
                                 @endphp
 

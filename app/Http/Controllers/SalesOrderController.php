@@ -112,9 +112,10 @@ class SalesOrderController extends Controller
             ->values()
             ->toArray();
 
-        // Jika pilih EXPORT plant tsb => include export terpilih + semua REPLACE plant tsb
+        // Jika pilih EXPORT plant tsb => HANYA include export terpilih (MATCH DASHBOARD)
+        // Tidak lagi di-merge dengan Replace
         if (in_array($auart, $exportAuartCodes, true)) {
-            return array_values(array_unique(array_merge([$auart], $replaceAuartCodes)));
+            return [$auart];
         }
 
         // Jika pilih REPLACE => include semua EXPORT + REPLACE plant tsb
@@ -303,7 +304,9 @@ class SalesOrderController extends Controller
                     $q->whereIn('t1a.AUART', $auartList)
                       ->orWhereIn('t1a.AUART2', $auartList);
                 })
-                ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0');
+                ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+                // ✅ EXCLUDE EUR
+                ->where('t1a.WAERK', '!=', 'EUR');
 
             // ✅ NEW: mode filter (metal => KMTL > 0)
             $this->applyModeItemFilter($uniqueItemsAgg, 't1a', $mode);
@@ -311,22 +314,51 @@ class SalesOrderController extends Controller
             $uniqueItemsAgg = $uniqueItemsAgg
                 ->groupBy('t1a.VBELN', 't1a.POSNR', 't1a.MATNR', 't1a.KUNNR', 't1a.WAERK', 't1a.EDATU');
 
+            $valsByWaerkPre = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+                ->select(
+                    't_u.KUNNR',
+                    't_u.WAERK',
+                    DB::raw('CAST(ROUND(SUM(CAST(t_u.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as VAL')
+                )
+                ->groupBy('t_u.KUNNR', 't_u.WAERK');
+
             $allAggSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+                ->leftJoinSub($valsByWaerkPre, 'vw', function($j) {
+                    $j->on('vw.KUNNR', '=', 't_u.KUNNR');
+                })
                 ->select(
                     't_u.KUNNR',
                     DB::raw('CAST(SUM(CAST(t_u.item_outs_qty AS DECIMAL(18,3))) AS DECIMAL(18,3)) AS TOTAL_OUTS_QTY'),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'IDR' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'USD' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_ALL_VALUE_USD")
+                    DB::raw("(
+                        SELECT GROUP_CONCAT(CONCAT(vw_sub.WAERK, ':', vw_sub.VAL) SEPARATOR '|')
+                        FROM ({$valsByWaerkPre->toSql()}) as vw_sub
+                        WHERE vw_sub.KUNNR = t_u.KUNNR
+                        GROUP BY vw_sub.KUNNR
+                    ) AS TOTAL_ALL_VALUE_STR")
                 )
+                ->mergeBindings($valsByWaerkPre)
                 ->groupBy('t_u.KUNNR');
+
+            $overdueValsByWaerkPre = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
+                ->whereRaw($this->getSafeEdatuForUniqueItem('t_u') . ' < CURDATE()')
+                ->select(
+                    't_u.KUNNR',
+                    't_u.WAERK',
+                    DB::raw('CAST(ROUND(SUM(CAST(t_u.item_total_value AS DECIMAL(18,2))), 0) AS DECIMAL(18,0)) as VAL')
+                )
+                ->groupBy('t_u.KUNNR', 't_u.WAERK');
 
             $overdueValueSubquery = DB::table(DB::raw("({$uniqueItemsAgg->toSql()}) as t_u"))->mergeBindings($uniqueItemsAgg)
                 ->select(
                     't_u.KUNNR',
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'IDR' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_IDR"),
-                    DB::raw("CAST(ROUND(SUM(CASE WHEN t_u.WAERK = 'USD' THEN CAST(t_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END), 0) AS DECIMAL(18,0)) AS TOTAL_OVERDUE_VALUE_USD")
+                    DB::raw("(
+                        SELECT GROUP_CONCAT(CONCAT(vw_sub.WAERK, ':', vw_sub.VAL) SEPARATOR '|')
+                        FROM ({$overdueValsByWaerkPre->toSql()}) as vw_sub
+                        WHERE vw_sub.KUNNR = t_u.KUNNR
+                        GROUP BY vw_sub.KUNNR
+                    ) AS TOTAL_OVERDUE_VALUE_STR")
                 )
-                ->whereRaw($this->getSafeEdatuForUniqueItem('t_u') . ' < CURDATE()')
+                ->mergeBindings($overdueValsByWaerkPre)
                 ->groupBy('t_u.KUNNR');
 
             $soCountAgg = DB::table('so_yppr079_t2 as t2c')
@@ -366,10 +398,8 @@ class SalesOrderController extends Controller
                     DB::raw('MAX(agg_so.SO_TOTAL_COUNT) AS SO_TOTAL_COUNT'),
                     DB::raw('MAX(agg_so.SO_LATE_COUNT) AS SO_LATE_COUNT'),
                     DB::raw('COALESCE(MAX(agg_all.TOTAL_OUTS_QTY),0) AS TOTAL_OUTS_QTY'),
-                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_IDR),0) AS TOTAL_ALL_VALUE_IDR'),
-                    DB::raw('COALESCE(MAX(agg_all.TOTAL_ALL_VALUE_USD),0) AS TOTAL_ALL_VALUE_USD'),
-                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_IDR),0) AS TOTAL_OVERDUE_VALUE_IDR'),
-                    DB::raw('COALESCE(MAX(agg_overdue.TOTAL_OVERDUE_VALUE_USD),0) AS TOTAL_OVERDUE_VALUE_USD')
+                    DB::raw('MAX(agg_all.TOTAL_ALL_VALUE_STR) AS TOTAL_ALL_VALUE_STR'),
+                    DB::raw('MAX(agg_overdue.TOTAL_OVERDUE_VALUE_STR) AS TOTAL_OVERDUE_VALUE_STR')
                 )
                 ->whereNotNull('t2.NAME1')
                 ->where('t2.NAME1', '!=', '')
@@ -377,15 +407,28 @@ class SalesOrderController extends Controller
                 ->orderBy('NAME1', 'asc')
                 ->get();
 
-            $pageTotalsAll = [
-                'USD' => $rows->sum('TOTAL_ALL_VALUE_USD'),
-                'IDR' => $rows->sum('TOTAL_ALL_VALUE_IDR'),
-            ];
+            $pageTotalsAll = []; // will be calculated in view or here if we parse rows
+            $pageTotalsOverdue = [];
 
-            $pageTotalsOverdue = [
-                'USD' => $rows->sum('TOTAL_OVERDUE_VALUE_USD'),
-                'IDR' => $rows->sum('TOTAL_OVERDUE_VALUE_IDR'),
-            ];
+            // Helper to sum parsed strings
+            $sumStr = function($rows, $col) {
+                $sums = [];
+                foreach($rows as $r) {
+                    $str = $r->$col ?? '';
+                    if(!$str) continue;
+                    $parts = explode('|', $str);
+                    foreach($parts as $p) {
+                        [$c, $v] = explode(':', $p) + [null, 0];
+                        if($c) {
+                            $sums[$c] = ($sums[$c] ?? 0) + (float)$v;
+                        }
+                    }
+                }
+                return $sums;
+            };
+
+            $pageTotalsAll = $sumStr($rows, 'TOTAL_ALL_VALUE_STR');
+            $pageTotalsOverdue = $sumStr($rows, 'TOTAL_OVERDUE_VALUE_STR');
 
             $grandTotals = $pageTotalsOverdue;
 
@@ -474,7 +517,9 @@ class SalesOrderController extends Controller
                   ->orWhereIn('t1a.AUART2', $auartList);
             })
             ->where('t1a.KUNNR', $request->kunnr)
-            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0');
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) <> 0')
+            // ✅ EXCLUDE EUR
+            ->where('t1a.WAERK', '!=', 'EUR');
 
         // ✅ NEW: mode filter (metal => KMTL > 0)
         $this->applyModeItemFilter($uniqueItemsAgg, 't1a', $mode);
@@ -726,6 +771,12 @@ class SalesOrderController extends Controller
             $itemKeysQ->whereRaw("CAST(COALESCE(NULLIF(TRIM(KMTL), ''), '0') AS DECIMAL(18,3)) > 0");
         }
 
+        // ✅ EXCLUDE EUR (Filter di level item keys juga biar konsisten)
+        // Note: WAERK usually in T1
+        // $itemKeysQ->join... if needed, usually T1 has WAERK
+        // But here we select from so_yppr079_t1 (whereIn id), so we can check WAERK
+        $itemKeysQ->where('WAERK', '!=', 'EUR');
+
         $itemKeys = $itemKeysQ
             ->select('VBELN', 'POSNR', 'MATNR')
             ->get();
@@ -781,7 +832,9 @@ class SalesOrderController extends Controller
                           ->where('t1.MATNR', $pair['MATNR']);
                     });
                 }
-            });
+            })
+            // ✅ EXCLUDE EUR
+            ->where('t1.WAERK', '!=', 'EUR');
 
         // ✅ NEW: mode filter (metal => KMTL > 0)
         $this->applyModeItemFilter($itemsQuery, 't1', $mode);
@@ -1004,7 +1057,9 @@ class SalesOrderController extends Controller
                 $q->whereIn('t1a.AUART', $auartList)
                   ->orWhereIn('t1a.AUART2', $auartList);
             })
-            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0');
+            ->whereRaw('CAST(t1a.PACKG AS DECIMAL(18,3)) > 0')
+            // ✅ EXCLUDE EUR
+            ->where('t1a.WAERK', '!=', 'EUR');
 
         // ✅ NEW: mode filter
         $this->applyModeItemFilter($uniqueItemsAgg, 't1a', $mode);
@@ -1102,6 +1157,8 @@ class SalesOrderController extends Controller
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
+            // ✅ EXCLUDE EUR
+            ->where('t1.WAERK', '!=', 'EUR')
             ->groupBy('t2.NAME1', 't2.IV_WERKS_PARAM')
             ->selectRaw('t2.NAME1, t2.IV_WERKS_PARAM, COUNT(DISTINCT t1.VBELN) as so_count, COUNT(DISTINCT CONCAT(t1.VBELN, "-", t1.POSNR, "-", t1.MATNR)) as item_count')
             ->orderBy('t2.NAME1')
@@ -1140,6 +1197,8 @@ class SalesOrderController extends Controller
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
+            // ✅ EXCLUDE EUR
+            ->where('t1.WAERK', '!=', 'EUR')
             ->select(
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR)) as SO'),
                 DB::raw("TRIM(LEADING '0' FROM t1.POSNR) as POSNR"),
@@ -1193,6 +1252,8 @@ class SalesOrderController extends Controller
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) > 0')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) <= 5')
             ->whereRaw('CAST(t1.PACKG AS DECIMAL(18,3)) != CAST(t1.KWMENG AS DECIMAL(18,3))')
+            // ✅ EXCLUDE EUR
+            ->where('t1.WAERK', '!=', 'EUR')
             ->select(
                 DB::raw('TRIM(CAST(t2.VBELN AS CHAR)) AS SO'),
                 DB::raw('TRIM(LEADING "0" FROM t1.POSNR) AS POSNR'),
