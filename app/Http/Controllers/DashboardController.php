@@ -371,8 +371,8 @@ class DashboardController extends Controller
                 't1a.EDATU',
                 't1a.WAERK',
 
-                // header werks (buat bucket 1)
-                DB::raw('TRIM(t2h.IV_WERKS_PARAM) AS HDR_WERKS'),
+                // item plant (biar sama dengan report)
+                DB::raw('TRIM(t1a.IV_WERKS_PARAM) AS ITEM_WERKS'),
 
                 // ✅ tambah ini (buat bucket AUART1 / AUART2)
                 DB::raw('MAX(TRIM(t1a.IV_AUART_PARAM)) AS AUART1'),
@@ -389,7 +389,7 @@ class DashboardController extends Controller
             ->when(!empty($poAuartList), fn($q) => $this->applyAuartT1($q, 't1a', $poAuartList))
             ->groupBy(
                 't1a.VBELN','t1a.POSNR','t1a.MATNR','t1a.EDATU','t1a.WAERK',
-                DB::raw('TRIM(t2h.IV_WERKS_PARAM)')
+                DB::raw('TRIM(t1a.IV_WERKS_PARAM)')
             );
 
         // Normalisasi list AUART untuk whereIn
@@ -400,21 +400,29 @@ class DashboardController extends Controller
             ->mergeBindings($uniqueItemsAgg);
 
         // ==============================
-        // BUCKET 1: pakai AUART1 -> werks = header (HDR_WERKS)
+        // BUCKET 1: Standar (Plant sesuai item_werks, unless diklaim bucket 2)
         // ==============================
         $bucket1 = (clone $uBase)
             ->selectRaw("
                 TRIM(CAST(u.VBELN AS CHAR)) as VBELN,
-                TRIM(CAST(u.HDR_WERKS AS CHAR)) as BUCKET_WERKS,
+                TRIM(CAST(u.ITEM_WERKS AS CHAR)) as BUCKET_WERKS,
+                TRIM(UPPER(u.AUART1)) as BUCKET_AUART,
                 TRIM(UPPER(u.WAERK)) as currency,
                 u.EDATU,
                 CAST(u.item_total_value AS DECIMAL(18,2)) as item_total_value
             ")
-            ->when($location, fn($q, $loc) => $q->where('u.HDR_WERKS', $loc))
-            ->when(!empty($poAuartListNorm), fn($q) => $q->whereIn(DB::raw("TRIM(UPPER(u.AUART1))"), $poAuartListNorm));
+            ->whereIn(DB::raw("TRIM(UPPER(u.AUART1))"), $poAuartListNorm)
+            ->where(function($q) use ($poAuartListNorm) {
+                // Jangan double count kalau item ini juga masuk bucket 2 untuk plant yang SAMA atau plant lain
+                // Intinya: kalau AUART2 ada dan masuk list, biarkan bucket 2 yang handle
+                $q->whereRaw("TRIM(COALESCE(u.AUART2,'')) = ''")
+                  ->orWhereRaw("TRIM(UPPER(u.AUART2)) = TRIM(UPPER(u.AUART1))")
+                  ->orWhereNotIn(DB::raw("TRIM(UPPER(u.AUART2))"), $poAuartListNorm);
+            })
+            ->when($location, fn($q, $loc) => $q->where('u.ITEM_WERKS', $loc));
 
         // ==============================
-        // BUCKET 2: pakai AUART2 -> werks = maping.IV_WERKS (nyebrang plant)
+        // BUCKET 2: Remap via AUART2 (Nyebrang via Mapping)
         // ==============================
         $bucket2 = (clone $uBase)
             ->join('maping as mp2', function ($j) {
@@ -423,14 +431,15 @@ class DashboardController extends Controller
             ->selectRaw("
                 TRIM(CAST(u.VBELN AS CHAR)) as VBELN,
                 TRIM(CAST(mp2.IV_WERKS AS CHAR)) as BUCKET_WERKS,
+                TRIM(UPPER(u.AUART2)) as BUCKET_AUART,
                 TRIM(UPPER(u.WAERK)) as currency,
                 u.EDATU,
                 CAST(u.item_total_value AS DECIMAL(18,2)) as item_total_value
             ")
             ->whereRaw("TRIM(COALESCE(u.AUART2,'')) <> ''")
             ->whereRaw("TRIM(UPPER(u.AUART2)) <> TRIM(UPPER(u.AUART1))")
-            ->when($location, fn($q, $loc) => $q->where('mp2.IV_WERKS', $loc))
-            ->when(!empty($poAuartListNorm), fn($q) => $q->whereIn(DB::raw("TRIM(UPPER(u.AUART2))"), $poAuartListNorm));
+            ->whereIn(DB::raw("TRIM(UPPER(u.AUART2))"), $poAuartListNorm)
+            ->when($location, fn($q, $loc) => $q->where('mp2.IV_WERKS', $loc));
 
         // gabungkan 2 bucket jadi 1 dataset
         $bucketedItems = $bucket1->unionAll($bucket2);
@@ -598,49 +607,25 @@ class DashboardController extends Controller
         }
 
 
-        // Performance analysis - AKTIFKAN KEMBALI
-        $performanceQueryBase = DB::table('maping as m')
-            ->join('so_yppr079_t2 as t2', function ($join) {
-                $join->on('m.IV_WERKS', '=', 't2.IV_WERKS_PARAM')
-                    ->on('m.IV_AUART', '=', 't2.IV_AUART_PARAM');
+        // PERFORMANCE ANALYSIS - Menggunakan Dataset yang sama dengan KPI (Bucketed Items)
+        $performanceQuery = DB::table('maping as m')
+            ->joinSub($bucketedItems, 'b', function($j) {
+                $j->on('m.IV_WERKS', '=', 'b.BUCKET_WERKS')
+                  ->on(DB::raw('TRIM(UPPER(m.IV_AUART))'), '=', DB::raw('TRIM(UPPER(b.BUCKET_AUART))'));
             })
-            // Join ke item unik (t1_u) untuk agregasi nilai
-            ->joinSub($uniqueItemsAgg, 't1_u', function ($j) {
-                $j->on(DB::raw('TRIM(CAST(t1_u.VBELN AS CHAR))'), '=', DB::raw('TRIM(CAST(t2.VBELN AS CHAR))'));
-            });
-
-        $typesToFilter = null;
-        if ($type === 'lokal' || $type === 'export') {
-            $cloneForFilter = (clone $baseQuery)->select('t2.IV_AUART_PARAM', 't2.IV_WERKS_PARAM')->distinct();
-            $typesToFilter = $cloneForFilter->get()
-                ->map(fn($item) => $item->IV_AUART_PARAM . '-' . $item->IV_WERKS_PARAM)
-                ->toArray();
-        }
-        if ($typesToFilter !== null) {
-            $performanceQueryBase->whereIn(DB::raw("CONCAT(m.IV_AUART, '-', m.IV_WERKS)"), $typesToFilter);
-        }
-
-        $safeEdatuPerf = "
-            COALESCE(
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%d-%m-%Y'),
-                STR_TO_DATE(NULLIF(NULLIF(LEFT(CAST(t2.EDATU AS CHAR),10),'00-00-0000'),'0000-00-00'), '%Y-%m-%d')
-            )";
-
-        $performanceQuery = $performanceQueryBase->select(
-            'm.Deskription',
-            'm.IV_WERKS',
-            'm.IV_AUART',
-            DB::raw('COUNT(DISTINCT t2.VBELN) as total_so'),
-            // Gunakan SUM(t1_u.item_total_value) dari item unik
-            DB::raw("SUM(CASE WHEN t2.WAERK = 'IDR' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END) as total_value_idr"),
-            DB::raw("SUM(CASE WHEN t2.WAERK = 'USD' AND {$safeEdatuPerf} < CURDATE() THEN CAST(t1_u.item_total_value AS DECIMAL(18,2)) ELSE 0 END) as total_value_usd"),
-            DB::raw("COUNT(DISTINCT CASE WHEN {$safeEdatuPerf} < CURDATE() THEN t2.VBELN ELSE NULL END) as overdue_so_count"),
-            DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 1 AND 30 THEN t2.VBELN ELSE NULL END) as overdue_1_30"),
-            DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 31 AND 60 THEN t2.VBELN ELSE NULL END) as overdue_31_60"),
-            DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) BETWEEN 61 AND 90 THEN t2.VBELN ELSE NULL END) as overdue_61_90"),
-            DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), {$safeEdatuPerf}) > 90 THEN t2.VBELN ELSE NULL END) as overdue_over_90")
-        )
-            ->when($location, fn($q, $loc) => $q->where('t2.IV_WERKS_PARAM', $loc))
+            ->select(
+                'm.Deskription',
+                'm.IV_WERKS',
+                'm.IV_AUART',
+                DB::raw('COUNT(DISTINCT b.VBELN) as total_so'),
+                DB::raw("SUM(CASE WHEN b.currency = 'IDR' AND " . $this->getSafeEdatuForUniqueItem('b') . " < CURDATE() THEN b.item_total_value ELSE 0 END) as total_value_idr"),
+                DB::raw("SUM(CASE WHEN b.currency = 'USD' AND " . $this->getSafeEdatuForUniqueItem('b') . " < CURDATE() THEN b.item_total_value ELSE 0 END) as total_value_usd"),
+                DB::raw("COUNT(DISTINCT CASE WHEN " . $this->getSafeEdatuForUniqueItem('b') . " < CURDATE() THEN b.VBELN ELSE NULL END) as overdue_so_count"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), " . $this->getSafeEdatuForUniqueItem('b') . ") BETWEEN 1 AND 30 THEN b.VBELN ELSE NULL END) as overdue_1_30"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), " . $this->getSafeEdatuForUniqueItem('b') . ") BETWEEN 31 AND 60 THEN b.VBELN ELSE NULL END) as overdue_31_60"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), " . $this->getSafeEdatuForUniqueItem('b') . ") BETWEEN 61 AND 90 THEN b.VBELN ELSE NULL END) as overdue_61_90"),
+                DB::raw("COUNT(DISTINCT CASE WHEN DATEDIFF(CURDATE(), " . $this->getSafeEdatuForUniqueItem('b') . ") > 90 THEN b.VBELN ELSE NULL END) as overdue_over_90")
+            )
             ->groupBy('m.IV_WERKS', 'm.IV_AUART', 'm.Deskription')
             ->orderBy('m.IV_WERKS')->orderBy('m.Deskription')
             ->get();

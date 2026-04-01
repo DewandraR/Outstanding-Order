@@ -737,7 +737,9 @@ class PoReportController extends Controller
                 ->where(function ($w) use ($targetAuarts) {
                     $w->whereIn('t2.IV_AUART_PARAM', $targetAuarts)
                     ->orWhereIn('t1.AUART2', $targetAuarts);
-                });
+                })
+                // ✅ PENTING: Hanya hitung item yang memang milik Plant ini
+                ->where('t1.IV_WERKS_PARAM', $werks);
             $this->applyWerksOrAuart2ContextT2($performanceQueryBase, $werks, $targetAuarts, $t1Table);
 
             $perf = (clone $performanceQueryBase)
